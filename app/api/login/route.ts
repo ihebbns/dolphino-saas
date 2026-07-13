@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 const cors = (r: NextResponse) => {
   r.headers.set('Access-Control-Allow-Origin', '*')
   r.headers.set('Access-Control-Allow-Methods', 'POST,OPTIONS')
-  r.headers.set('Access-Control-Allow-Headers', 'Content-Type')
+  r.headers.set('Access-Control-Allow-Headers', 'Content-Type,X-Api-Key')
   return r
 }
 
