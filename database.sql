@@ -41,6 +41,20 @@ CREATE TABLE IF NOT EXISTS sales (
 CREATE INDEX IF NOT EXISTS idx_sales_restaurant_date
   ON sales(restaurant_id, business_date);
 
+-- ── DRINK STOCK ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS stock (
+  id            SERIAL PRIMARY KEY,
+  restaurant_id INTEGER      NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  item_id       VARCHAR(64)  NOT NULL,
+  item_name     VARCHAR(100) NOT NULL,
+  item_emoji    VARCHAR(10)  DEFAULT '🥤',
+  quantity      INTEGER      NOT NULL DEFAULT 0,
+  updated_at    TIMESTAMPTZ  DEFAULT NOW(),
+  UNIQUE (restaurant_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_restaurant ON stock(restaurant_id);
+
 -- Test restaurant — password is: dolphino123
 INSERT INTO restaurants (name, owner_email, password_hash, api_key, city, phone, plan)
 VALUES (
