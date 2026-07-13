@@ -26,7 +26,19 @@ export async function POST(req: Request) {
 
   const rows = await sql`SELECT * FROM restaurants WHERE owner_email=${email} LIMIT 1`
   const r = rows[0]
-  if (!r || !(await bcrypt.compare(pass, r.password_hash)))
+
+  // support both bcrypt hash and plain text password (for initial setup)
+  let passwordOk = false
+  if (r) {
+    if (r.password_hash.startsWith('$2')) {
+      passwordOk = await bcrypt.compare(pass, r.password_hash)
+    } else {
+      // plain text fallback for initial setup
+      passwordOk = (pass === r.password_hash)
+    }
+  }
+
+  if (!r || !passwordOk)
     return cors(NextResponse.json({ ok:false, error:'Email ou mot de passe incorrect' }, { status:401 }))
 
   if (r.plan === 'suspended')
