@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import s from './dashboard.module.css'
 
-const API = process.env.NEXT_PUBLIC_API_URL || ''
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://dolphino-saas.vercel.app'
 const f   = (n: any) => Number(n).toFixed(3)
 const today = () => new Date().toISOString().split('T')[0]
 
