@@ -1,0 +1,13 @@
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#080604;--panel:#0F0C08;--card:#181310;
+  --gold:#C8913A;--gold-l:#E8A84C;--gold-dim:rgba(200,145,58,.1);
+  --txt:#F0E8D8;--muted:#7A6E5F;--div:#231C12;
+  --green:#3DB87A;--red:#E05252;--blue:#4A90D9;--orange:#E8882A;
+}
+body{
+  font-family:system-ui,-apple-system,'Inter',sans-serif;
+  background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;
+}
+input,button,select{font-family:inherit;}
+button{cursor:pointer;}

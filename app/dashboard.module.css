@@ -1,0 +1,95 @@
+/* ── LOGIN ── */
+.loginWrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);}
+.loginBox{background:var(--panel);border:1px solid var(--div);border-radius:20px;padding:40px 32px;width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.loginLogo{font-size:52px;margin-bottom:6px;}
+.loginBrand{font-size:26px;font-weight:700;color:var(--gold-l);letter-spacing:2px;margin-bottom:4px;}
+.loginSub{font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:28px;}
+.formGroup{margin-bottom:14px;text-align:left;}
+.formGroup label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;}
+.formGroup input{width:100%;background:var(--card);border:1px solid var(--div);border-radius:8px;padding:11px 14px;color:var(--txt);font-size:14px;outline:none;}
+.formGroup input:focus{border-color:var(--gold);}
+.loginErr{color:var(--red);font-size:12px;margin-top:8px;}
+.btnLogin{width:100%;padding:13px;background:linear-gradient(135deg,var(--gold),var(--gold-l));border:none;border-radius:9px;color:#080604;font-size:15px;font-weight:700;margin-top:8px;}
+.btnLogin:hover{opacity:.9;}
+.btnLogin:disabled{opacity:.5;}
+
+/* ── HEADER ── */
+.hdr{background:var(--panel);border-bottom:1px solid var(--div);padding:0 20px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+.hdrBrand{display:flex;align-items:center;gap:10px;}
+.hdrLogo{width:36px;height:36px;border:2px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--gold);font-size:15px;}
+.hdrName{font-size:16px;font-weight:700;color:var(--gold-l);}
+.hdrCity{font-size:10px;color:var(--muted);}
+.hdrRight{display:flex;align-items:center;gap:8px;}
+.datePick{background:var(--card);border:1px solid var(--div);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:13px;outline:none;}
+.datePick:focus{border-color:var(--gold);}
+.btnRefresh{background:var(--card);border:1px solid var(--div);border-radius:7px;padding:7px 12px;color:var(--muted);font-size:14px;}
+.btnRefresh:hover{border-color:var(--gold);color:var(--gold-l);}
+.btnLogout{background:none;border:1px solid var(--div);border-radius:7px;padding:7px 12px;color:var(--muted);font-size:12px;}
+.btnLogout:hover{border-color:var(--red);color:var(--red);}
+
+/* ── SYNC BAR ── */
+.syncBar{background:var(--card);border-bottom:1px solid var(--div);padding:5px 20px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+.syncDot{width:7px;height:7px;border-radius:50%;}
+.green{background:var(--green);}
+.red{background:var(--red);}
+
+/* ── CONTENT ── */
+.content{padding:20px;max-width:1100px;margin:0 auto;}
+.sectionTitle{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;margin-top:24px;}
+.loading{text-align:center;padding:60px;color:var(--muted);font-size:16px;}
+.noData{text-align:center;padding:30px;color:var(--muted);font-size:13px;}
+
+/* ── KPI GRID ── */
+.kpiGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;}
+.kpi{background:var(--panel);border:1px solid var(--div);border-radius:10px;padding:18px 16px;}
+.kpi.green .kpiVal{color:var(--green);}
+.kpi.blue  .kpiVal{color:var(--blue);}
+.kpi.orange .kpiVal{color:var(--orange);}
+.kpiVal{font-size:24px;font-weight:700;color:var(--gold-l);line-height:1.2;}
+.kpiVal span{font-size:13px;font-weight:400;}
+.kpiLbl{font-size:11px;color:var(--muted);margin-top:5px;}
+.kpiSub{font-size:10px;color:var(--muted);margin-top:2px;}
+
+/* ── BAR CHART ── */
+.chartBox{background:var(--panel);border:1px solid var(--div);border-radius:10px;padding:18px;margin-bottom:4px;}
+.chartTitle{font-size:11px;color:var(--muted);font-weight:600;margin-bottom:14px;text-transform:uppercase;letter-spacing:1px;}
+.barChart{display:flex;align-items:flex-end;gap:8px;height:140px;}
+.barCol{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;}
+.barVal{font-size:9px;color:var(--muted);margin-bottom:4px;white-space:nowrap;}
+.barWrap{flex:1;width:100%;display:flex;align-items:flex-end;}
+.bar{width:100%;background:linear-gradient(180deg,var(--gold-l),var(--gold));border-radius:4px 4px 0 0;min-height:4px;transition:height .4s ease;}
+.barLbl{font-size:9px;color:var(--muted);margin-top:4px;text-align:center;white-space:nowrap;}
+
+/* ── TOP ITEMS ── */
+.topItem{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--div);}
+.topItem:last-child{border-bottom:none;}
+.topName{font-size:13px;min-width:140px;}
+.topBarWrap{flex:1;height:6px;background:var(--div);border-radius:3px;overflow:hidden;}
+.topBar{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-l));border-radius:3px;}
+.topQty{font-size:13px;font-weight:700;color:var(--gold-l);min-width:28px;text-align:right;}
+
+/* ── TABLE ── */
+.tableWrap{background:var(--panel);border:1px solid var(--div);border-radius:10px;overflow:auto;margin-bottom:40px;}
+.table{width:100%;border-collapse:collapse;font-size:13px;}
+.table th{text-align:left;color:var(--muted);font-weight:500;padding:10px 14px;border-bottom:1px solid var(--div);font-size:11px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;}
+.table td{padding:10px 14px;border-bottom:1px solid rgba(35,28,18,.5);white-space:nowrap;}
+.table tr:last-child td{border-bottom:none;}
+.table tr:hover td{background:var(--card);}
+.num{font-weight:700;color:var(--gold-l);}
+.bold{font-weight:700;}
+.muted{color:var(--muted);}
+
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.b_place{background:rgba(74,144,217,.12);color:var(--blue);}
+.b_take{background:rgba(61,184,122,.12);color:var(--green);}
+.b_del{background:rgba(232,136,42,.12);color:var(--orange);}
+.b_cash{background:rgba(200,145,58,.12);color:var(--gold-l);}
+.b_card{background:rgba(74,144,217,.12);color:var(--blue);}
+.b_mob{background:rgba(61,184,122,.12);color:var(--green);}
+
+@media(max-width:600px){
+  .hdrRight{gap:4px;}
+  .btnLogout{display:none;}
+  .kpiGrid{grid-template-columns:repeat(2,1fr);}
+}
