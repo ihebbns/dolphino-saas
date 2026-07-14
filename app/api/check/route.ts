@@ -45,7 +45,7 @@ export async function GET(req: Request) {
       return cors(NextResponse.json({
         ok: true,
         active: false,
-        message: `Licence suspendue.\n\nVeuillez régler votre solde pour réactiver l'application.\n\nContactez le développeur:\n📞 +216 XX XXX XXX`
+        message: `Licence suspendue.\n\nVeuillez régler votre solde pour réactiver l'application.\n\nContactez le développeur:\n📞 +216 52 050 581`
       }))
     }
 

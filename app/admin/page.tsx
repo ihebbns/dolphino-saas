@@ -245,7 +245,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
           <div style={{ color:'#E8A84C', fontWeight:'700', marginBottom:'8px' }}>📋 Instructions</div>
           <div>• <b style={{color:'#F0E8D8'}}>Suspendre</b> → l'app client affiche "Application Suspendue" dans les 30 minutes</div>
           <div>• <b style={{color:'#F0E8D8'}}>Réactiver</b> → l'app client reprend normalement au prochain cycle</div>
-          <div>• <b style={{color:'#F0E8D8'}}>Clé API</b> → à configurer dans le fichier EXE du client (<code>SYNC_API_KEY</code>)</div>
+          <div>• <b style={{color:'#F0E8D8'}}>Contact</b>: 📞 +216 52 050 581</div>
           <div style={{marginTop:'8px'}}>URL Admin: <code style={{color:'#E8A84C'}}>dolphino-saas.vercel.app/admin</code></div>
         </div>
 
