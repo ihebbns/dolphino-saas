@@ -63,16 +63,36 @@ export async function GET(req: Request) {
   }
   const topItems = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,qty])=>({name,qty}))
 
-  // Recent
+  // Recent sales
   const recent = await sql`
     SELECT num, sale_time, order_type, grand::float, pay_method,
            cashier, disc_pct, jsonb_array_length(items) AS item_count
     FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date
     ORDER BY num DESC LIMIT 50`
 
+  // Sessions history (last 10)
+  const sessions = await sql`
+    SELECT
+      business_date::text AS day,
+      cashier,
+      closed_at,
+      fond_initial::float,
+      total_sales::float,
+      orders_count,
+      cash_sales::float,
+      card_sales::float,
+      mobile_sales::float,
+      montant_compte::float,
+      theorique::float,
+      ecart::float
+    FROM sessions
+    WHERE restaurant_id=${rid}
+    ORDER BY business_date DESC, closed_at DESC
+    LIMIT 10`
+
   return cors(NextResponse.json({
     ok:true,
     restaurant:{ name:rest.name, city:rest.city },
-    date, kpis, weekly, topItems, recent
+    date, kpis, weekly, topItems, recent, sessions
   }))
 }

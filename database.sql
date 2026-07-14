@@ -55,6 +55,47 @@ CREATE TABLE IF NOT EXISTS stock (
 
 CREATE INDEX IF NOT EXISTS idx_stock_restaurant ON stock(restaurant_id);
 
+-- ── DAY CLOSURES ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS day_closures (
+  id            SERIAL PRIMARY KEY,
+  restaurant_id INTEGER       NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  business_date DATE          NOT NULL,
+  closed_at     TIMESTAMPTZ   DEFAULT NOW(),
+  total         NUMERIC(10,3) DEFAULT 0,
+  orders_count  INTEGER       DEFAULT 0,
+  cash_total    NUMERIC(10,3) DEFAULT 0,
+  card_total    NUMERIC(10,3) DEFAULT 0,
+  mobile_total  NUMERIC(10,3) DEFAULT 0,
+  fond_initial  NUMERIC(10,3) DEFAULT 0,
+  montant_compte NUMERIC(10,3) DEFAULT 0,
+  theorique     NUMERIC(10,3) DEFAULT 0,
+  ecart         NUMERIC(10,3) DEFAULT 0,
+  cashier       VARCHAR(80)   DEFAULT '',
+  UNIQUE (restaurant_id, business_date)
+);
+
+-- ── SESSIONS (one per service/shift) ─────────────────
+CREATE TABLE IF NOT EXISTS sessions (
+  id             SERIAL PRIMARY KEY,
+  restaurant_id  INTEGER       NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  business_date  DATE          NOT NULL,
+  cashier        VARCHAR(80)   DEFAULT '',
+  opened_at      TIMESTAMPTZ   DEFAULT NOW(),
+  closed_at      TIMESTAMPTZ,
+  fond_initial   NUMERIC(10,3) DEFAULT 0,
+  total_sales    NUMERIC(10,3) DEFAULT 0,
+  orders_count   INTEGER       DEFAULT 0,
+  cash_sales     NUMERIC(10,3) DEFAULT 0,
+  card_sales     NUMERIC(10,3) DEFAULT 0,
+  mobile_sales   NUMERIC(10,3) DEFAULT 0,
+  montant_compte NUMERIC(10,3),
+  theorique      NUMERIC(10,3),
+  ecart          NUMERIC(10,3),
+  UNIQUE (restaurant_id, business_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_restaurant ON sessions(restaurant_id);
+
 -- Test restaurant — password is: dolphino123
 INSERT INTO restaurants (name, owner_email, password_hash, api_key, city, phone, plan)
 VALUES (

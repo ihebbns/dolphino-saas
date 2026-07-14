@@ -224,6 +224,39 @@ function Dashboard({ apiKey, restInfo, onLogout }: {
                   </table>
               }
             </div>
+
+            {/* Sessions / Closures history */}
+            {data.sessions && data.sessions.length > 0 && <>
+              <div className={s.sectionTitle}>🔒 Historique des clôtures</div>
+              <div className={s.tableWrap} style={{marginBottom:'40px'}}>
+                <table className={s.table}>
+                  <thead><tr>
+                    <th>Date</th><th>Caissier</th><th>Ventes</th>
+                    <th>Espèces</th><th>Fond initial</th><th>Théorique</th><th>Compté</th><th>Écart</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.sessions.map((r: any, i: number) => {
+                      const ecart = parseFloat(r.ecart)
+                      const ecartOk = ecart >= 0
+                      return (
+                        <tr key={i}>
+                          <td className={s.muted}>{r.day}</td>
+                          <td>{r.cashier}</td>
+                          <td className={s.bold}>{f(r.total_sales)} DT</td>
+                          <td>{f(r.cash_sales)} DT</td>
+                          <td>{f(r.fond_initial)} DT</td>
+                          <td style={{color:'var(--gold-l)',fontWeight:700}}>{f(r.theorique)} DT</td>
+                          <td>{r.montant_compte != null ? f(r.montant_compte)+' DT' : '—'}</td>
+                          <td style={{fontWeight:700, color: r.ecart == null ? 'var(--muted)' : ecartOk ? 'var(--green)' : 'var(--red)'}}>
+                            {r.ecart != null ? (ecartOk?'+':'')+f(r.ecart)+' DT' : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>}
           </>
         }
       </div>
