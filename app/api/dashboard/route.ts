@@ -63,18 +63,20 @@ export async function GET(req: Request) {
   }
   const topItems = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,qty])=>({name,qty}))
 
-  // Recent sales
+  // Recent sales — include full items for click-to-detail
   const recent = await sql`
     SELECT num, sale_time, order_type, grand::float, pay_method,
-           cashier, disc_pct, jsonb_array_length(items) AS item_count
+           cashier, disc_pct, cli_name, cli_tel,
+           items, jsonb_array_length(items) AS item_count
     FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date
     ORDER BY num DESC LIMIT 50`
 
-  // Sessions history (last 10)
+  // Sessions — filtered by selected date
   const sessions = await sql`
     SELECT
       business_date::text AS day,
       cashier,
+      opened_at,
       closed_at,
       fond_initial::float,
       total_sales::float,
@@ -87,8 +89,8 @@ export async function GET(req: Request) {
       ecart::float
     FROM sessions
     WHERE restaurant_id=${rid}
-    ORDER BY business_date DESC, closed_at DESC
-    LIMIT 10`
+      AND business_date = ${date}::date
+    ORDER BY closed_at DESC`
 
   return cors(NextResponse.json({
     ok:true,

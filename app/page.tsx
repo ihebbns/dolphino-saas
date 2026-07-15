@@ -226,8 +226,60 @@ function TopProducts({ items, filter, onFilter }: { items: any[], filter: string
   )
 }
 
+// ════════════════ ORDER DETAIL MODAL ════════════════
+function OrderDetail({ order, onClose }: { order: any, onClose: ()=>void }) {
+  const items: any[] = order.items || []
+  const typeMap: any = { place:'🏠 Sur place', take:'🥡 Emporter', del:'🛵 Livraison' }
+  const payMap:  any = { cash:'💵 Espèces', card:'💳 Carte', mob:'📱 Mobile' }
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'var(--panel)',border:'1px solid var(--div)',borderRadius:16,padding:28,width:'100%',maxWidth:480,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 24px 60px rgba(0,0,0,.5)'}}>
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <div>
+            <div style={{fontSize:28,fontWeight:800,color:'var(--gold-l)'}}>#{String(order.num).padStart(3,'0')}</div>
+            <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{order.sale_time} · {order.cashier}</div>
+          </div>
+          <button onClick={onClose} style={{background:'var(--card)',border:'1px solid var(--div)',borderRadius:8,padding:'6px 14px',color:'var(--muted)',fontSize:13,cursor:'pointer'}}>✕ Fermer</button>
+        </div>
+        {/* Info */}
+        <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+          <span style={{padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:'var(--blue-dim)',color:'var(--blue)'}}>{typeMap[order.order_type]||order.order_type}</span>
+          <span style={{padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:'var(--gold-dim)',color:'var(--gold-l)'}}>{payMap[order.pay_method]||order.pay_method}</span>
+          {order.disc_pct > 0 && <span style={{padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:'var(--red-dim)',color:'var(--red)'}}>Remise -{order.disc_pct}%</span>}
+        </div>
+        {order.cli_name && <div style={{padding:'8px 12px',background:'var(--card)',borderRadius:8,fontSize:13,marginBottom:12}}>👤 {order.cli_name}{order.cli_tel ? ` · 📞 ${order.cli_tel}` : ''}</div>}
+        {/* Items */}
+        <div style={{fontSize:11,color:'var(--muted)',textTransform:'uppercase',letterSpacing:1,fontWeight:600,marginBottom:8}}>Articles</div>
+        <div style={{display:'flex',flexDirection:'column',gap:2,marginBottom:16}}>
+          {items.length === 0 ? <div style={{color:'var(--muted)',fontSize:13,padding:'12px 0'}}>Détails non disponibles</div> :
+            items.map((it:any, i:number) => (
+              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'10px 12px',background:'var(--card)',borderRadius:8}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600}}>{itemEmoji(it.name||'')} {it.qty}× {it.name}</div>
+                  {it.variant && <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Taille: {it.variant}</div>}
+                  {it.note && <div style={{fontSize:11,color:'var(--orange)',marginTop:2}}>📝 {it.note}</div>}
+                </div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--gold-l)',flexShrink:0,marginLeft:12}}>{f(it.p * it.qty)} DT</div>
+              </div>
+            ))
+          }
+        </div>
+        {/* Total */}
+        <div style={{borderTop:'1px solid var(--div)',paddingTop:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:20,fontWeight:800}}>
+            <span>TOTAL</span>
+            <span style={{color:'var(--gold-l)'}}>{f(order.grand)} DT</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ════════════════ ORDERS TABLE ════════════════
 function OrdersTable({ orders, search, onSearch }: { orders: any[], search: string, onSearch:(s:string)=>void }) {
+  const [selected, setSelected] = useState<any>(null)
   const filtered = orders.filter((r:any) =>
     !search || r.cashier?.toLowerCase().includes(search.toLowerCase()) ||
     String(r.num).includes(search)
@@ -239,6 +291,7 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
 
   return (
     <>
+      {selected && <OrderDetail order={selected} onClose={()=>setSelected(null)}/>}
       <div className={s.filters}>
         <input className={s.filterSearch} placeholder="🔍 Rechercher par #, caissier..."
           value={search} onChange={e=>onSearch(e.target.value)}/>
@@ -254,7 +307,7 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
                 </tr></thead>
                 <tbody>
                   {filtered.map((r:any, i:number) => (
-                    <tr key={i}>
+                    <tr key={i} onClick={()=>setSelected(r)} style={{cursor:'pointer'}}>
                       <td className={s.num}>#{String(r.num).padStart(3,'0')}</td>
                       <td className={s.muted}>{r.sale_time}</td>
                       <td><span className={`${s.badge} ${typeCls[r.order_type]||s.bPlace}`}>{typeMap[r.order_type]||r.order_type}</span></td>
@@ -286,7 +339,7 @@ function SessionsSection({ sessions }: { sessions: any[] }) {
         const cardCls  = ecart === null ? s.sessionCardNeutral : ecartOk ? s.sessionCardOk : s.sessionCardWarn
         return (
           <div key={i} className={`${s.sessionCard} ${cardCls}`}>
-            <div className={s.sessionDate}>{r.day} · {r.cashier}</div>
+            <div className={s.sessionDate}>{r.day} · Ouverture: {r.opened_at ? new Date(r.opened_at).toLocaleTimeString('fr-TN') : '—'} · Clôture: {r.closed_at ? new Date(r.closed_at).toLocaleTimeString('fr-TN') : '—'}</div>
             <div className={s.sessionRow}><span>💰 Fond initial</span><span>{f(r.fond_initial)} DT</span></div>
             <div className={s.sessionRow}><span>🧾 Ventes totales</span><span className={s.bold}>{f(r.total_sales)} DT</span></div>
             <div className={s.sessionRow}><span>💵 Espèces</span><span>{f(r.cash_sales)} DT</span></div>
