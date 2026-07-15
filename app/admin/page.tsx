@@ -24,8 +24,8 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
   return (
     <div style={{ minHeight:'100vh', background:'#080604', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <form onSubmit={submit} style={{ background:'#0F0C08', border:'1px solid #231C12', borderRadius:'16px', padding:'40px 32px', width:'320px', textAlign:'center' }}>
-        <div style={{ fontSize:'42px', marginBottom:'8px' }}>🐬</div>
-        <div style={{ fontFamily:'serif', fontSize:'22px', color:'#E8A84C', marginBottom:'4px' }}>DOLPHINO</div>
+        <div style={{ fontSize:'42px', marginBottom:'8px' }}>⚡</div>
+        <div style={{ fontFamily:'serif', fontSize:'22px', color:'#E8A84C', marginBottom:'4px' }}>SERVIO OS</div>
         <div style={{ fontSize:'11px', color:'#7A6E5F', letterSpacing:'2px', textTransform:'uppercase', marginBottom:'28px' }}>Admin Panel</div>
         <input
           type="password"
@@ -163,7 +163,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
     <div style={s.wrap}>
       {/* Header */}
       <div style={s.hdr}>
-        <div style={s.brand}>🐬 DOLPHINO — Admin Panel</div>
+        <div style={s.brand}>⚡ SERVIO OS — Admin Panel</div>
         <div style={{ display:'flex', gap:'12px', alignItems:'center' }}>
           {msg && <span style={{ fontSize:'12px', color: msg.startsWith('✓') ? '#3DB87A' : '#E05252' }}>{msg}</span>}
           <button onClick={loadClients} style={{ background:'#181310', border:'1px solid #231C12', borderRadius:'6px', padding:'6px 12px', color:'#7A6E5F', cursor:'pointer', fontSize:'12px' }}>↻ Actualiser</button>
@@ -200,7 +200,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
           {showAdd && (
             <form onSubmit={addClient}>
               <div style={s.formGrid}>
-                <div><label style={s.label}>Nom restaurant *</label><input style={s.inp} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Dolphino Restaurant" /></div>
+                <div><label style={s.label}>Nom restaurant *</label><input style={s.inp} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Fast Food Sami" /></div>
                 <div><label style={s.label}>Email *</label><input style={s.inp} type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="owner@email.com" /></div>
                 <div><label style={s.label}>Mot de passe *</label><input style={s.inp} value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="••••••••" /></div>
                 <div>

@@ -68,8 +68,8 @@ function Login({ onLogin }: { onLogin: (d: any) => void }) {
         {theme==='dark'?'☀️':'🌙'}
       </button>
       <form className={s.loginBox} onSubmit={submit}>
-        <div className={s.loginLogo}>🐬</div>
-        <div className={s.loginBrand}>DOLPHINO</div>
+        <div className={s.loginLogo}>⚡</div>
+        <div className={s.loginBrand}>SERVIO OS</div>
         <div className={s.loginSub}>Dashboard Propriétaire</div>
         <div className={s.formGroup}>
           <label>Email</label>
@@ -404,8 +404,8 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
       {/* Header */}
       <header className={s.hdr}>
         <div className={s.hdrBrand}>
-          <div className={s.hdrLogo}>🐬</div>
-          <div><div className={s.hdrName}>{restInfo.name}</div><div className={s.hdrCity}>{restInfo.city}</div></div>
+          <div className={s.hdrLogo}>⚡</div>
+          <div><div className={s.hdrName}>SERVIO OS</div><div className={s.hdrCity}>{restInfo.name} · {restInfo.city}</div></div>
         </div>
         <div className={s.hdrRight}>
           <input type="date" className={s.datePick} value={date} max={today()} onChange={e=>setDate(e.target.value)}/>

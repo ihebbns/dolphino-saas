@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Dolphino POS — Dashboard',
-  description: 'Restaurant POS Dashboard',
+  title: 'Servio OS — Dashboard',
+  description: 'Restaurant POS Dashboard by Servio OS',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
