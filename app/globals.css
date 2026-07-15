@@ -1,13 +1,62 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+
 :root{
-  --bg:#080604;--panel:#0F0C08;--card:#181310;
-  --gold:#C8913A;--gold-l:#E8A84C;--gold-dim:rgba(200,145,58,.1);
-  --txt:#F0E8D8;--muted:#7A6E5F;--div:#231C12;
-  --green:#3DB87A;--red:#E05252;--blue:#4A90D9;--orange:#E8882A;
+  --bg:#0A0807;
+  --panel:#100D0A;
+  --card:#1A1510;
+  --card-h:#221C14;
+  --gold:#C8913A;
+  --gold-l:#E8A84C;
+  --gold-dim:rgba(200,145,58,.12);
+  --txt:#F0E8D8;
+  --muted:#7A6E5F;
+  --div:#2A2018;
+  --green:#3DB87A;
+  --green-dim:rgba(61,184,122,.12);
+  --red:#E05252;
+  --red-dim:rgba(224,82,82,.12);
+  --blue:#4A90D9;
+  --blue-dim:rgba(74,144,217,.12);
+  --orange:#E8882A;
+  --orange-dim:rgba(232,136,42,.12);
+  --purple:#9B6FD4;
+  --shadow:0 4px 24px rgba(0,0,0,.4);
+  --radius:12px;
+  --transition:all .2s ease;
 }
+
+[data-theme="light"]{
+  --bg:#F4F0EA;
+  --panel:#FFFFFF;
+  --card:#F8F5F0;
+  --card-h:#EDE8E0;
+  --gold:#A06820;
+  --gold-l:#B8782A;
+  --gold-dim:rgba(160,104,32,.08);
+  --txt:#1A1208;
+  --muted:#8A7A6A;
+  --div:#E0D8CC;
+  --green:#1E8A55;
+  --green-dim:rgba(30,138,85,.08);
+  --red:#C03030;
+  --red-dim:rgba(192,48,48,.08);
+  --blue:#2060A8;
+  --blue-dim:rgba(32,96,168,.08);
+  --orange:#B06010;
+  --orange-dim:rgba(176,96,16,.08);
+  --purple:#6840A8;
+  --shadow:0 4px 24px rgba(0,0,0,.08);
+}
+
 body{
-  font-family:system-ui,-apple-system,'Inter',sans-serif;
-  background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;
+  font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
+  background:var(--bg);
+  color:var(--txt);
+  min-height:100vh;
+  font-size:14px;
+  line-height:1.5;
+  transition:background .3s,color .3s;
 }
-input,button,select{font-family:inherit;}
+input,button,select,textarea{font-family:inherit;}
 button{cursor:pointer;}
+a{color:inherit;text-decoration:none;}

@@ -1,10 +1,42 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import s from './dashboard.module.css'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://dolphino-saas.vercel.app'
-const f   = (n: any) => Number(n).toFixed(3)
+const f   = (n: any) => Number(n || 0).toFixed(3)
+const fmt = (n: any) => Number(n || 0).toLocaleString('fr-TN', { minimumFractionDigits: 3 })
 const today = () => new Date().toISOString().split('T')[0]
+
+// ── Theme ──────────────────────────────────────────────
+function useTheme() {
+  const [theme, setTheme] = useState<'dark'|'light'>('dark')
+  useEffect(() => {
+    const saved = localStorage.getItem('d_theme') as 'dark'|'light' || 'dark'
+    setTheme(saved)
+    document.documentElement.setAttribute('data-theme', saved)
+  }, [])
+  function toggle() {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    localStorage.setItem('d_theme', next)
+    document.documentElement.setAttribute('data-theme', next)
+  }
+  return { theme, toggle }
+}
+
+// ── Category emoji map ────────────────────────────────
+const CAT_EMOJI: Record<string,string> = {
+  Plat:'🍽️', Sandwichs:'🥪', Pizza:'🍕', Makloub:'🌯',
+  Libanais:'🫔', Baguette:'🥖', Tacos:'🌮', Panini:'🥙',
+  Chapati:'🥙', Brik:'🥟', Boisson:'🥤'
+}
+function itemEmoji(name: string): string {
+  const cat = Object.keys(CAT_EMOJI).find(c => name.startsWith(c + ' ') || name === c)
+  return cat ? CAT_EMOJI[cat] : '🍽️'
+}
+function itemCategory(name: string): string {
+  return Object.keys(CAT_EMOJI).find(c => name.startsWith(c + ' ')) || ''
+}
 
 // ════════════════ LOGIN ════════════════
 function Login({ onLogin }: { onLogin: (d: any) => void }) {
@@ -12,14 +44,14 @@ function Login({ onLogin }: { onLogin: (d: any) => void }) {
   const [pass,    setPass]    = useState('')
   const [err,     setErr]     = useState('')
   const [loading, setLoading] = useState(false)
+  const { theme, toggle }     = useTheme()
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setLoading(true)
     try {
       const res  = await fetch(`${API}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: pass }),
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ email, password: pass })
       })
       const data = await res.json()
       if (!data.ok) { setErr(data.error || 'Erreur'); setLoading(false); return }
@@ -32,233 +64,399 @@ function Login({ onLogin }: { onLogin: (d: any) => void }) {
 
   return (
     <div className={s.loginWrap}>
+      <button onClick={toggle} style={{position:'absolute',top:16,right:16,background:'none',border:'none',fontSize:20,cursor:'pointer',opacity:.6}}>
+        {theme==='dark'?'☀️':'🌙'}
+      </button>
       <form className={s.loginBox} onSubmit={submit}>
         <div className={s.loginLogo}>🐬</div>
         <div className={s.loginBrand}>DOLPHINO</div>
         <div className={s.loginSub}>Dashboard Propriétaire</div>
         <div className={s.formGroup}>
           <label>Email</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="votre@email.com" required autoComplete="email" />
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com" required autoComplete="email"/>
         </div>
         <div className={s.formGroup}>
           <label>Mot de passe</label>
-          <input type="password" value={pass} onChange={e => setPass(e.target.value)}
-            placeholder="••••••••" required />
+          <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" required/>
         </div>
-        {err && <div className={s.loginErr}>{err}</div>}
+        {err && <div className={s.loginErr}>⚠ {err}</div>}
         <button className={s.btnLogin} disabled={loading} type="submit">
-          {loading ? 'Connexion...' : 'Se connecter'}
+          {loading ? <span style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8}}><span className={s.spinner}/> Connexion...</span> : 'Se connecter →'}
         </button>
       </form>
     </div>
   )
 }
 
+// ════════════════ KPI CARDS ════════════════
+function KpiCards({ k }: { k: any }) {
+  const cards = [
+    { icon:'💰', val: fmt(k.total_revenue), unit:'DT', lbl:'Total encaissé',    color:'kpiCardGold'   },
+    { icon:'🧾', val: k.total_orders,        unit:'',   lbl:'Commandes',         color:'kpiCardGreen'  },
+    { icon:'📊', val: fmt(k.avg_ticket),      unit:'DT', lbl:'Ticket moyen',      color:'kpiCardBlue'   },
+    { icon:'💵', val: fmt(k.cash_total),      unit:'DT', lbl:'Espèces',           color:'kpiCardOrange' },
+    { icon:'💳', val: fmt(+k.card_total + +k.mobile_total), unit:'DT', lbl:'Carte / Mobile', color:'kpiCardPurple' },
+    { icon:'🏠', val: k.sur_place, unit:'', lbl:'Sur place',
+      sub: `${k.emporter} emporter · ${k.livraison} livraison`, color:'kpiCardGold' },
+  ]
+  return (
+    <div className={s.kpiGrid}>
+      {cards.map((c,i) => (
+        <div key={i} className={`${s.kpiCard} ${(s as any)[c.color]}`}>
+          <div className={s.kpiIcon}>{c.icon}</div>
+          <div className={s.kpiVal}>{c.val}{c.unit && <span> {c.unit}</span>}</div>
+          <div className={s.kpiLbl}>{c.lbl}</div>
+          {c.sub && <div className={s.kpiSub}>{c.sub}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ════════════════ BAR CHART ════════════════
+function BarChart({ weekly, selectedDate }: { weekly: any[], selectedDate: string }) {
+  const max = Math.max(...weekly.map((r:any) => +r.revenue), 1)
+  return (
+    <div className={s.barChart}>
+      {weekly.map((r:any, i:number) => {
+        const d   = new Date(r.day + 'T12:00')
+        const lbl = d.toLocaleDateString('fr-TN', { weekday:'short', day:'numeric' })
+        const pct = Math.round(+r.revenue / max * 100)
+        const isToday = r.day === selectedDate
+        return (
+          <div key={i} className={s.barCol} title={`${r.day}: ${f(r.revenue)} DT — ${r.orders} cmd`}>
+            <div className={s.barVal}>{+r.revenue > 0 ? f(r.revenue) : ''}</div>
+            <div className={s.barWrap}>
+              <div className={`${s.bar} ${isToday ? s.barToday : ''}`} style={{ height:`${Math.max(pct,3)}%` }}/>
+            </div>
+            <div className={s.barLbl} style={isToday?{color:'var(--gold-l)',fontWeight:700}:{}}>{lbl}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ════════════════ PAYMENT DONUT ════════════════
+function PaymentDonut({ k }: { k: any }) {
+  const cash   = +k.cash_total || 0
+  const card   = +k.card_total || 0
+  const mobile = +k.mobile_total || 0
+  const total  = cash + card + mobile || 1
+  const items  = [
+    { label:'Espèces', val:cash,   pct:Math.round(cash/total*100),   color:'var(--gold-l)' },
+    { label:'Carte',   val:card,   pct:Math.round(card/total*100),   color:'var(--blue)'   },
+    { label:'Mobile',  val:mobile, pct:Math.round(mobile/total*100), color:'var(--green)'  },
+  ].filter(i => i.val > 0)
+
+  let offset = 25
+  const radius = 40, cx = 60, cy = 60, circ = 2 * Math.PI * radius
+
+  return (
+    <div className={s.donutWrap}>
+      <svg viewBox="0 0 120 120" className={s.donut}>
+        <circle cx={cx} cy={cy} r={radius} fill="none" stroke="var(--div)" strokeWidth="16"/>
+        {items.map((it, i) => {
+          const dash = (it.pct / 100) * circ
+          const el = (
+            <circle key={i} cx={cx} cy={cy} r={radius} fill="none"
+              stroke={it.color} strokeWidth="16"
+              strokeDasharray={`${dash} ${circ - dash}`}
+              strokeDashoffset={-offset * circ / 100}
+              style={{transition:'stroke-dasharray .5s ease'}}
+              transform={`rotate(-90 ${cx} ${cy})`}
+            />
+          )
+          offset += it.pct
+          return el
+        })}
+        <text x={cx} y={cy-6} textAnchor="middle" fontSize="11" fill="var(--muted)">Total</text>
+        <text x={cx} y={cy+10} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--txt)">{f(total)} DT</text>
+      </svg>
+      <div className={s.donutLegend}>
+        {items.map((it,i) => (
+          <div key={i} className={s.donutItem}>
+            <div className={s.donutDot} style={{background:it.color}}/>
+            <span className={s.donutLabel}>{it.label}</span>
+            <span className={s.donutVal}>{f(it.val)} DT</span>
+            <span style={{fontSize:10,color:'var(--muted)'}}>{it.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ════════════════ TOP PRODUCTS ════════════════
+function TopProducts({ items, filter, onFilter }: { items: any[], filter: string, onFilter:(f:string)=>void }) {
+  const cats = useMemo(() => ['Tous', ...Array.from(new Set(items.map((it:any) => itemCategory(it.name)).filter(Boolean)))], [items])
+  const filtered = filter === 'Tous' ? items : items.filter((it:any) => it.name.startsWith(filter + ' '))
+  const max = filtered[0]?.qty || 1
+
+  return (
+    <>
+      <div className={s.filters}>
+        {cats.map(c => (
+          <button key={c} className={`${s.filterBtn} ${filter===c?s.filterBtnActive:''}`} onClick={()=>onFilter(c)}>
+            {CAT_EMOJI[c] || ''} {c}
+          </button>
+        ))}
+      </div>
+      <div className={s.chartBox}>
+        {filtered.length === 0
+          ? <div className={s.empty}><div className={s.emptyIcon}>📊</div><div className={s.emptyText}>Aucune vente</div></div>
+          : <div className={s.topList}>
+              {filtered.slice(0,15).map((it:any, i:number) => (
+                <div key={i} className={s.topItem}>
+                  <div className={`${s.topRank} ${i===0?s.topRank1:i===1?s.topRank2:i===2?s.topRank3:s.topRankN}`}>
+                    {i < 3 ? ['🥇','🥈','🥉'][i] : i+1}
+                  </div>
+                  <div className={s.topEmoji}>{itemEmoji(it.name)}</div>
+                  <div className={s.topName}>{it.name}</div>
+                  <div className={s.topBarWrap}>
+                    <div className={s.topBar} style={{width:`${Math.round(it.qty/max*100)}%`}}/>
+                  </div>
+                  <div className={s.topQty}>{it.qty} <span style={{fontSize:10,color:'var(--muted)',fontWeight:400}}>fois</span></div>
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+    </>
+  )
+}
+
+// ════════════════ ORDERS TABLE ════════════════
+function OrdersTable({ orders, search, onSearch }: { orders: any[], search: string, onSearch:(s:string)=>void }) {
+  const filtered = orders.filter((r:any) =>
+    !search || r.cashier?.toLowerCase().includes(search.toLowerCase()) ||
+    String(r.num).includes(search)
+  )
+  const typeMap: any = { place:'🏠 Place', take:'🥡 Emporter', del:'🛵 Livraison' }
+  const payMap:  any = { cash:'💵 Espèces', card:'💳 Carte', mob:'📱 Mobile' }
+  const typeCls: any = { place:s.bPlace, take:s.bTake, del:s.bDel }
+  const payCls:  any = { cash:s.bCash, card:s.bCard, mob:s.bMob }
+
+  return (
+    <>
+      <div className={s.filters}>
+        <input className={s.filterSearch} placeholder="🔍 Rechercher par #, caissier..."
+          value={search} onChange={e=>onSearch(e.target.value)}/>
+        <span style={{fontSize:12,color:'var(--muted)'}}>{filtered.length} commandes</span>
+      </div>
+      <div className={s.tableWrap}>
+        <div className={s.tableScroll}>
+          {filtered.length === 0
+            ? <div className={s.empty}><div className={s.emptyIcon}>🧾</div><div className={s.emptyText}>Aucune commande</div></div>
+            : <table className={s.table}>
+                <thead><tr>
+                  <th>#</th><th>Heure</th><th>Type</th><th>Articles</th><th>Total</th><th>Paiement</th><th>Caissier</th>
+                </tr></thead>
+                <tbody>
+                  {filtered.map((r:any, i:number) => (
+                    <tr key={i}>
+                      <td className={s.num}>#{String(r.num).padStart(3,'0')}</td>
+                      <td className={s.muted}>{r.sale_time}</td>
+                      <td><span className={`${s.badge} ${typeCls[r.order_type]||s.bPlace}`}>{typeMap[r.order_type]||r.order_type}</span></td>
+                      <td>{r.item_count} art.{r.disc_pct>0?<span style={{color:'var(--red)',fontSize:11}}> -{r.disc_pct}%</span>:null}</td>
+                      <td className={s.bold}>{f(r.grand)} DT</td>
+                      <td><span className={`${s.badge} ${payCls[r.pay_method]||s.bCash}`}>{payMap[r.pay_method]||r.pay_method}</span></td>
+                      <td className={s.muted}>{r.cashier}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+          }
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ════════════════ SESSIONS TABLE ════════════════
+function SessionsSection({ sessions }: { sessions: any[] }) {
+  if (!sessions || sessions.length === 0) return (
+    <div className={s.empty}><div className={s.emptyIcon}>🔒</div><div className={s.emptyText}>Aucune clôture enregistrée</div></div>
+  )
+  return (
+    <div className={s.sessionGrid}>
+      {sessions.map((r:any, i:number) => {
+        const ecart    = r.ecart != null ? parseFloat(r.ecart) : null
+        const ecartOk  = ecart === null || ecart >= 0
+        const cardCls  = ecart === null ? s.sessionCardNeutral : ecartOk ? s.sessionCardOk : s.sessionCardWarn
+        return (
+          <div key={i} className={`${s.sessionCard} ${cardCls}`}>
+            <div className={s.sessionDate}>{r.day} · {r.cashier}</div>
+            <div className={s.sessionRow}><span>💰 Fond initial</span><span>{f(r.fond_initial)} DT</span></div>
+            <div className={s.sessionRow}><span>🧾 Ventes totales</span><span className={s.bold}>{f(r.total_sales)} DT</span></div>
+            <div className={s.sessionRow}><span>💵 Espèces</span><span>{f(r.cash_sales)} DT</span></div>
+            <div className={s.sessionRow}><span>💳 Carte/Mobile</span><span>{f(+r.card_sales + +r.mobile_sales)} DT</span></div>
+            <div className={s.sessionRow}><span>📊 Commandes</span><span>{r.orders_count}</span></div>
+            {r.theorique != null && <div className={s.sessionRow}><span>💼 Théorique</span><span style={{color:'var(--gold-l)',fontWeight:700}}>{f(r.theorique)} DT</span></div>}
+            {r.montant_compte != null && <div className={s.sessionRow}><span>🧮 Compté</span><span>{f(r.montant_compte)} DT</span></div>}
+            {ecart !== null && (
+              <div className={`${s.ecartBig} ${ecartOk ? s.ecartBigOk : s.ecartBigWarn}`}>
+                Écart {ecartOk ? '+' : ''}{f(ecart)} DT {ecart===0?'✅':ecartOk?'⬆':'⚠'}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ════════════════ DASHBOARD ════════════════
-function Dashboard({ apiKey, restInfo, onLogout }: {
-  apiKey: string; restInfo: any; onLogout: () => void
-}) {
-  const [date,    setDate]    = useState(today())
-  const [data,    setData]    = useState<any>(null)
-  const [syncMsg, setSyncMsg] = useState('Chargement...')
-  const [online,  setOnline]  = useState(true)
+function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any; onLogout:()=>void }) {
+  const [date,       setDate]       = useState(today())
+  const [data,       setData]       = useState<any>(null)
+  const [loading,    setLoading]    = useState(false)
+  const [online,     setOnline]     = useState(true)
+  const [syncMsg,    setSyncMsg]    = useState('')
+  const [activeTab,  setActiveTab]  = useState('overview')
+  const [catFilter,  setCatFilter]  = useState('Tous')
+  const [orderSearch,setOrderSearch]= useState('')
+  const { theme, toggle }           = useTheme()
 
   const load = useCallback(async (d: string) => {
-    setSyncMsg('Actualisation...')
+    setLoading(true); setSyncMsg('Actualisation...')
     try {
-      const res = await fetch(`${API}/api/dashboard?date=${d}&key=${apiKey}`)
+      const res  = await fetch(`${API}/api/dashboard?date=${d}&key=${apiKey}`)
       if (res.status === 401 || res.status === 403) { onLogout(); return }
       const json = await res.json()
-      if (!json.ok) { setSyncMsg('Erreur: ' + json.error); return }
+      if (!json.ok) { setSyncMsg('Erreur: ' + json.error); setLoading(false); return }
       setData(json); setOnline(true)
-      setSyncMsg(`Mis à jour: ${new Date().toLocaleTimeString('fr-TN')}`)
+      setSyncMsg(`↻ ${new Date().toLocaleTimeString('fr-TN')}`)
     } catch { setOnline(false); setSyncMsg('Hors ligne') }
+    setLoading(false)
   }, [apiKey, onLogout])
 
   useEffect(() => { load(date) }, [date, load])
-  useEffect(() => {
-    const id = setInterval(() => load(date), 120000)
-    return () => clearInterval(id)
-  }, [date, load])
+  useEffect(() => { const id = setInterval(() => load(date), 120000); return () => clearInterval(id) }, [date, load])
+
+  const tabs = [
+    { id:'overview',  label:'📊 Vue d\'ensemble' },
+    { id:'products',  label:'🏆 Produits'         },
+    { id:'orders',    label:'🧾 Commandes'         },
+    { id:'sessions',  label:'🔒 Caisses'           },
+  ]
 
   const k = data?.kpis
+  const dateLabel = new Date(date + 'T12:00').toLocaleDateString('fr-TN', {
+    weekday:'long', day:'numeric', month:'long', year:'numeric'
+  })
 
   return (
-    <div>
+    <div className={s.appWrap}>
       {/* Header */}
       <header className={s.hdr}>
         <div className={s.hdrBrand}>
-          <div className={s.hdrLogo}>D</div>
-          <div>
-            <div className={s.hdrName}>{restInfo.name}</div>
-            <div className={s.hdrCity}>{restInfo.city}</div>
-          </div>
+          <div className={s.hdrLogo}>🐬</div>
+          <div><div className={s.hdrName}>{restInfo.name}</div><div className={s.hdrCity}>{restInfo.city}</div></div>
         </div>
         <div className={s.hdrRight}>
-          <input type="date" className={s.datePick} value={date}
-            max={today()} onChange={e => setDate(e.target.value)} />
-          <button className={s.btnRefresh} onClick={() => load(date)}>↻</button>
-          <button className={s.btnLogout}  onClick={onLogout}>Déconnecter</button>
+          <input type="date" className={s.datePick} value={date} max={today()} onChange={e=>setDate(e.target.value)}/>
+          <button className={s.btnIcon} onClick={()=>load(date)} title="Actualiser">↻</button>
+          <button className={s.btnIcon} onClick={toggle} title="Thème">{theme==='dark'?'☀️':'🌙'}</button>
+          <button className={s.btnLogout} onClick={onLogout}><span>Déconnecter</span></button>
         </div>
       </header>
 
-      {/* Sync bar */}
-      <div className={s.syncBar}>
-        <div className={`${s.syncDot} ${online ? s.green : s.red}`} />
-        <span>{syncMsg}</span>
+      {/* Nav Tabs */}
+      <div className={s.navTabs}>
+        {tabs.map(t => (
+          <div key={t.id} className={`${s.navTab} ${activeTab===t.id?s.navTabActive:''}`} onClick={()=>setActiveTab(t.id)}>
+            {t.label}
+          </div>
+        ))}
+      </div>
+
+      {/* Status bar */}
+      <div className={s.statusBar}>
+        <div className={s.statusLeft}>
+          <div className={`${s.dot} ${loading?s.dotOrange:online?s.dotGreen:s.dotRed}`}/>
+          <span>{loading ? 'Actualisation...' : syncMsg}</span>
+        </div>
+        <span style={{fontSize:12,color:'var(--muted)'}}>{dateLabel}</span>
       </div>
 
       {/* Content */}
       <div className={s.content}>
-        {!data
-          ? <div className={s.loading}>⏳ Chargement...</div>
-          : <>
-            {/* Date title */}
-            <div className={s.sectionTitle}>
-              📊 {new Date(date + 'T12:00').toLocaleDateString('fr-TN', {
-                weekday:'long', day:'numeric', month:'long', year:'numeric'
-              })}
-            </div>
+        {!data && !loading && <div className={s.empty}><div className={s.emptyIcon}>📊</div><div className={s.emptyText}>Aucune donnée</div></div>}
+        {loading && !data && <div className={s.loading}><div className={s.spinner}/> Chargement...</div>}
 
-            {/* KPIs */}
-            <div className={s.kpiGrid}>
-              <div className={s.kpi}>
-                <div className={s.kpiVal}>{f(k.total_revenue)} <span>DT</span></div>
-                <div className={s.kpiLbl}>Total encaissé</div>
+        {data && <>
+          {/* ── OVERVIEW ── */}
+          {activeTab === 'overview' && <>
+            <div className={s.section}>
+              <KpiCards k={k}/>
+            </div>
+            <div className={s.section} style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:14}}>
+              <div className={s.chartBox}>
+                <div className={s.chartTitle}>📈 Ventes 7 derniers jours <span className={s.chartSubtitle}>(DT)</span></div>
+                <BarChart weekly={data.weekly} selectedDate={date}/>
               </div>
-              <div className={`${s.kpi} ${s.green}`}>
-                <div className={s.kpiVal}>{k.total_orders}</div>
-                <div className={s.kpiLbl}>Commandes</div>
-              </div>
-              <div className={s.kpi}>
-                <div className={s.kpiVal}>{f(k.avg_ticket)} <span>DT</span></div>
-                <div className={s.kpiLbl}>Ticket moyen</div>
-              </div>
-              <div className={`${s.kpi} ${s.orange}`}>
-                <div className={s.kpiVal}>{f(k.cash_total)} <span>DT</span></div>
-                <div className={s.kpiLbl}>Espèces</div>
-              </div>
-              <div className={`${s.kpi} ${s.blue}`}>
-                <div className={s.kpiVal}>{f(+k.card_total + +k.mobile_total)} <span>DT</span></div>
-                <div className={s.kpiLbl}>Carte / Mobile</div>
-              </div>
-              <div className={s.kpi}>
-                <div className={s.kpiVal}>{k.sur_place}</div>
-                <div className={s.kpiLbl}>Sur place</div>
-                <div className={s.kpiSub}>{k.emporter} emporter · {k.livraison} livraison</div>
+              <div className={s.chartBox}>
+                <div className={s.chartTitle}>💳 Répartition paiements</div>
+                <PaymentDonut k={k}/>
               </div>
             </div>
-
-            {/* Weekly bar chart */}
-            <div className={s.sectionTitle}>📈 7 derniers jours</div>
-            <div className={s.chartBox}>
-              <div className={s.chartTitle}>Ventes (DT)</div>
-              <div className={s.barChart}>
-                {(() => {
-                  const max = Math.max(...data.weekly.map((r: any) => +r.revenue), 1)
-                  return data.weekly.map((r: any, i: number) => {
-                    const d   = new Date(r.day + 'T12:00')
-                    const lbl = d.toLocaleDateString('fr-TN', { weekday:'short', day:'numeric' })
-                    const pct = Math.round(+r.revenue / max * 100)
-                    return (
-                      <div key={i} className={s.barCol}>
-                        <div className={s.barVal}>{f(r.revenue)}</div>
-                        <div className={s.barWrap}>
-                          <div className={s.bar} style={{ height: `${Math.max(pct,3)}%` }} />
+            <div className={s.section}>
+              <div className={s.sectionHdr}>
+                <div className={s.sectionTitle}><span>🏆</span> Top 5 articles du jour</div>
+                <button className={s.btnIcon} style={{fontSize:12}} onClick={()=>setActiveTab('products')}>Voir tout →</button>
+              </div>
+              <div className={s.chartBox}>
+                {data.topItems.length === 0
+                  ? <div className={s.empty}><div className={s.emptyText}>Aucune vente ce jour</div></div>
+                  : <div className={s.topList}>
+                      {data.topItems.slice(0,5).map((it:any, i:number) => (
+                        <div key={i} className={s.topItem}>
+                          <div className={`${s.topRank} ${i===0?s.topRank1:i===1?s.topRank2:i===2?s.topRank3:s.topRankN}`}>
+                            {i < 3 ? ['🥇','🥈','🥉'][i] : i+1}
+                          </div>
+                          <div className={s.topEmoji}>{itemEmoji(it.name)}</div>
+                          <div className={s.topName}>{it.name}</div>
+                          <div className={s.topBarWrap}><div className={s.topBar} style={{width:`${Math.round(it.qty/(data.topItems[0]?.qty||1)*100)}%`}}/></div>
+                          <div className={s.topQty}>{it.qty} <span style={{fontSize:10,color:'var(--muted)',fontWeight:400}}>fois</span></div>
                         </div>
-                        <div className={s.barLbl}>{lbl}</div>
-                      </div>
-                    )
-                  })
-                })()}
-              </div>
-            </div>
-
-            {/* Top items */}
-            <div className={s.sectionTitle}>🏆 Articles les plus vendus</div>
-            <div className={s.chartBox}>
-              {data.topItems.length === 0
-                ? <div className={s.noData}>Aucune vente ce jour</div>
-                : (() => {
-                    const max = data.topItems[0]?.qty || 1
-                    return data.topItems.map((it: any, i: number) => (
-                      <div key={i} className={s.topItem}>
-                        <div className={s.topName}>{it.name}</div>
-                        <div className={s.topBarWrap}>
-                          <div className={s.topBar} style={{ width:`${Math.round(it.qty/max*100)}%` }} />
-                        </div>
-                        <div className={s.topQty}>{it.qty}</div>
-                      </div>
-                    ))
-                  })()
-              }
-            </div>
-
-            {/* Sales table */}
-            <div className={s.sectionTitle}>🧾 Commandes du jour</div>
-            <div className={s.tableWrap}>
-              {data.recent.length === 0
-                ? <div className={s.noData}>Aucune commande ce jour</div>
-                : <table className={s.table}>
-                    <thead><tr>
-                      <th>#</th><th>Heure</th><th>Type</th>
-                      <th>Articles</th><th>Total</th><th>Paiement</th>
-                    </tr></thead>
-                    <tbody>
-                      {data.recent.map((r: any, i: number) => (
-                        <tr key={i}>
-                          <td className={s.num}>#{String(r.num).padStart(3,'0')}</td>
-                          <td className={s.muted}>{r.sale_time}</td>
-                          <td><span className={`${s.badge} ${(s as any)['b_'+r.order_type]}`}>
-                            {({place:'🏠 Place',take:'🥡 Emporter',del:'🛵 Livraison'} as any)[r.order_type]}
-                          </span></td>
-                          <td>{r.item_count} art.{r.disc_pct>0?` -${r.disc_pct}%`:''}</td>
-                          <td className={s.bold}>{f(r.grand)} DT</td>
-                          <td><span className={`${s.badge} ${(s as any)['b_'+r.pay_method]}`}>
-                            {({cash:'💵 Espèces',card:'💳 Carte',mob:'📱 Mobile'} as any)[r.pay_method]}
-                          </span></td>
-                        </tr>
                       ))}
-                    </tbody>
-                  </table>
-              }
-            </div>
-
-            {/* Sessions / Closures history */}
-            {data.sessions && data.sessions.length > 0 && <>
-              <div className={s.sectionTitle}>🔒 Historique des clôtures</div>
-              <div className={s.tableWrap} style={{marginBottom:'40px'}}>
-                <table className={s.table}>
-                  <thead><tr>
-                    <th>Date</th><th>Caissier</th><th>Ventes</th>
-                    <th>Espèces</th><th>Fond initial</th><th>Théorique</th><th>Compté</th><th>Écart</th>
-                  </tr></thead>
-                  <tbody>
-                    {data.sessions.map((r: any, i: number) => {
-                      const ecart = parseFloat(r.ecart)
-                      const ecartOk = ecart >= 0
-                      return (
-                        <tr key={i}>
-                          <td className={s.muted}>{r.day}</td>
-                          <td>{r.cashier}</td>
-                          <td className={s.bold}>{f(r.total_sales)} DT</td>
-                          <td>{f(r.cash_sales)} DT</td>
-                          <td>{f(r.fond_initial)} DT</td>
-                          <td style={{color:'var(--gold-l)',fontWeight:700}}>{f(r.theorique)} DT</td>
-                          <td>{r.montant_compte != null ? f(r.montant_compte)+' DT' : '—'}</td>
-                          <td style={{fontWeight:700, color: r.ecart == null ? 'var(--muted)' : ecartOk ? 'var(--green)' : 'var(--red)'}}>
-                            {r.ecart != null ? (ecartOk?'+':'')+f(r.ecart)+' DT' : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                    </div>
+                }
               </div>
-            </>}
-          </>
-        }
+            </div>
+          </>}
+
+          {/* ── PRODUCTS ── */}
+          {activeTab === 'products' && <>
+            <div className={s.section}>
+              <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🏆</span> Articles vendus</div></div>
+              <TopProducts items={data.topItems} filter={catFilter} onFilter={setCatFilter}/>
+            </div>
+          </>}
+
+          {/* ── ORDERS ── */}
+          {activeTab === 'orders' && <>
+            <div className={s.section}>
+              <div className={s.sectionHdr}>
+                <div className={s.sectionTitle}><span>🧾</span> Commandes du jour</div>
+                <div className={s.summaryRow} style={{padding:'8px 16px',marginBottom:0}}>
+                  <div className={s.summaryItem}><div className={s.summaryVal}>{data.recent.length}</div><div className={s.summaryLbl}>total</div></div>
+                  <div className={s.summaryItem}><div className={s.summaryVal}>{f(k.total_revenue)}</div><div className={s.summaryLbl}>DT</div></div>
+                </div>
+              </div>
+              <OrdersTable orders={data.recent} search={orderSearch} onSearch={setOrderSearch}/>
+            </div>
+          </>}
+
+          {/* ── SESSIONS ── */}
+          {activeTab === 'sessions' && <>
+            <div className={s.section}>
+              <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🔒</span> Historique des clôtures de caisse</div></div>
+              <SessionsSection sessions={data.sessions}/>
+            </div>
+          </>}
+        </>}
       </div>
     </div>
   )
@@ -273,10 +471,14 @@ export default function Home() {
     const k = localStorage.getItem('d_api_key')
     const r = localStorage.getItem('d_rest_info')
     if (k && r) { setApiKey(k); setRestInfo(JSON.parse(r)) }
+    // Apply saved theme on load
+    const t = localStorage.getItem('d_theme') || 'dark'
+    document.documentElement.setAttribute('data-theme', t)
   }, [])
 
   function logout() {
-    localStorage.clear()
+    localStorage.removeItem('d_api_key')
+    localStorage.removeItem('d_rest_info')
     setApiKey(null); setRestInfo(null)
   }
 
