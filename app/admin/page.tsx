@@ -240,6 +240,9 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
           }
         </div>
 
+        {/* Client Config Editor */}
+        <ConfigEditor clients={clients} adminKey={ADMIN_KEY} onFlash={flash} s={s} />
+
         {/* Instructions */}
         <div style={{ background:'#0F0C08', border:'1px solid #231C12', borderRadius:'10px', padding:'16px 20px', fontSize:'12px', color:'#7A6E5F', lineHeight:'1.8' }}>
           <div style={{ color:'#E8A84C', fontWeight:'700', marginBottom:'8px' }}>📋 Instructions</div>

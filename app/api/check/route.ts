@@ -1,8 +1,7 @@
 // ═══════════════════════════════════════════════════
 // GET /api/check?key=XXX
 // Called by POS app on startup + every 30min
-// Returns: { ok, active, message }
-// If active=false → app shows lockscreen with message
+// Returns: { ok, active, message, config }
 // ═══════════════════════════════════════════════════
 
 import { NextResponse } from 'next/server'
@@ -28,13 +27,12 @@ export async function GET(req: Request) {
 
   try {
     const rows = await sql`
-      SELECT plan, name FROM restaurants WHERE api_key = ${key} LIMIT 1
+      SELECT plan, name, city, phone, config FROM restaurants WHERE api_key = ${key} LIMIT 1
     `
 
     if (!rows.length) {
       return cors(NextResponse.json({
-        ok: false,
-        active: false,
+        ok: false, active: false,
         message: 'Licence non reconnue. Contactez le développeur.'
       }))
     }
@@ -43,20 +41,34 @@ export async function GET(req: Request) {
 
     if (r.plan === 'suspended') {
       return cors(NextResponse.json({
-        ok: true,
-        active: false,
+        ok: true, active: false,
         message: `Licence suspendue.\n\nVeuillez régler votre solde pour réactiver l'application.\n\nContactez le développeur:\n📞 +216 52 050 581`
       }))
     }
 
+    // Default config if none set
+    const defaultConfig = {
+      restaurantName: r.name,
+      restaurantCity: r.city || 'Tunisie',
+      logo: '🐬',
+      primaryColor: '#C8913A',
+      cuisine1Cats: ['Pizza', 'Chapati', 'Baguette', 'Makloub'],
+      cuisine2Cats: ['Libanais', 'Sandwichs', 'Tacos', 'Plat', 'Brik', 'Panini'],
+      boissonCats:  ['Boisson'],
+      phone: r.phone || '+216 52 050 581'
+    }
+
+    const config = { ...defaultConfig, ...(r.config || {}) }
+
     return cors(NextResponse.json({
       ok: true,
       active: true,
-      name: r.name
+      name: r.name,
+      config
     }))
 
   } catch(e: any) {
-    // If DB unreachable, don't block the app (offline tolerance)
-    return cors(NextResponse.json({ ok: true, active: true }))
+    // DB unreachable — don't block the app
+    return cors(NextResponse.json({ ok: true, active: true, config: null }))
   }
 }
