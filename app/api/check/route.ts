@@ -58,7 +58,7 @@ export async function GET(req: Request) {
       phone: r.phone || '+216 52 050 581'
     }
 
-    const config = { ...defaultConfig, ...(r.config || {}) }
+    const config = { ...defaultConfig, ...(r.config && typeof r.config === 'object' ? r.config : {}) }
 
     return cors(NextResponse.json({
       ok: true,
