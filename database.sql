@@ -12,8 +12,19 @@ CREATE TABLE IF NOT EXISTS restaurants (
   city          VARCHAR(80)  DEFAULT '',
   phone         VARCHAR(30)  DEFAULT '',
   plan          VARCHAR(20)  DEFAULT 'active',
+  config        JSONB        DEFAULT '{}',
+  menu_json     JSONB        DEFAULT '{}',
   created_at    TIMESTAMPTZ  DEFAULT NOW()
 );
+
+-- config JSONB stores:
+--   logo, logoLetter, tagline, currency, primaryColor,
+--   managerName, managerPin, cashierName, cashierPin,
+--   zone1Cats, zone2Cats, boissonCats, zone1Label, zone2Label,
+--   syncEnabled
+--
+-- menu_json JSONB stores the full menu:
+--   { "Pizza": { "icon": "🍕", "items": [...] }, ... }
 
 CREATE TABLE IF NOT EXISTS sales (
   id            SERIAL PRIMARY KEY,
@@ -107,3 +118,10 @@ VALUES (
   '+216 XX XXX XXX',
   'active'
 ) ON CONFLICT DO NOTHING;
+
+
+-- ═══════════════════════════════════════════════════
+-- MIGRATION: Add config + menu_json columns (run if upgrading existing DB)
+-- ═══════════════════════════════════════════════════
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS config    JSONB DEFAULT '{}';
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS menu_json JSONB DEFAULT '{}';
