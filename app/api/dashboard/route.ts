@@ -24,8 +24,16 @@ export async function GET(req: Request) {
   const rest = rows[0]
   const rid = rest.id
 
-  let date = new URL(req.url).searchParams.get('date') || new Date().toISOString().split('T')[0]
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = new Date().toISOString().split('T')[0]
+  let date = new URL(req.url).searchParams.get('date') || ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    // Default: current business day (5 AM cutoff — same as POS)
+    // If it's before 5 AM, show yesterday's business day
+    const now = new Date()
+    if (now.getHours() < 5) {
+      now.setDate(now.getDate() - 1)
+    }
+    date = now.toISOString().split('T')[0]
+  }
 
   // ═══ KPIs du jour ═══
   const [kpis] = await sql`
@@ -167,6 +175,7 @@ export async function GET(req: Request) {
     ok: true,
     restaurant: { name: rest.name, city: rest.city },
     date,
+    businessDayInfo: 'Jour business: 05h00 → 05h00 (les ventes entre minuit et 5h comptent pour le jour précédent)',
     kpis,
     comparison: {
       lastWeekOrders: lastWeekSameDay?.orders || 0,
