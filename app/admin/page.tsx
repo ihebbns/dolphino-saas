@@ -402,7 +402,7 @@ function ClientBuilder({ onDone, existingClient }: { onDone: () => void, existin
               <span style={{ color:'#7A6E5F' }}>Clé API:</span><span style={{ fontFamily:'monospace', color:'#E8A84C' }}>{apiKey}</span>
               <span style={{ color:'#7A6E5F' }}>Manager:</span><span>{managerName} (PIN: {managerPin})</span>
               <span style={{ color:'#7A6E5F' }}>Caissier:</span><span>{cashierName} (PIN: {cashierPin})</span>
-              <span style={{ color:'#7A6E5F' }}>Menu:</span><span>{Object.keys(menu).length} catégories, {Object.values(menu).reduce((s: number, c: any) => s + (c?.items?.length||0), 0)} articles</span>
+              <span style={{ color:'#7A6E5F' }}>Menu:</span><span>{Object.keys(menu).length} catégories, {(Object.values(menu) as any[]).reduce((s: number, c: any) => s + (c?.items?.length||0), 0)} articles</span>
               <span style={{ color:'#7A6E5F' }}>Icône EXE:</span><span>{iconBase64 ? '✓ Image uploadée' : 'Servio (par défaut)'}</span>
             </div>
           </div>
