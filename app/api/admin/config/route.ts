@@ -12,7 +12,7 @@ import { sql } from '@/lib/db'
 
 export const runtime = 'edge'
 
-const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || 'dolphino-admin-iheb-2026'
+const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || 'servio-admin-2026'
 
 export async function POST(req: Request) {
   let body: any

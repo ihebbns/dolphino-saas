@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
-const ADMIN_KEY = 'dolphino-admin-iheb-2026'
+const ADMIN_KEY = 'servio-admin-2026'
 const BUILD_SERVER = 'http://localhost:4500'
 
 function f(n: any) { return Number(n).toFixed(3) }
@@ -290,7 +290,7 @@ function ClientBuilder({ onDone, existingClient }: { onDone: () => void, existin
         setBuildMsg('❌ Erreur build: ' + data.error)
       }
     } catch (e: any) {
-      setBuildMsg('❌ Build server non accessible.\n\nLancez sur votre PC:\n  cd dolphino-pos-package\n  node build-server.js\n\nPuis ouvrez localhost:3000/admin pour builder.')
+      setBuildMsg('❌ Build server non accessible.\n\nLancez sur votre PC:\n  cd servio-pos\n  node build-server.js\n\nPuis ouvrez localhost:3000/admin pour builder.')
     }
     setBuilding(false)
   }
@@ -384,7 +384,7 @@ function ClientBuilder({ onDone, existingClient }: { onDone: () => void, existin
             <button style={S.btnGold} onClick={()=>setStep(4)}>Suivant → Générer EXE</button>
           </div>
           <div style={{ padding:'0 20px 12px', fontSize:'11px', color:'#7A6E5F' }}>
-            💡 Si vous laissez le menu vide, le POS utilisera le menu Dolphino par défaut.
+            💡 Si vous laissez le menu vide, le POS utilisera le menu par défaut.
           </div>
         </div>
       )}
@@ -403,7 +403,7 @@ function ClientBuilder({ onDone, existingClient }: { onDone: () => void, existin
               <span style={{ color:'#7A6E5F' }}>Manager:</span><span>{managerName} (PIN: {managerPin})</span>
               <span style={{ color:'#7A6E5F' }}>Caissier:</span><span>{cashierName} (PIN: {cashierPin})</span>
               <span style={{ color:'#7A6E5F' }}>Menu:</span><span>{Object.keys(menu).length} catégories, {Object.values(menu).reduce((s: number, c: any) => s + (c?.items?.length||0), 0)} articles</span>
-              <span style={{ color:'#7A6E5F' }}>Icône EXE:</span><span>{iconBase64 ? '✓ Image uploadée' : '🐬 Par défaut (Dolphino)'}</span>
+              <span style={{ color:'#7A6E5F' }}>Icône EXE:</span><span>{iconBase64 ? '✓ Image uploadée' : 'Servio (par défaut)'}</span>
             </div>
           </div>
 
