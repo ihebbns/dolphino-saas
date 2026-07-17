@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════
--- DOLPHINO POS SaaS — PostgreSQL Schema for Neon
+-- SERVIO OS POS SaaS — PostgreSQL Schema for Neon
 -- Paste this in: neon.tech → your project → SQL Editor → Run
 -- ═══════════════════════════════════════════════════
 
@@ -125,3 +125,10 @@ VALUES (
 -- ═══════════════════════════════════════════════════
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS config    JSONB DEFAULT '{}';
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS menu_json JSONB DEFAULT '{}';
+
+
+-- ═══════════════════════════════════════════════════
+-- MIGRATION: Add suspend_at for scheduled suspension
+-- ═══════════════════════════════════════════════════
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS suspend_at TIMESTAMPTZ DEFAULT NULL;
+-- plan values: 'active', 'suspended' (both), 'suspended_exe' (EXE only), 'suspended_dash' (dashboard only)

@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
   try {
     const rows = await sql`
-      SELECT plan, name, city, phone, config, menu_json
+      SELECT plan, name, city, phone, config, menu_json, suspend_at
       FROM restaurants
       WHERE api_key = ${key}
       LIMIT 1
@@ -46,7 +46,14 @@ export async function GET(req: Request) {
 
     const r = rows[0]
 
-    if (r.plan === 'suspended') {
+    // Check scheduled suspend
+    if (r.suspend_at && new Date(r.suspend_at) <= new Date() && r.plan === 'active') {
+      // Auto-suspend has triggered
+      await sql`UPDATE restaurants SET plan = 'suspended' WHERE api_key = ${key}`
+      r.plan = 'suspended'
+    }
+
+    if (r.plan === 'suspended' || r.plan === 'suspended_exe') {
       return cors(NextResponse.json({
         ok: true, active: false,
         message: `Licence suspendue.\n\nVeuillez régler votre solde pour réactiver l'application.\n\nContactez le développeur:\n📞 +216 52 050 581`

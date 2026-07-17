@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   if (!checkAdmin(body)) return NextResponse.json({ ok:false, error:'Unauthorized' }, { status:401 })
 
   const clients = await sql`
-    SELECT id, name, owner_email, api_key, city, phone, plan, created_at
+    SELECT id, name, owner_email, api_key, city, phone, plan, suspend_at, created_at
     FROM restaurants
     ORDER BY created_at DESC
   `

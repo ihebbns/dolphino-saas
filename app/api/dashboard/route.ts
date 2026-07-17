@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   const key = getApiKey(req)
   if (!key) return cors(NextResponse.json({ ok: false, error: 'API key required' }, { status: 401 }))
 
-  const rows = await sql`SELECT * FROM restaurants WHERE api_key=${key} AND plan!='suspended' LIMIT 1`
+  const rows = await sql`SELECT * FROM restaurants WHERE api_key=${key} AND plan NOT IN ('suspended', 'suspended_dash') LIMIT 1`
   if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Invalid key' }, { status: 403 }))
   const rest = rows[0]
   const rid = rest.id
