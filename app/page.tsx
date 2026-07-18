@@ -5,7 +5,11 @@ import s from './dashboard.module.css'
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://dolphino-saas.vercel.app'
 const f   = (n: any) => Number(n || 0).toFixed(3)
 const fmt = (n: any) => Number(n || 0).toLocaleString('fr-TN', { minimumFractionDigits: 3 })
-const today = () => new Date().toISOString().split('T')[0]
+const today = () => {
+  const d = new Date()
+  if (d.getHours() < 5) d.setDate(d.getDate() - 1)
+  return d.toISOString().split('T')[0]
+}
 
 // ── Theme ──────────────────────────────────────────────
 function useTheme() {
