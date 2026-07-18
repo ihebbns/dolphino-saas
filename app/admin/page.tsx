@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
-const ADMIN_KEY = 'servio-admin-2026'
+const ADMIN_KEY = 'servio-admin-iheb-2026'
 const BUILD_SERVER = 'http://localhost:4500'
 
 function f(n: any) { return Number(n).toFixed(3) }
