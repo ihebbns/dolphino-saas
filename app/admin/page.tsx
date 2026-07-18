@@ -517,7 +517,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
           <div style={S.card}>
             <div style={S.cardHdr}>
               <span style={S.cardTitle}>👥 Clients</span>
-              <button style={S.btnGold} onClick={() => setView('new')}>⚡ Nouveau client + EXE</button>
+              <div style={{ fontSize:'11px', color:'#7A6E5F' }}>Pour créer un client + EXE → <code style={{ color:'#E8A84C' }}>node build-server.js</code> puis ouvrir localhost:4500</div>
             </div>
             {loading
               ? <div style={{ padding:'30px', textAlign:'center', color:'#7A6E5F' }}>Chargement...</div>
