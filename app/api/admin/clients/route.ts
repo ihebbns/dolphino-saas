@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs'
 
 export const runtime = 'nodejs'
 
-const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || 'servio-admin-2026'
+const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || 'servio-admin-iheb-2026'
 
 function checkAdmin(body: any) {
   return body?.admin_key === ADMIN_KEY
