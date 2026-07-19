@@ -627,7 +627,7 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
             <div className={s.section}>
               <KpiCards k={k}/>
             </div>
-            <div className={s.section} style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:14}}>
+            <div className={s.section} style={{display:'grid',gridTemplateColumns:'1fr',gap:14}}>
               <div className={s.chartBox}>
                 <div className={s.chartTitle}>📈 Ventes 7 derniers jours <span className={s.chartSubtitle}>(DT)</span></div>
                 <BarChart weekly={data.weekly} selectedDate={date}/>

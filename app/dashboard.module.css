@@ -195,16 +195,53 @@
 
 /* ════════════════ MOBILE ════════════════ */
 @media(max-width:768px){
-  .hdr{padding:0 16px;}
-  .content{padding:16px;}
-  .kpiGrid{grid-template-columns:repeat(2,1fr);gap:10px;}
+  .hdr{padding:0 12px;height:52px;gap:8px;}
+  .hdrBrand{gap:8px;}
+  .hdrLogo{width:30px;height:30px;font-size:13px;}
+  .hdrName{font-size:13px;}
+  .hdrCity{display:none;}
+  .hdrRight{gap:4px;}
+  .hdrRight .datePick{padding:5px 8px;font-size:11px;max-width:120px;}
+  .btnIcon{padding:6px 8px;font-size:13px;}
+  .btnLogout{padding:5px 8px;font-size:10px;}
   .btnLogout span{display:none;}
+  .content{padding:12px;}
+  .kpiGrid{grid-template-columns:repeat(2,1fr);gap:8px;}
+  .kpiCard{padding:14px 12px;}
+  .kpiVal{font-size:20px;}
+  .kpiIcon{font-size:18px;margin-bottom:6px;}
+  .navTabs{padding:0 12px;gap:0;}
+  .navTab{padding:10px 12px;font-size:12px;}
   .topBarWrap{display:none;}
   .productGrid{grid-template-columns:repeat(2,1fr);}
-  .navTabs{padding:0 16px;}
+  .chartBox{padding:14px;}
+  .barChart{height:130px;}
+  .barVal{font-size:8px;}
+  .barLbl{font-size:8px;}
+  .donutWrap{flex-direction:column;align-items:center;}
+  .donut{width:100px;height:100px;}
+  .sessionGrid{grid-template-columns:1fr;}
+  .tableScroll{font-size:12px;}
+  .table th,.table td{padding:8px 10px;}
+  .sectionTitle{font-size:11px;}
+  .statusBar{padding:4px 12px;font-size:10px;}
+  .filterBtn{padding:5px 10px;font-size:11px;}
+  .filterSearch{min-width:120px;font-size:12px;}
+  .pageTitle{font-size:18px;}
 }
 
 @media(max-width:480px){
-  .kpiGrid{grid-template-columns:repeat(2,1fr);}
-  .barChart{height:120px;}
+  .hdr{padding:0 8px;height:48px;}
+  .hdrLogo{width:26px;height:26px;font-size:11px;}
+  .hdrName{font-size:12px;letter-spacing:1px;}
+  .hdrRight .datePick{max-width:100px;font-size:10px;}
+  .btnIcon{padding:5px 6px;font-size:12px;}
+  .kpiGrid{grid-template-columns:repeat(2,1fr);gap:6px;}
+  .kpiCard{padding:12px 10px;}
+  .kpiVal{font-size:18px;}
+  .kpiLbl{font-size:10px;}
+  .barChart{height:100px;}
+  .navTab{padding:8px 10px;font-size:11px;}
+  .content{padding:10px;}
+  .chartBox{padding:10px;}
 }
