@@ -440,13 +440,7 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
 
   function getSessionOrders(session: any) {
     if (!recent || !recent.length) return []
-    // Simply show all sales for this date that match this cashier
-    // Since a session can span multiple days, just filter by cashier name
-    const cashier = session.cashier || ''
-    if (cashier) {
-      return recent.filter((sale: any) => sale.cashier === cashier)
-    }
-    // If no cashier info, show all sales for the date
+    // Show all sales for this date — session already has its own totals
     return recent
   }
 
