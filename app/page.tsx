@@ -340,37 +340,14 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
 
   function getSessionOrders(session: any) {
     if (!recent || !recent.length) return []
-    // Match sales by cashier name for this session
-    // If session has open/close times, filter by time range
+    // Simply show all sales for this date that match this cashier
+    // Since a session can span multiple days, just filter by cashier name
     const cashier = session.cashier || ''
-    let filtered = recent
-
-    // Filter by cashier if available
     if (cashier) {
-      filtered = recent.filter((sale: any) => sale.cashier === cashier)
+      return recent.filter((sale: any) => sale.cashier === cashier)
     }
-
-    // If we have valid open/close times, also filter by time
-    if (session.opened_at && session.closed_at) {
-      const openH = new Date(session.opened_at).getHours()
-      const openM = new Date(session.opened_at).getMinutes()
-      const closeH = new Date(session.closed_at).getHours()
-      const closeM = new Date(session.closed_at).getMinutes()
-      const openMin = openH * 60 + openM
-      const closeMin = closeH * 60 + closeM
-
-      if (closeMin > openMin) {
-        filtered = filtered.filter((sale: any) => {
-          const t = sale.sale_time || ''
-          const parts = t.split(':')
-          if (parts.length < 2) return true
-          const saleMin = parseInt(parts[0]) * 60 + parseInt(parts[1])
-          return saleMin >= openMin && saleMin <= closeMin
-        })
-      }
-    }
-
-    return filtered
+    // If no cashier info, show all sales for the date
+    return recent
   }
 
   return (
