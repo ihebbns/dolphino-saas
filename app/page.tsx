@@ -382,6 +382,48 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
   )
 }
 
+// ════════════════ ORDER ROW (clickable) ════════════════
+function OrderRow({ sale }: { sale: any }) {
+  const [open, setOpen] = useState(false)
+  const items = sale.items || []
+
+  return (
+    <div style={{ borderBottom:'1px solid var(--div)' }}>
+      <div onClick={() => setOpen(!open)} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'8px 0', fontSize:'12px', cursor:'pointer' }}>
+        <span style={{ fontWeight:'700', color:'var(--gold-l)', fontFamily:'monospace', width:'40px' }}>#{String(sale.num).padStart(3,'0')}</span>
+        <span style={{ color:'var(--muted)', width:'45px' }}>{sale.sale_time}</span>
+        <span style={{ flex:1 }}>{sale.item_count} art. {sale.cli_name ? '· '+sale.cli_name : ''}</span>
+        <span style={{ fontWeight:'700' }}>{f(sale.grand)} DT</span>
+        <span style={{ fontSize:'10px', padding:'2px 6px', borderRadius:'10px', background: sale.pay_method==='cash'?'var(--gold-dim)':sale.pay_method==='card'?'rgba(74,144,217,.1)':'rgba(61,184,122,.1)', color: sale.pay_method==='cash'?'var(--gold-l)':sale.pay_method==='card'?'var(--blue)':'var(--green)' }}>
+          {sale.pay_method==='cash'?'💵':sale.pay_method==='card'?'💳':'📱'}
+        </span>
+        <span style={{ fontSize:'10px', color:'var(--muted)' }}>{open?'▲':'▼'}</span>
+      </div>
+      {open && (
+        <div style={{ padding:'8px 0 12px 48px', fontSize:'11px' }} onClick={e => e.stopPropagation()}>
+          {items.length > 0 ? (
+            <div style={{ background:'var(--card)', borderRadius:'8px', padding:'10px', marginBottom:'6px' }}>
+              {items.map((it: any, idx: number) => (
+                <div key={idx} style={{ display:'flex', justifyContent:'space-between', padding:'3px 0', borderBottom: idx < items.length-1 ? '1px solid var(--div)' : 'none' }}>
+                  <span>{it.qty || 1}x {it.name}</span>
+                  <span style={{ color:'var(--gold-l)', fontWeight:'600' }}>{f((it.price||0) * (it.qty||1))} DT</span>
+                </div>
+              ))}
+            </div>
+          ) : <div style={{ color:'var(--muted)', marginBottom:'6px' }}>Détail articles non disponible</div>}
+          <div style={{ display:'flex', gap:'16px', color:'var(--muted)', flexWrap:'wrap' }}>
+            <span>🕐 {sale.sale_time}</span>
+            <span>👤 {sale.cashier || '—'}</span>
+            {sale.cli_name && <span>📋 {sale.cli_name}</span>}
+            {sale.disc_pct > 0 && <span>🏷️ -{sale.disc_pct}%</span>}
+            <span>💰 {sale.pay_method==='cash'?'Espèces':sale.pay_method==='card'?'Carte':'Mobile'}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ════════════════ SESSIONS TABLE ════════════════
 function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[] }) {
   const [expanded, setExpanded] = useState<number|null>(null)
@@ -433,17 +475,9 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
                 {orders.length === 0 ? (
                   <div style={{ fontSize:'12px', color:'var(--muted)', textAlign:'center', padding:'10px' }}>Aucune commande trouvée pour cette session</div>
                 ) : (
-                  <div style={{ maxHeight:'250px', overflowY:'auto' }}>
+                  <div style={{ maxHeight:'300px', overflowY:'auto' }}>
                     {orders.map((sale: any, j: number) => (
-                      <div key={j} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'8px 0', borderBottom:'1px solid var(--div)', fontSize:'12px' }}>
-                        <span style={{ fontWeight:'700', color:'var(--gold-l)', fontFamily:'monospace', width:'40px' }}>#{String(sale.num).padStart(3,'0')}</span>
-                        <span style={{ color:'var(--muted)', width:'45px' }}>{sale.sale_time}</span>
-                        <span style={{ flex:1 }}>{sale.item_count} art. {sale.cli_name ? '· '+sale.cli_name : ''}</span>
-                        <span style={{ fontWeight:'700' }}>{f(sale.grand)} DT</span>
-                        <span style={{ fontSize:'10px', padding:'2px 6px', borderRadius:'10px', background: sale.pay_method==='cash'?'var(--gold-dim)':sale.pay_method==='card'?'rgba(74,144,217,.1)':'rgba(61,184,122,.1)', color: sale.pay_method==='cash'?'var(--gold-l)':sale.pay_method==='card'?'var(--blue)':'var(--green)' }}>
-                          {sale.pay_method==='cash'?'💵':sale.pay_method==='card'?'💳':'📱'}
-                        </span>
-                      </div>
+                      <OrderRow key={j} sale={sale} />
                     ))}
                   </div>
                 )}
