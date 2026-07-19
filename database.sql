@@ -139,3 +139,16 @@ ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS suspend_at TIMESTAMPTZ DEFAULT 
 -- ═══════════════════════════════════════════════════
 ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_restaurant_id_num_business_date_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_unique_per_cashier ON sales(restaurant_id, num, business_date, cashier);
+
+
+-- ═══════════════════════════════════════════════════
+-- MIGRATION: Allow multiple sessions per day (multiple shifts)
+-- ═══════════════════════════════════════════════════
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_restaurant_id_business_date_key;
+
+
+-- ═══════════════════════════════════════════════════
+-- MIGRATION: Allow multiple sessions per day (shift matin, shift soir)
+-- ═══════════════════════════════════════════════════
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_restaurant_id_business_date_key;
+-- No unique constraint on sessions anymore — multiple per day is normal
