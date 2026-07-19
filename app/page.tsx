@@ -650,6 +650,23 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
                 <CategoryBreakdown items={data.topItems}/>
               </div>
             </div>
+            {/* Stock boissons */}
+            {data.stock && data.stock.length > 0 && (
+              <div className={s.section}>
+                <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🥤</span> Stock Boissons</div></div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:'8px' }}>
+                  {data.stock.map((item: any, i: number) => (
+                    <div key={i} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'var(--radius)', padding:'14px', textAlign:'center', position:'relative', overflow:'hidden' }}>
+                      {item.quantity <= 3 && <div style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:'var(--red)' }}/>}
+                      <div style={{ fontSize:'24px', marginBottom:'4px' }}>{item.item_emoji || '🥤'}</div>
+                      <div style={{ fontSize:'12px', fontWeight:'600', marginBottom:'4px' }}>{item.item_name}</div>
+                      <div style={{ fontSize:'20px', fontWeight:'800', color: item.quantity <= 3 ? 'var(--red)' : item.quantity <= 10 ? 'var(--orange)' : 'var(--green)' }}>{item.quantity}</div>
+                      <div style={{ fontSize:'10px', color:'var(--muted)' }}>en stock</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className={s.section}>
               <div className={s.sectionHdr}>
                 <div className={s.sectionTitle}><span>🏆</span> Top 5 articles du jour</div>

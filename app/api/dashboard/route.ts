@@ -151,6 +151,13 @@ export async function GET(req: Request) {
       AND business_date = ${date}::date
     ORDER BY closed_at DESC`
 
+  // ═══ Stock boissons ═══
+  const stock = await sql`
+    SELECT item_id, item_name, item_emoji, quantity
+    FROM stock
+    WHERE restaurant_id = ${rid}
+    ORDER BY item_name ASC`
+
   // ═══ Peak hour identification ═══
   let peakHour = null
   let peakRevenue = 0
@@ -191,6 +198,7 @@ export async function GET(req: Request) {
     byCashier,
     recent,
     sessions,
+    stock,
     insights,
   }))
 }
