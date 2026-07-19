@@ -142,7 +142,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_unique_per_cashier ON sales(restaura
 
 
 -- ═══════════════════════════════════════════════════
--- MIGRATION: Add session_id to sales (links each sale to its session)
+-- MIGRATION: Add session_id to sales (links each sale to its caisse session)
+-- Uses a stable client-generated key (e.g. "S1784xxxx_ab12c") sent by the POS
+-- with every sale AND with the clôture, so the dashboard can group orders
+-- by the exact caisse session they belong to.
 -- ═══════════════════════════════════════════════════
-ALTER TABLE sales ADD COLUMN IF NOT EXISTS session_id INTEGER DEFAULT NULL;
-CREATE INDEX IF NOT EXISTS idx_sales_session ON sales(session_id);
+ALTER TABLE sales    ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) DEFAULT '';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_sales_session    ON sales(session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_session ON sessions(session_id);

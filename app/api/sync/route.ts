@@ -30,6 +30,7 @@ export async function POST(req: Request) {
   const bizDate  = (sale.businessDate || new Date().toISOString().split('T')[0]).slice(0,10)
   const items    = JSON.stringify(sale.items || [])
   const num      = parseInt(sale.num)
+  const sessionId = String(sale.sessionId ?? sale.session_id ?? '').slice(0, 64)
 
   try {
     await sql`
@@ -40,8 +41,9 @@ export async function POST(req: Request) {
          ${items}::jsonb,${+sale.s||0},${+sale.d||0},${+sale.disc||0},${+sale.g},
          ${(sale.payMode||'cash').slice(0,20)},${+sale.r||+sale.g},${+sale.monnaie||0},
          ${(sale.type||'place').slice(0,20)},${(sale.cliName||'').slice(0,100)},
-         ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)},${sale.sessionId||null})
-      ON CONFLICT (restaurant_id,num,business_date,cashier) DO NOTHING`
+         ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)},${sessionId})
+      ON CONFLICT (restaurant_id,num,business_date,cashier)
+      DO UPDATE SET session_id = EXCLUDED.session_id`
     return cors(NextResponse.json({ ok:true, num }))
   } catch(e:any) {
     return cors(NextResponse.json({ ok:false, error:e.message }, { status:500 }))

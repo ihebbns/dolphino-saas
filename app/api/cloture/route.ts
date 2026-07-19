@@ -41,8 +41,13 @@ export async function POST(req: Request) {
   const theorique    = parseFloat(body.theorique)    || 0
   const ecart        = parseFloat(body.ecart)        || 0
   const cashier      = (body.cashier || '').slice(0, 80)
+  const sessionId    = String(body.sessionId ?? body.session_id ?? '').slice(0, 64)
+  // Only accept full ISO timestamps (safe to cast). Ignore locale time strings.
+  const isIso = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)
+  const openedAtISO  = isIso(body.openedAtISO) ? body.openedAtISO : null
+  const closedAtISO  = isIso(body.closedAtISO) ? body.closedAtISO : null
 
-  // Save to day_closures (full data with ecart) — one summary per cashier per day
+  // Save to day_closures (daily aggregate — accumulates across all cashiers of the day)
   await sql`
     INSERT INTO day_closures
       (restaurant_id, business_date, total, orders_count, cash_total, card_total,
@@ -57,20 +62,25 @@ export async function POST(req: Request) {
       mobile_total=day_closures.mobile_total+${mobileTotal},
       montant_compte=day_closures.montant_compte+${montantCompte},
       theorique=day_closures.theorique+${theorique},
-      ecart=day_closures.ecart+${ecart}, cashier=${cashier}, closed_at=NOW()
+      ecart=day_closures.ecart+${ecart}, closed_at=NOW()
   `
 
-  // Save to sessions table — each clôture creates its own row
-  await sql`
+  // Save to sessions table — EACH clôture creates its OWN row.
+  // No ON CONFLICT: multiple caissiers / shifts per day each get a distinct session,
+  // linked to their orders via session_id.
+  const [session] = await sql`
     INSERT INTO sessions
       (restaurant_id, business_date, cashier, opened_at, closed_at,
        fond_initial, total_sales, orders_count, cash_sales, card_sales,
-       mobile_sales, montant_compte, theorique, ecart)
+       mobile_sales, montant_compte, theorique, ecart, session_id)
     VALUES
-      (${rid}, ${bizDate}::date, ${cashier}, NOW(), NOW(),
+      (${rid}, ${bizDate}::date, ${cashier},
+       COALESCE(${openedAtISO}::timestamptz, NOW()),
+       COALESCE(${closedAtISO}::timestamptz, NOW()),
        ${fondInitial}, ${total}, ${ordersCount}, ${cashTotal}, ${cardTotal},
-       ${mobileTotal}, ${montantCompte}, ${theorique}, ${ecart})
+       ${mobileTotal}, ${montantCompte}, ${theorique}, ${ecart}, ${sessionId})
+    RETURNING id
   `
 
-  return cors(NextResponse.json({ ok: true, businessDate: bizDate }))
+  return cors(NextResponse.json({ ok: true, businessDate: bizDate, sessionId, sessionRowId: session?.id }))
 }

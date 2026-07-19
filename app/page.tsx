@@ -440,22 +440,23 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
 
   function getSessionOrders(session: any) {
     if (!recent || !recent.length) return []
-    
-    // Professional approach: filter by session_id (direct link)
-    if (session.id) {
-      const bySessionId = recent.filter((sale: any) => sale.session_id === session.id)
-      if (bySessionId.length > 0) return bySessionId
+
+    // Professional approach: filter by session_id (direct link, exact match)
+    const sid = session.session_id || ''
+    if (sid) {
+      // A session_id is authoritative — return exactly its orders (may be empty)
+      return recent.filter((sale: any) => (sale.session_id || '') === sid)
     }
-    
+
     // Fallback for old data without session_id: filter by cashier + limit to orders_count
     const cashier = session.cashier || ''
     const count = session.orders_count || 0
     let filtered = cashier ? recent.filter((sale: any) => sale.cashier === cashier) : recent
-    
+
     if (count > 0 && count < filtered.length) {
       return filtered.slice(0, count)
     }
-    
+
     return filtered
   }
 

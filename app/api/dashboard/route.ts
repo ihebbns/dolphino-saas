@@ -117,7 +117,7 @@ export async function GET(req: Request) {
            received::float, monnaie::float, session_id,
            items, jsonb_array_length(items) AS item_count
     FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date
-    ORDER BY num DESC LIMIT 50`
+    ORDER BY num DESC LIMIT 1000`
 
   // ═══ Performance par serveur/caissier ═══
   const byCashier = await sql`
@@ -134,6 +134,7 @@ export async function GET(req: Request) {
   const sessions = await sql`
     SELECT
       id,
+      session_id,
       business_date::text AS day,
       cashier,
       opened_at,
