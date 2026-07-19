@@ -132,3 +132,10 @@ ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS menu_json JSONB DEFAULT '{}';
 -- ═══════════════════════════════════════════════════
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS suspend_at TIMESTAMPTZ DEFAULT NULL;
 -- plan values: 'active', 'suspended' (both), 'suspended_exe' (EXE only), 'suspended_dash' (dashboard only)
+
+
+-- ═══════════════════════════════════════════════════
+-- MIGRATION: Allow same ticket number from different cashiers (multi-terminal)
+-- ═══════════════════════════════════════════════════
+ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_restaurant_id_num_business_date_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_unique_per_cashier ON sales(restaurant_id, num, business_date, cashier);

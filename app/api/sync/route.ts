@@ -41,7 +41,7 @@ export async function POST(req: Request) {
          ${(sale.payMode||'cash').slice(0,20)},${+sale.r||+sale.g},${+sale.monnaie||0},
          ${(sale.type||'place').slice(0,20)},${(sale.cliName||'').slice(0,100)},
          ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)})
-      ON CONFLICT (restaurant_id,num,business_date) DO NOTHING`
+      ON CONFLICT (restaurant_id,num,business_date,cashier) DO NOTHING`
     return cors(NextResponse.json({ ok:true, num }))
   } catch(e:any) {
     return cors(NextResponse.json({ ok:false, error:e.message }, { status:500 }))
