@@ -114,7 +114,7 @@ export async function GET(req: Request) {
   const recent = await sql`
     SELECT num, sale_time, order_type, grand::float, pay_method,
            cashier, disc_pct, cli_name, cli_tel,
-           received::float, monnaie::float,
+           received::float, monnaie::float, session_id,
            items, jsonb_array_length(items) AS item_count
     FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date
     ORDER BY num DESC LIMIT 50`
@@ -133,6 +133,7 @@ export async function GET(req: Request) {
   // ═══ Sessions caisse ═══
   const sessions = await sql`
     SELECT
+      id,
       business_date::text AS day,
       cashier,
       opened_at,

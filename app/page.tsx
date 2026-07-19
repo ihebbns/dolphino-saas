@@ -440,31 +440,19 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
 
   function getSessionOrders(session: any) {
     if (!recent || !recent.length) return []
+    
+    // Professional approach: filter by session_id (direct link)
+    if (session.id) {
+      const bySessionId = recent.filter((sale: any) => sale.session_id === session.id)
+      if (bySessionId.length > 0) return bySessionId
+    }
+    
+    // Fallback for old data without session_id: filter by cashier + limit to orders_count
     const cashier = session.cashier || ''
     const count = session.orders_count || 0
-    
-    // Filter by cashier first
     let filtered = cashier ? recent.filter((sale: any) => sale.cashier === cashier) : recent
     
-    // Use orders_count to take only the correct number of orders
-    // Since 'recent' is ordered by num DESC, take the first 'count' that match the session
     if (count > 0 && count < filtered.length) {
-      // The session's orders are the most recent 'count' orders at the time of close
-      // Match by total: sum of those orders should equal total_sales
-      const totalSales = parseFloat(session.total_sales) || 0
-      if (totalSales > 0) {
-        // Find the exact set of orders whose sum matches total_sales
-        let sum = 0
-        const matched: any[] = []
-        for (const sale of filtered) {
-          if (sum >= totalSales) break
-          sum += parseFloat(sale.grand) || 0
-          matched.push(sale)
-          if (matched.length >= count) break
-        }
-        if (matched.length === count) return matched
-      }
-      // Fallback: just take the first 'count' orders
       return filtered.slice(0, count)
     }
     

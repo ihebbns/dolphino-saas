@@ -142,13 +142,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_unique_per_cashier ON sales(restaura
 
 
 -- ═══════════════════════════════════════════════════
--- MIGRATION: Allow multiple sessions per day (multiple shifts)
+-- MIGRATION: Add session_id to sales (links each sale to its session)
 -- ═══════════════════════════════════════════════════
-ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_restaurant_id_business_date_key;
-
-
--- ═══════════════════════════════════════════════════
--- MIGRATION: Allow multiple sessions per day (shift matin, shift soir)
--- ═══════════════════════════════════════════════════
-ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_restaurant_id_business_date_key;
--- No unique constraint on sessions anymore — multiple per day is normal
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS session_id INTEGER DEFAULT NULL;
+CREATE INDEX IF NOT EXISTS idx_sales_session ON sales(session_id);
