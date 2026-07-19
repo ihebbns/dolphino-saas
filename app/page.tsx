@@ -694,6 +694,35 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
 
           {/* ── SESSIONS ── */}
           {activeTab === 'sessions' && <>
+            {/* Cashier performance */}
+            {data.byCashier && data.byCashier.length > 0 && (
+              <div className={s.section}>
+                <div className={s.sectionHdr}><div className={s.sectionTitle}><span>👤</span> Performance par serveur/caissier</div></div>
+                <div className={s.chartBox}>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0' }}>
+                    {data.byCashier.map((c: any, i: number) => {
+                      const maxRev = data.byCashier[0]?.revenue || 1
+                      const pct = Math.round((c.revenue / maxRev) * 100)
+                      return (
+                        <div key={i} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'12px 0', borderBottom:'1px solid var(--div)' }}>
+                          <div style={{ width:'28px', height:'28px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:'700', background: i===0?'linear-gradient(135deg,#FFD700,#FFA500)':i===1?'linear-gradient(135deg,#C0C0C0,#A0A0A0)':i===2?'linear-gradient(135deg,#CD7F32,#A0522D)':'var(--card)', color: i<3?'#000':'var(--muted)', border: i>=3?'1px solid var(--div)':'none' }}>
+                            {i < 3 ? ['🥇','🥈','🥉'][i] : i+1}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontWeight:'600', fontSize:'13px' }}>{c.cashier}</div>
+                            <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'2px' }}>{c.orders} commandes · Ticket moy: {Number(c.avg_ticket||0).toFixed(3)} DT</div>
+                          </div>
+                          <div style={{ width:'120px', height:'6px', background:'var(--div)', borderRadius:'3px', overflow:'hidden', flexShrink:0 }}>
+                            <div style={{ height:'100%', width:`${pct}%`, background:'linear-gradient(90deg,var(--gold),var(--gold-l))', borderRadius:'3px', transition:'width .5s' }}/>
+                          </div>
+                          <div style={{ fontWeight:'700', fontSize:'14px', color:'var(--gold-l)', minWidth:'80px', textAlign:'right' }}>{Number(c.revenue||0).toFixed(3)} DT</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className={s.section}>
               <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🔒</span> Historique des clôtures de caisse</div></div>
               <SessionsSection sessions={data.sessions} recent={data.recent}/>
