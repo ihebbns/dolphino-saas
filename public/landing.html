@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Servio — Système de caisse intelligent pour restaurants & cafés</title>
+<meta name="description" content="Servio est un logiciel de caisse professionnel pour restaurants, cafés et fast foods en Tunisie. Dashboard en temps réel, fonctionne hors ligne.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0A0704;--panel:#0F0C08;--card:#161210;--gold:#C8913A;--gold-l:#E8A84C;--txt:#F0E8D8;--muted:#7A6E5F;--div:#231C12;--green:#3DB87A;--blue:#4A90D9}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);line-height:1.6;overflow-x:hidden}
+a{color:var(--gold-l);text-decoration:none}
+.container{max-width:1100px;margin:0 auto;padding:0 24px}
+
+/* ── HERO ── */
+.hero{min-height:90vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:60px 24px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(200,145,58,.08),transparent 55%),radial-gradient(circle at 80% 80%,rgba(74,144,217,.04),transparent 50%)}
+.hero-content{position:relative;z-index:1;max-width:700px}
+.hero-logo{font-size:64px;margin-bottom:16px}
+.hero-title{font-size:clamp(36px,6vw,56px);font-weight:800;color:var(--gold-l);letter-spacing:2px;margin-bottom:8px}
+.hero-sub{font-size:clamp(16px,3vw,20px);color:var(--muted);margin-bottom:32px;line-height:1.5}
+.hero-cta{display:inline-flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.btn{padding:14px 32px;border-radius:10px;font-size:16px;font-weight:700;border:none;cursor:pointer;transition:all .2s}
+.btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-l));color:#080604}
+.btn-gold:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(200,145,58,.3)}
+.btn-outline{background:none;border:2px solid var(--div);color:var(--txt)}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold-l)}
+
+/* ── FEATURES ── */
+.section{padding:80px 0}
+.section-title{text-align:center;font-size:clamp(24px,4vw,36px);font-weight:800;margin-bottom:8px}
+.section-sub{text-align:center;color:var(--muted);font-size:16px;margin-bottom:48px}
+.features{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px}
+.feature-card{background:var(--panel);border:1px solid var(--div);border-radius:16px;padding:28px;transition:all .2s}
+.feature-card:hover{transform:translateY(-4px);border-color:var(--gold);box-shadow:0 12px 32px rgba(0,0,0,.3)}
+.feature-icon{font-size:32px;margin-bottom:12px}
+.feature-title{font-size:16px;font-weight:700;margin-bottom:8px}
+.feature-desc{font-size:14px;color:var(--muted);line-height:1.6}
+
+/* ── MODES ── */
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.mode-card{background:var(--panel);border:1px solid var(--div);border-radius:16px;padding:36px;text-align:center}
+.mode-icon{font-size:48px;margin-bottom:12px}
+.mode-title{font-size:20px;font-weight:700;color:var(--gold-l);margin-bottom:8px}
+.mode-list{text-align:left;font-size:14px;color:var(--muted);list-style:none;padding:0}
+.mode-list li{padding:4px 0}
+.mode-list li::before{content:'✓ ';color:var(--green)}
+
+/* ── PRICING ── */
+.pricing{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px}
+.price-card{background:var(--panel);border:1px solid var(--div);border-radius:16px;padding:32px;text-align:center;position:relative}
+.price-card.popular{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.price-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gold);color:#080604;padding:4px 16px;border-radius:20px;font-size:11px;font-weight:700}
+.price-name{font-size:18px;font-weight:700;margin-bottom:4px}
+.price-val{font-size:36px;font-weight:800;color:var(--gold-l);margin:12px 0}
+.price-val span{font-size:14px;color:var(--muted);font-weight:400}
+.price-list{text-align:left;font-size:13px;color:var(--muted);list-style:none;padding:0;margin:16px 0}
+.price-list li{padding:6px 0;border-bottom:1px solid var(--div)}
+.price-list li::before{content:'✓ ';color:var(--green)}
+
+/* ── CTA ── */
+.cta-section{text-align:center;padding:80px 24px;background:linear-gradient(180deg,transparent,rgba(200,145,58,.03))}
+.cta-title{font-size:clamp(24px,4vw,32px);font-weight:800;margin-bottom:12px}
+.cta-sub{color:var(--muted);font-size:16px;margin-bottom:24px}
+.cta-phone{font-size:24px;font-weight:700;color:var(--gold-l);margin-top:16px}
+
+/* ── FOOTER ── */
+.footer{text-align:center;padding:24px;border-top:1px solid var(--div);font-size:12px;color:var(--muted)}
+
+/* ── MOBILE ── */
+@media(max-width:768px){
+  .hero{min-height:80vh;padding:40px 20px}
+  .modes{grid-template-columns:1fr}
+  .features{grid-template-columns:1fr}
+  .section{padding:60px 0}
+}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-logo">⚡</div>
+    <h1 class="hero-title">SERVIO</h1>
+    <p class="hero-sub">Le système de caisse intelligent pour restaurants, cafés et fast foods en Tunisie. Suivez vos ventes en temps réel depuis votre téléphone.</p>
+    <div class="hero-cta">
+      <a href="https://wa.me/21652050581?text=Bonjour, je suis intéressé par Servio" class="btn btn-gold">📞 Demander une démo</a>
+      <a href="#features" class="btn btn-outline">Voir les fonctionnalités</a>
+    </div>
+  </div>
+</section>
+
+<!-- MODES -->
+<section class="section" id="modes">
+  <div class="container">
+    <h2 class="section-title">Deux modes, un seul logiciel</h2>
+    <p class="section-sub">Adapté à votre activité — Fast Food ou Café/Restaurant</p>
+    <div class="modes">
+      <div class="mode-card">
+        <div class="mode-icon">🍔</div>
+        <div class="mode-title">Fast Food</div>
+        <ul class="mode-list">
+          <li>Commande directe et rapide</li>
+          <li>Sur place, emporter, livraison</li>
+          <li>Impression ticket instantanée</li>
+          <li>Tickets cuisine séparés</li>
+          <li>Remises automatiques</li>
+        </ul>
+      </div>
+      <div class="mode-card">
+        <div class="mode-icon">☕</div>
+        <div class="mode-title">Café / Restaurant</div>
+        <ul class="mode-list">
+          <li>Plan de salle avec tables</li>
+          <li>Ajouter des articles sans recommencer</li>
+          <li>Diviser l'addition</li>
+          <li>Transférer / fusionner les tables</li>
+          <li>Avec ou sans impression</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="container">
+    <h2 class="section-title">Pourquoi Servio?</h2>
+    <p class="section-sub">Tout ce dont vous avez besoin pour gérer votre restaurant</p>
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-icon">📱</div>
+        <div class="feature-title">Dashboard sur téléphone</div>
+        <div class="feature-desc">Voyez vos ventes en temps réel depuis n'importe où. Refresh automatique toutes les 30 secondes.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📶</div>
+        <div class="feature-title">Fonctionne sans internet</div>
+        <div class="feature-desc">Votre caisse marche même en cas de coupure. Les données se synchronisent automatiquement quand la connexion revient.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">Contrôle total</div>
+        <div class="feature-desc">Chaque dinar est tracé. Clôture de caisse avec vérification d'écart. Vous savez exactement qui a encaissé quoi.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <div class="feature-title">Analyses intelligentes</div>
+        <div class="feature-desc">Heures de pointe, produit star, performance par serveur, comparaison semaine par semaine.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🖨️</div>
+        <div class="feature-title">Impression automatique</div>
+        <div class="feature-desc">Tickets client + tickets cuisine séparés par zone. Fonctionne avec toute imprimante thermique 80mm.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">👥</div>
+        <div class="feature-title">Multi-caissier</div>
+        <div class="feature-desc">Plusieurs caisses en même temps. Chaque serveur avec son PIN. Rapport de performance par personne.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="container">
+    <h2 class="section-title">Tarifs simples</h2>
+    <p class="section-sub">Pas de frais cachés, pas de pourcentage sur vos ventes</p>
+    <div class="pricing">
+      <div class="price-card">
+        <div class="price-name">EXE seul</div>
+        <div class="price-val">500 <span>DT</span></div>
+        <ul class="price-list">
+          <li>Application personnalisée (votre nom + logo)</li>
+          <li>Installation + formation 1h</li>
+          <li>Pas d'abonnement</li>
+          <li>Fonctionne hors ligne</li>
+          <li>Support WhatsApp 30 jours</li>
+        </ul>
+        <a href="https://wa.me/21652050581?text=Je suis intéressé par l'offre EXE seul" class="btn btn-outline" style="width:100%;display:block;text-align:center">Choisir</a>
+      </div>
+      <div class="price-card popular">
+        <div class="price-badge">POPULAIRE</div>
+        <div class="price-name">Complet</div>
+        <div class="price-val">300 <span>DT + 50/mois</span></div>
+        <ul class="price-list">
+          <li>Tout de l'offre EXE seul</li>
+          <li>Dashboard en ligne (téléphone)</li>
+          <li>Analyses et rapports</li>
+          <li>Stock boissons en temps réel</li>
+          <li>Mises à jour automatiques</li>
+          <li>Support illimité</li>
+        </ul>
+        <a href="https://wa.me/21652050581?text=Je suis intéressé par l'offre Complète" class="btn btn-gold" style="width:100%;display:block;text-align:center">Choisir</a>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Café + Tables</div>
+        <div class="price-val">400 <span>DT + 50/mois</span></div>
+        <ul class="price-list">
+          <li>Tout de l'offre Complète</li>
+          <li>Gestion par tables (plan de salle)</li>
+          <li>Split addition / fusion tables</li>
+          <li>Modificateurs café (taille, lait...)</li>
+          <li>Multi-serveur avec suivi</li>
+        </ul>
+        <a href="https://wa.me/21652050581?text=Je suis intéressé par l'offre Café + Tables" class="btn btn-outline" style="width:100%;display:block;text-align:center">Choisir</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2 class="cta-title">Prêt à moderniser votre restaurant?</h2>
+  <p class="cta-sub">Démo gratuite de 5 minutes — sans engagement</p>
+  <a href="https://wa.me/21652050581?text=Bonjour, je veux une démo gratuite de Servio" class="btn btn-gold">📞 Démo gratuite sur WhatsApp</a>
+  <div class="cta-phone">+216 52 050 581</div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <p>⚡ Servio — Système de caisse intelligent · Tunisie · 2026</p>
+  <p style="margin-top:4px">by servio.tn</p>
+</footer>
+
+</body>
+</html>
