@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   const ecart        = parseFloat(body.ecart)        || 0
   const cashier      = (body.cashier || '').slice(0, 80)
 
-  // Save to day_closures (full data with ecart)
+  // Save to day_closures (full data with ecart) — one summary per cashier per day
   await sql`
     INSERT INTO day_closures
       (restaurant_id, business_date, total, orders_count, cash_total, card_total,
@@ -52,13 +52,15 @@ export async function POST(req: Request) {
        ${mobileTotal}, ${fondInitial}, ${montantCompte}, ${theorique}, ${ecart}, ${cashier}, NOW())
     ON CONFLICT (restaurant_id, business_date)
     DO UPDATE SET
-      total=${total}, orders_count=${ordersCount},
-      cash_total=${cashTotal}, card_total=${cardTotal}, mobile_total=${mobileTotal},
-      fond_initial=${fondInitial}, montant_compte=${montantCompte},
-      theorique=${theorique}, ecart=${ecart}, cashier=${cashier}, closed_at=NOW()
+      total=day_closures.total+${total}, orders_count=day_closures.orders_count+${ordersCount},
+      cash_total=day_closures.cash_total+${cashTotal}, card_total=day_closures.card_total+${cardTotal},
+      mobile_total=day_closures.mobile_total+${mobileTotal},
+      montant_compte=day_closures.montant_compte+${montantCompte},
+      theorique=day_closures.theorique+${theorique},
+      ecart=day_closures.ecart+${ecart}, cashier=${cashier}, closed_at=NOW()
   `
 
-  // Also save to sessions table
+  // Save to sessions table — each clôture creates its own row
   await sql`
     INSERT INTO sessions
       (restaurant_id, business_date, cashier, opened_at, closed_at,
@@ -68,12 +70,6 @@ export async function POST(req: Request) {
       (${rid}, ${bizDate}::date, ${cashier}, NOW(), NOW(),
        ${fondInitial}, ${total}, ${ordersCount}, ${cashTotal}, ${cardTotal},
        ${mobileTotal}, ${montantCompte}, ${theorique}, ${ecart})
-    ON CONFLICT (restaurant_id, business_date)
-    DO UPDATE SET
-      total_sales=${total}, orders_count=${ordersCount},
-      cash_sales=${cashTotal}, card_sales=${cardTotal}, mobile_sales=${mobileTotal},
-      fond_initial=${fondInitial}, montant_compte=${montantCompte},
-      theorique=${theorique}, ecart=${ecart}, cashier=${cashier}, closed_at=NOW()
   `
 
   return cors(NextResponse.json({ ok: true, businessDate: bizDate }))
