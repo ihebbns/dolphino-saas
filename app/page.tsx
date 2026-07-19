@@ -406,18 +406,24 @@ function OrderRow({ sale }: { sale: any }) {
               {items.map((it: any, idx: number) => (
                 <div key={idx} style={{ display:'flex', justifyContent:'space-between', padding:'3px 0', borderBottom: idx < items.length-1 ? '1px solid var(--div)' : 'none' }}>
                   <span>{it.qty || 1}x {it.name}</span>
-                  <span style={{ color:'var(--gold-l)', fontWeight:'600' }}>{f((it.price||0) * (it.qty||1))} DT</span>
+                  <span style={{ color:'var(--gold-l)', fontWeight:'600' }}>{f((it.price || it.p || 0) * (it.qty||1))} DT</span>
                 </div>
               ))}
             </div>
           ) : <div style={{ color:'var(--muted)', marginBottom:'6px' }}>Détail articles non disponible</div>}
-          <div style={{ display:'flex', gap:'16px', color:'var(--muted)', flexWrap:'wrap' }}>
+          <div style={{ display:'flex', gap:'16px', color:'var(--muted)', flexWrap:'wrap', fontSize:'11px' }}>
             <span>🕐 {sale.sale_time}</span>
             <span>👤 {sale.cashier || '—'}</span>
             {sale.cli_name && <span>📋 {sale.cli_name}</span>}
             {sale.disc_pct > 0 && <span>🏷️ -{sale.disc_pct}%</span>}
             <span>💰 {sale.pay_method==='cash'?'Espèces':sale.pay_method==='card'?'Carte':'Mobile'}</span>
           </div>
+          {sale.pay_method === 'cash' && (sale.received || sale.monnaie) && (
+            <div style={{ display:'flex', gap:'16px', color:'var(--muted)', fontSize:'11px', marginTop:'4px' }}>
+              <span>💵 Reçu: <b style={{color:'var(--txt)'}}>{f(sale.received || sale.grand)} DT</b></span>
+              {sale.monnaie > 0 && <span>💱 Monnaie: <b style={{color:'var(--green)'}}>{f(sale.monnaie)} DT</b></span>}
+            </div>
+          )}
         </div>
       )}
     </div>
