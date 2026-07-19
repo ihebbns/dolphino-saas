@@ -217,11 +217,13 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       {/* Action modal */}
       {actionClient && (
         <div onClick={() => setActionClient(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
-          <div onClick={e => e.stopPropagation()} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', width:'100%', maxWidth:'400px', boxShadow:'var(--shadow)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', width:'100%', maxWidth:'420px', boxShadow:'var(--shadow)', maxHeight:'90vh', overflowY:'auto' }}>
             <div style={{ fontSize:'16px', fontWeight:'700', marginBottom:'4px' }}>{actionClient.name}</div>
             <div style={{ fontSize:'12px', color:'var(--muted)', marginBottom:'20px' }}>{actionClient.api_key}</div>
             
-            <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+            {/* Suspend options */}
+            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Suspendre</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'8px', marginBottom:'16px' }}>
               <button onClick={() => doAction(actionClient.api_key, 'suspend_all')} style={{ padding:'14px', background:'var(--red-dim)', border:'1px solid rgba(224,82,82,.3)', borderRadius:'10px', color:'var(--red)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
                 🔒 Suspendre TOUT <span style={{ float:'right', opacity:.6 }}>EXE + Dashboard</span>
               </button>
@@ -231,13 +233,32 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
               <button onClick={() => doAction(actionClient.api_key, 'suspend_dash')} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--blue)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
                 📊 Suspendre Dashboard seul <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>EXE reste actif</span>
               </button>
-              <button onClick={() => doAction(actionClient.api_key, 'schedule', 30)} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--gold-l)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
-                ⏰ Auto-suspendre dans 30 jours <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>Période d'essai</span>
+            </div>
+
+            {/* Schedule options */}
+            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Programmer une suspension</div>
+            <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'16px' }}>
+              <button onClick={() => doAction(actionClient.api_key, 'schedule', 7)} style={{ flex:1, padding:'12px 8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor:'pointer', fontSize:'12px', fontWeight:'600', textAlign:'center' }}>
+                ⏰ 7 jours
               </button>
-              <button onClick={() => setActionClient(null)} style={{ padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
-                Annuler
+              <button onClick={() => doAction(actionClient.api_key, 'schedule', 15)} style={{ flex:1, padding:'12px 8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor:'pointer', fontSize:'12px', fontWeight:'600', textAlign:'center' }}>
+                ⏰ 15 jours
+              </button>
+              <button onClick={() => doAction(actionClient.api_key, 'schedule', 30)} style={{ flex:1, padding:'12px 8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor:'pointer', fontSize:'12px', fontWeight:'600', textAlign:'center' }}>
+                ⏰ 30 jours
               </button>
             </div>
+
+            {/* Cancel schedule (if active) */}
+            {actionClient.suspend_at && (
+              <button onClick={() => doAction(actionClient.api_key, 'cancel_schedule')} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--green)', cursor:'pointer', fontSize:'13px', fontWeight:'600', marginBottom:'16px' }}>
+                ✕ Annuler la programmation ({new Date(actionClient.suspend_at).toLocaleDateString('fr-TN')})
+              </button>
+            )}
+
+            <button onClick={() => setActionClient(null)} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
+              Fermer
+            </button>
           </div>
         </div>
       )}
