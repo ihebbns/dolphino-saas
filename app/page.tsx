@@ -440,8 +440,55 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
 
   function getSessionOrders(session: any) {
     if (!recent || !recent.length) return []
-    // Show all sales for this date — session already has its own totals
-    return recent
+    const cashier = session.cashier || ''
+    const count = session.orders_count || 0
+    
+    // Filter by cashier
+    let filtered = cashier ? recent.filter((sale: any) => sale.cashier === cashier) : recent
+    
+    // If we have open/close timestamps, filter by time
+    if (session.opened_at && session.closed_at) {
+      try {
+        const openTs = new Date(session.opened_at).getTime()
+        const closeTs = new Date(session.closed_at).getTime()
+        if (openTs && closeTs && closeTs > openTs) {
+          filtered = filtered.filter((sale: any) => {
+            // Parse sale_time (format: "HH:MM" or "HH:MM:SS")
+            const t = sale.sale_time || ''
+            const parts = t.replace(/\s*(AM|PM)/i,'').split(':')
+            if (parts.length < 2) return true
+            let h = parseInt(parts[0]) || 0
+            const m = parseInt(parts[1]) || 0
+            // Handle AM/PM
+            if (/PM/i.test(t) && h < 12) h += 12
+            if (/AM/i.test(t) && h === 12) h = 0
+            
+            const openH = new Date(session.opened_at).getHours()
+            const openM = new Date(session.opened_at).getMinutes()
+            const closeH = new Date(session.closed_at).getHours()
+            const closeM = new Date(session.closed_at).getMinutes()
+            
+            const saleMin = h * 60 + m
+            const openMin = openH * 60 + openM
+            const closeMin = closeH * 60 + closeM
+            
+            // Handle overnight sessions (close < open means next day)
+            if (closeMin >= openMin) {
+              return saleMin >= openMin && saleMin <= closeMin
+            } else {
+              return saleMin >= openMin || saleMin <= closeMin
+            }
+          })
+        }
+      } catch(e) {}
+    }
+    
+    // Fallback: if time filter gives 0 but we know there should be orders, use count
+    if (filtered.length === 0 && count > 0 && cashier) {
+      filtered = recent.filter((sale: any) => sale.cashier === cashier).slice(0, count)
+    }
+    
+    return filtered
   }
 
   return (
