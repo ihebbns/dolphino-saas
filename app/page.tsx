@@ -331,18 +331,33 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
 }
 
 // ════════════════ SESSIONS TABLE ════════════════
-function SessionsSection({ sessions }: { sessions: any[] }) {
+function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[] }) {
+  const [expanded, setExpanded] = useState<number|null>(null)
+
   if (!sessions || sessions.length === 0) return (
     <div className={s.empty}><div className={s.emptyIcon}>🔒</div><div className={s.emptyText}>Aucune clôture enregistrée</div></div>
   )
+
+  function getSessionOrders(session: any) {
+    if (!recent || !recent.length) return []
+    const openTime = session.opened_at ? new Date(session.opened_at).toLocaleTimeString('fr-TN', {hour:'2-digit',minute:'2-digit'}) : '00:00'
+    const closeTime = session.closed_at ? new Date(session.closed_at).toLocaleTimeString('fr-TN', {hour:'2-digit',minute:'2-digit'}) : '23:59'
+    return recent.filter((sale: any) => {
+      const t = sale.sale_time || ''
+      return t >= openTime && t <= closeTime
+    })
+  }
+
   return (
     <div className={s.sessionGrid}>
       {sessions.map((r:any, i:number) => {
         const ecart    = r.ecart != null ? parseFloat(r.ecart) : null
         const ecartOk  = ecart === null || ecart >= 0
         const cardCls  = ecart === null ? s.sessionCardNeutral : ecartOk ? s.sessionCardOk : s.sessionCardWarn
+        const isExpanded = expanded === i
+        const orders = isExpanded ? getSessionOrders(r) : []
         return (
-          <div key={i} className={`${s.sessionCard} ${cardCls}`}>
+          <div key={i} className={`${s.sessionCard} ${cardCls}`} onClick={() => setExpanded(isExpanded ? null : i)} style={{ cursor:'pointer' }}>
             <div className={s.sessionCashier}>👤 {r.cashier || 'Caissier'}</div>
             <div className={s.sessionDate}>{r.day} · Ouverture: {r.opened_at ? new Date(r.opened_at).toLocaleTimeString('fr-TN') : '—'} · Clôture: {r.closed_at ? new Date(r.closed_at).toLocaleTimeString('fr-TN') : '—'}</div>
             <div className={s.sessionRow}><span>💰 Fond initial</span><span>{f(r.fond_initial)} DT</span></div>
@@ -355,6 +370,29 @@ function SessionsSection({ sessions }: { sessions: any[] }) {
             {ecart !== null && (
               <div className={`${s.ecartBig} ${ecartOk ? s.ecartBigOk : s.ecartBigWarn}`}>
                 Écart {ecartOk ? '+' : ''}{f(ecart)} DT {ecart===0?'✅':ecartOk?'⬆':'⚠'}
+              </div>
+            )}
+            <div style={{ fontSize:'11px', color:'var(--muted)', textAlign:'center', marginTop:'8px' }}>{isExpanded ? '▲ Fermer détails' : '▼ Voir les commandes'}</div>
+            {isExpanded && (
+              <div style={{ marginTop:'12px', borderTop:'1px solid var(--div)', paddingTop:'12px' }} onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize:'12px', fontWeight:'700', marginBottom:'8px', color:'var(--gold-l)' }}>📋 Commandes de cette session ({orders.length})</div>
+                {orders.length === 0 ? (
+                  <div style={{ fontSize:'12px', color:'var(--muted)', textAlign:'center', padding:'10px' }}>Aucune commande trouvée pour cette session</div>
+                ) : (
+                  <div style={{ maxHeight:'250px', overflowY:'auto' }}>
+                    {orders.map((sale: any, j: number) => (
+                      <div key={j} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'8px 0', borderBottom:'1px solid var(--div)', fontSize:'12px' }}>
+                        <span style={{ fontWeight:'700', color:'var(--gold-l)', fontFamily:'monospace', width:'40px' }}>#{String(sale.num).padStart(3,'0')}</span>
+                        <span style={{ color:'var(--muted)', width:'45px' }}>{sale.sale_time}</span>
+                        <span style={{ flex:1 }}>{sale.item_count} art. {sale.cli_name ? '· '+sale.cli_name : ''}</span>
+                        <span style={{ fontWeight:'700' }}>{f(sale.grand)} DT</span>
+                        <span style={{ fontSize:'10px', padding:'2px 6px', borderRadius:'10px', background: sale.pay_method==='cash'?'var(--gold-dim)':sale.pay_method==='card'?'rgba(74,144,217,.1)':'rgba(61,184,122,.1)', color: sale.pay_method==='cash'?'var(--gold-l)':sale.pay_method==='card'?'var(--blue)':'var(--green)' }}>
+                          {sale.pay_method==='cash'?'💵':sale.pay_method==='card'?'💳':'📱'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -511,7 +549,7 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
           {activeTab === 'sessions' && <>
             <div className={s.section}>
               <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🔒</span> Historique des clôtures de caisse</div></div>
-              <SessionsSection sessions={data.sessions}/>
+              <SessionsSection sessions={data.sessions} recent={data.recent}/>
             </div>
           </>}
         </>}
