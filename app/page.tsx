@@ -343,6 +343,7 @@ function SessionsSection({ sessions }: { sessions: any[] }) {
         const cardCls  = ecart === null ? s.sessionCardNeutral : ecartOk ? s.sessionCardOk : s.sessionCardWarn
         return (
           <div key={i} className={`${s.sessionCard} ${cardCls}`}>
+            <div className={s.sessionCashier}>👤 {r.cashier || 'Caissier'}</div>
             <div className={s.sessionDate}>{r.day} · Ouverture: {r.opened_at ? new Date(r.opened_at).toLocaleTimeString('fr-TN') : '—'} · Clôture: {r.closed_at ? new Date(r.closed_at).toLocaleTimeString('fr-TN') : '—'}</div>
             <div className={s.sessionRow}><span>💰 Fond initial</span><span>{f(r.fond_initial)} DT</span></div>
             <div className={s.sessionRow}><span>🧾 Ventes totales</span><span className={s.bold}>{f(r.total_sales)} DT</span></div>
