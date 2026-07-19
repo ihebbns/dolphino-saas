@@ -482,7 +482,21 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
   }, [apiKey, onLogout])
 
   useEffect(() => { load(date) }, [date, load])
-  useEffect(() => { const id = setInterval(() => load(date), 120000); return () => clearInterval(id) }, [date, load])
+  useEffect(() => { const id = setInterval(() => load(date), 30000); return () => clearInterval(id) }, [date, load])
+
+  // ── Live notifications ──
+  const [prevOrders, setPrevOrders] = useState(0)
+  const [notif, setNotif] = useState('')
+  useEffect(() => {
+    if (!data?.kpis) return
+    const curr = data.kpis.total_orders || 0
+    if (prevOrders > 0 && curr > prevOrders) {
+      const newSales = curr - prevOrders
+      setNotif(`🔔 +${newSales} nouvelle${newSales>1?'s':''} vente${newSales>1?'s':''}!`)
+      setTimeout(() => setNotif(''), 4000)
+    }
+    setPrevOrders(curr)
+  }, [data?.kpis?.total_orders])
 
   // ── Export PDF ──
   function exportPDF() {
@@ -560,9 +574,13 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
         <div className={s.statusLeft}>
           <div className={`${s.dot} ${loading?s.dotOrange:online?s.dotGreen:s.dotRed}`}/>
           <span>{loading ? 'Actualisation...' : syncMsg}</span>
+          <span style={{marginLeft:8,fontSize:11,color:'var(--green)'}}>● LIVE (30s)</span>
         </div>
         <span style={{fontSize:12,color:'var(--muted)'}}>{dateLabel}</span>
       </div>
+
+      {/* Notification toast */}
+      {notif && <div style={{position:'fixed',top:70,right:20,background:'var(--panel)',border:'1px solid var(--green)',borderRadius:10,padding:'12px 20px',fontSize:13,fontWeight:600,color:'var(--green)',zIndex:999,boxShadow:'0 8px 24px rgba(0,0,0,.3)',animation:'slideUp .3s ease'}}>{notif}</div>}
 
       {/* Content */}
       <div className={s.content}>
