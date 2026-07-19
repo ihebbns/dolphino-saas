@@ -192,6 +192,58 @@ function PaymentDonut({ k }: { k: any }) {
 }
 
 // ════════════════ TOP PRODUCTS ════════════════
+// ════════════════ CATEGORY BREAKDOWN ════════════════
+function CategoryBreakdown({ items }: { items: any[] }) {
+  if (!items || items.length === 0) return <div style={{textAlign:'center',color:'var(--muted)',padding:'20px'}}>Aucune donnée</div>
+
+  // Group items by category (guess from emoji)
+  const cats: Record<string, { qty: number, revenue: number }> = {}
+  items.forEach((it: any) => {
+    const cat = itemCategory(it.name) || 'Autre'
+    if (!cats[cat]) cats[cat] = { qty: 0, revenue: 0 }
+    cats[cat].qty += it.qty || 0
+    cats[cat].revenue += it.revenue || 0
+  })
+
+  const sorted = Object.entries(cats).sort((a, b) => b[1].revenue - a[1].revenue)
+  const totalRev = sorted.reduce((s, [, v]) => s + v.revenue, 0) || 1
+  const colors = ['var(--gold-l)', 'var(--green)', 'var(--blue)', 'var(--orange)', 'var(--red)', '#9B6FD4', '#E8A84C']
+
+  return (
+    <div style={{ display:'flex', gap:'20px', flexWrap:'wrap', alignItems:'center' }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:'8px', flex:1, minWidth:'200px' }}>
+        {sorted.map(([cat, data], i) => {
+          const pct = Math.round(data.revenue / totalRev * 100)
+          return (
+            <div key={i} style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+              <div style={{ width:'10px', height:'10px', borderRadius:'50%', background:colors[i % colors.length], flexShrink:0 }}/>
+              <span style={{ flex:1, fontSize:'12px' }}>{cat}</span>
+              <span style={{ fontSize:'12px', fontWeight:'700', color:colors[i % colors.length] }}>{pct}%</span>
+              <span style={{ fontSize:'11px', color:'var(--muted)', width:'70px', textAlign:'right' }}>{Number(data.revenue).toFixed(3)} DT</span>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ width:'120px', height:'120px', position:'relative', flexShrink:0 }}>
+        <svg viewBox="0 0 120 120" style={{ width:'100%', height:'100%' }}>
+          <circle cx="60" cy="60" r="40" fill="none" stroke="var(--div)" strokeWidth="20"/>
+          {(() => {
+            let offset = 25
+            return sorted.map(([, data], i) => {
+              const pct = data.revenue / totalRev
+              const circ = 2 * Math.PI * 40
+              const dash = pct * circ
+              const el = <circle key={i} cx="60" cy="60" r="40" fill="none" stroke={colors[i % colors.length]} strokeWidth="20" strokeDasharray={`${dash} ${circ - dash}`} strokeDashoffset={(-offset / 100) * circ} style={{ transition:'all .5s' }}/>
+              offset += pct * 100
+              return el
+            })
+          })()}
+        </svg>
+      </div>
+    </div>
+  )
+}
+
 function TopProducts({ items, filter, onFilter }: { items: any[], filter: string, onFilter:(f:string)=>void }) {
   const cats = useMemo(() => ['Tous', ...Array.from(new Set(items.map((it:any) => itemCategory(it.name)).filter(Boolean)))], [items])
   const filtered = filter === 'Tous' ? items : items.filter((it:any) => it.name.startsWith(filter + ' '))
@@ -432,6 +484,37 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
   useEffect(() => { load(date) }, [date, load])
   useEffect(() => { const id = setInterval(() => load(date), 120000); return () => clearInterval(id) }, [date, load])
 
+  // ── Export PDF ──
+  function exportPDF() {
+    if (!data) return
+    const k = data.kpis
+    const dateStr = new Date(date + 'T12:00').toLocaleDateString('fr-TN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Rapport ${restInfo.name} — ${date}</title>
+    <style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:#222}h1{font-size:20px;margin-bottom:4px}h2{font-size:14px;margin-top:20px;border-bottom:1px solid #ddd;padding-bottom:4px}.sub{color:#666;font-size:12px;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}.kpi{background:#f8f6f2;border-radius:8px;padding:14px;text-align:center}.kpi-val{font-size:22px;font-weight:700}.kpi-lbl{font-size:11px;color:#666;margin-top:4px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #eee;font-size:12px}th{background:#f5f3ef;font-weight:600}.footer{margin-top:30px;text-align:center;font-size:10px;color:#999}</style></head><body>
+    <h1>⚡ ${restInfo.name}</h1>
+    <div class="sub">${dateStr} · Rapport généré le ${new Date().toLocaleDateString('fr-TN')} à ${new Date().toLocaleTimeString('fr-TN')}</div>
+    <div class="grid">
+      <div class="kpi"><div class="kpi-val">${Number(k.total_revenue||0).toFixed(3)} DT</div><div class="kpi-lbl">Chiffre d'affaires</div></div>
+      <div class="kpi"><div class="kpi-val">${k.total_orders||0}</div><div class="kpi-lbl">Commandes</div></div>
+      <div class="kpi"><div class="kpi-val">${Number(k.avg_ticket||0).toFixed(3)} DT</div><div class="kpi-lbl">Ticket moyen</div></div>
+      <div class="kpi"><div class="kpi-val">${Number(k.cash_total||0).toFixed(3)} DT</div><div class="kpi-lbl">Espèces</div></div>
+      <div class="kpi"><div class="kpi-val">${Number(k.card_total||0).toFixed(3)} DT</div><div class="kpi-lbl">Carte</div></div>
+      <div class="kpi"><div class="kpi-val">${Number(k.mobile_total||0).toFixed(3)} DT</div><div class="kpi-lbl">Mobile</div></div>
+    </div>
+    <h2>🏆 Top produits</h2>
+    <table><tr><th>#</th><th>Article</th><th>Quantité</th><th>Revenu</th></tr>
+    ${(data.topItems||[]).map((it:any,i:number)=>`<tr><td>${i+1}</td><td>${it.name}</td><td>${it.qty}</td><td>${Number(it.revenue||0).toFixed(3)} DT</td></tr>`).join('')}
+    </table>
+    <h2>🧾 Commandes</h2>
+    <table><tr><th>#</th><th>Heure</th><th>Articles</th><th>Total</th><th>Paiement</th></tr>
+    ${(data.recent||[]).slice(0,30).map((s:any)=>`<tr><td>#${String(s.num).padStart(3,'0')}</td><td>${s.sale_time||''}</td><td>${s.item_count}</td><td>${Number(s.grand||0).toFixed(3)} DT</td><td>${s.pay_method==='cash'?'Espèces':s.pay_method==='card'?'Carte':'Mobile'}</td></tr>`).join('')}
+    </table>
+    <div class="footer">by servio.tn ⚡ — Rapport auto-généré</div>
+    </body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500) }
+  }
+
   const tabs = [
     { id:'overview',  label:'📊 Vue d\'ensemble' },
     { id:'products',  label:'🏆 Produits'         },
@@ -453,8 +536,11 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
           <div><div className={s.hdrName}>SERVIO OS</div><div className={s.hdrCity}>{restInfo.name} · {restInfo.city}</div></div>
         </div>
         <div className={s.hdrRight}>
+          <button className={`${s.filterBtn} ${date===today()?s.filterBtnActive:''}`} onClick={()=>setDate(today())}>Aujourd'hui</button>
+          <button className={s.filterBtn} onClick={()=>{const d=new Date();d.setDate(d.getDate()-1);setDate(d.toISOString().split('T')[0])}}>Hier</button>
           <input type="date" className={s.datePick} value={date} max={today()} onChange={e=>setDate(e.target.value)}/>
           <button className={s.btnIcon} onClick={()=>load(date)} title="Actualiser">↻</button>
+          <button className={s.btnIcon} onClick={exportPDF} title="Exporter PDF">📄</button>
           <button className={s.btnIcon} onClick={toggle} title="Thème">{theme==='dark'?'☀️':'🌙'}</button>
           <button className={s.btnLogout} onClick={onLogout}><span>Déconnecter</span></button>
         </div>
@@ -497,6 +583,13 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
               <div className={s.chartBox}>
                 <div className={s.chartTitle}>💳 Répartition paiements</div>
                 <PaymentDonut k={k}/>
+              </div>
+            </div>
+            {/* Category breakdown */}
+            <div className={s.section}>
+              <div className={s.chartBox}>
+                <div className={s.chartTitle}>📂 Ventes par catégorie</div>
+                <CategoryBreakdown items={data.topItems}/>
               </div>
             </div>
             <div className={s.section}>
