@@ -443,49 +443,29 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
     const cashier = session.cashier || ''
     const count = session.orders_count || 0
     
-    // Filter by cashier
+    // Filter by cashier first
     let filtered = cashier ? recent.filter((sale: any) => sale.cashier === cashier) : recent
     
-    // If we have open/close timestamps, filter by time
-    if (session.opened_at && session.closed_at) {
-      try {
-        const openTs = new Date(session.opened_at).getTime()
-        const closeTs = new Date(session.closed_at).getTime()
-        if (openTs && closeTs && closeTs > openTs) {
-          filtered = filtered.filter((sale: any) => {
-            // Parse sale_time (format: "HH:MM" or "HH:MM:SS")
-            const t = sale.sale_time || ''
-            const parts = t.replace(/\s*(AM|PM)/i,'').split(':')
-            if (parts.length < 2) return true
-            let h = parseInt(parts[0]) || 0
-            const m = parseInt(parts[1]) || 0
-            // Handle AM/PM
-            if (/PM/i.test(t) && h < 12) h += 12
-            if (/AM/i.test(t) && h === 12) h = 0
-            
-            const openH = new Date(session.opened_at).getHours()
-            const openM = new Date(session.opened_at).getMinutes()
-            const closeH = new Date(session.closed_at).getHours()
-            const closeM = new Date(session.closed_at).getMinutes()
-            
-            const saleMin = h * 60 + m
-            const openMin = openH * 60 + openM
-            const closeMin = closeH * 60 + closeM
-            
-            // Handle overnight sessions (close < open means next day)
-            if (closeMin >= openMin) {
-              return saleMin >= openMin && saleMin <= closeMin
-            } else {
-              return saleMin >= openMin || saleMin <= closeMin
-            }
-          })
+    // Use orders_count to take only the correct number of orders
+    // Since 'recent' is ordered by num DESC, take the first 'count' that match the session
+    if (count > 0 && count < filtered.length) {
+      // The session's orders are the most recent 'count' orders at the time of close
+      // Match by total: sum of those orders should equal total_sales
+      const totalSales = parseFloat(session.total_sales) || 0
+      if (totalSales > 0) {
+        // Find the exact set of orders whose sum matches total_sales
+        let sum = 0
+        const matched: any[] = []
+        for (const sale of filtered) {
+          if (sum >= totalSales) break
+          sum += parseFloat(sale.grand) || 0
+          matched.push(sale)
+          if (matched.length >= count) break
         }
-      } catch(e) {}
-    }
-    
-    // Fallback: if time filter gives 0 but we know there should be orders, use count
-    if (filtered.length === 0 && count > 0 && cashier) {
-      filtered = recent.filter((sale: any) => sale.cashier === cashier).slice(0, count)
+        if (matched.length === count) return matched
+      }
+      // Fallback: just take the first 'count' orders
+      return filtered.slice(0, count)
     }
     
     return filtered
