@@ -3,466 +3,104 @@ import { useState, useEffect } from 'react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
 const ADMIN_KEY = 'servio-admin-iheb-2026'
-const BUILD_SERVER = 'http://localhost:4500'
 
-function f(n: any) { return Number(n).toFixed(3) }
+// ═══════════════ ADMIN PAGE ═══════════════
+export default function AdminPage() {
+  const [authed, setAuthed] = useState(false)
+  const [dark, setDark] = useState(true)
 
-// ═══════════════ STYLES ═══════════════
-const S = {
-  wrap: { minHeight:'100vh', background:'#080604', color:'#F0E8D8', fontFamily:'system-ui,sans-serif', fontSize:'14px' },
-  hdr: { background:'#0F0C08', borderBottom:'1px solid #231C12', padding:'0 24px', height:'56px', display:'flex', alignItems:'center', justifyContent:'space-between' } as any,
-  brand: { fontFamily:'serif', fontSize:'20px', color:'#E8A84C' },
-  content: { maxWidth:'1000px', margin:'0 auto', padding:'24px' },
-  card: { background:'#0F0C08', border:'1px solid #231C12', borderRadius:'12px', overflow:'hidden', marginBottom:'20px' } as any,
-  cardHdr: { padding:'14px 20px', borderBottom:'1px solid #231C12', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#181310' } as any,
-  cardTitle: { fontWeight:'700', fontSize:'15px', color:'#E8A84C' },
-  row: { display:'flex', alignItems:'center', gap:'12px', padding:'14px 20px', borderBottom:'1px solid #1A1410' } as any,
-  badge: (plan: string) => ({ padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:'700', background: plan==='active'?'rgba(61,184,122,.15)':'rgba(224,82,82,.15)', color: plan==='active'?'#3DB87A':'#E05252', border:`1px solid ${plan==='active'?'rgba(61,184,122,.3)':'rgba(224,82,82,.3)'}` }),
-  btnGold: { padding:'8px 16px', background:'linear-gradient(135deg,#C8913A,#E8A84C)', border:'none', borderRadius:'7px', color:'#080604', fontSize:'13px', fontWeight:'700', cursor:'pointer' } as any,
-  btnRed: { padding:'6px 14px', background:'rgba(224,82,82,.15)', border:'1px solid rgba(224,82,82,.3)', borderRadius:'6px', color:'#E05252', fontSize:'12px', fontWeight:'600', cursor:'pointer' } as any,
-  btnGreen: { padding:'6px 14px', background:'rgba(61,184,122,.15)', border:'1px solid rgba(61,184,122,.3)', borderRadius:'6px', color:'#3DB87A', fontSize:'12px', fontWeight:'600', cursor:'pointer' } as any,
-  inp: { background:'#181310', border:'1px solid #231C12', borderRadius:'7px', padding:'9px 12px', color:'#F0E8D8', fontSize:'13px', outline:'none', width:'100%', boxSizing:'border-box' } as any,
-  label: { fontSize:'11px', color:'#7A6E5F', textTransform:'uppercase' as any, letterSpacing:'1px', display:'block', marginBottom:'4px' },
-  grid2: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', padding:'20px' } as any,
-  grid3: { display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'12px', padding:'20px' } as any,
-  tab: (active: boolean) => ({ padding:'10px 20px', cursor:'pointer', borderBottom: active?'2px solid #E8A84C':'2px solid transparent', color: active?'#E8A84C':'#7A6E5F', fontWeight: active?'700':'400', fontSize:'13px' }),
+  useEffect(() => {
+    if (sessionStorage.getItem('servio_admin') === '1') setAuthed(true)
+    const saved = localStorage.getItem('servio_admin_theme')
+    if (saved === 'light') setDark(false)
+  }, [])
+
+  function toggleTheme() {
+    setDark(!dark)
+    localStorage.setItem('servio_admin_theme', dark ? 'light' : 'dark')
+  }
+
+  if (!authed) return <Login dark={dark} toggleTheme={toggleTheme} onLogin={() => { sessionStorage.setItem('servio_admin','1'); setAuthed(true) }} />
+  return <Panel dark={dark} toggleTheme={toggleTheme} onLogout={() => { sessionStorage.removeItem('servio_admin'); setAuthed(false) }} />
+}
+
+// ═══════════════ THEME WRAPPER ═══════════════
+function Wrap({ dark, children }: { dark: boolean, children: React.ReactNode }) {
+  const vars = dark ? {
+    '--bg':'#0A0704','--panel':'#0F0C08','--card':'#161210','--card-h':'#1E1810',
+    '--gold':'#C8913A','--gold-l':'#E8A84C','--gold-dim':'rgba(200,145,58,.08)',
+    '--txt':'#F0E8D8','--muted':'#7A6E5F','--div':'#231C12',
+    '--green':'#3DB87A','--red':'#E05252','--blue':'#4A90D9','--orange':'#E8882A',
+    '--green-dim':'rgba(61,184,122,.1)','--red-dim':'rgba(224,82,82,.1)',
+    '--radius':'12px','--shadow':'0 4px 20px rgba(0,0,0,.3)',
+  } : {
+    '--bg':'#F5F0E8','--panel':'#FFFFFF','--card':'#F0EBE0','--card-h':'#E8E0D0',
+    '--gold':'#B8782A','--gold-l':'#8A5A1A','--gold-dim':'rgba(184,120,42,.06)',
+    '--txt':'#1A1208','--muted':'#8A7A6A','--div':'#DDD5C5',
+    '--green':'#2A8A5A','--red':'#C04040','--blue':'#2A70B8','--orange':'#C06818',
+    '--green-dim':'rgba(42,138,90,.08)','--red-dim':'rgba(192,64,64,.08)',
+    '--radius':'12px','--shadow':'0 4px 20px rgba(0,0,0,.06)',
+  }
+  return <div style={{ ...vars, minHeight:'100vh', background:'var(--bg)', color:'var(--txt)', fontFamily:'system-ui,-apple-system,sans-serif', fontSize:'14px' } as any}>{children}</div>
 }
 
 // ═══════════════ LOGIN ═══════════════
-function AdminLogin({ onLogin }: { onLogin: () => void }) {
+function Login({ dark, toggleTheme, onLogin }: { dark:boolean, toggleTheme:()=>void, onLogin:()=>void }) {
   const [pass, setPass] = useState('')
   const [err, setErr] = useState('')
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (pass === ADMIN_KEY) { sessionStorage.setItem('admin_auth','1'); onLogin() }
-    else setErr('Mot de passe incorrect.')
-  }
-  return (
-    <div style={{ minHeight:'100vh', background:'#080604', display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <form onSubmit={submit} style={{ background:'#0F0C08', border:'1px solid #231C12', borderRadius:'16px', padding:'40px 32px', width:'320px', textAlign:'center' }}>
-        <div style={{ fontSize:'42px', marginBottom:'8px' }}>⚡</div>
-        <div style={{ fontFamily:'serif', fontSize:'22px', color:'#E8A84C', marginBottom:'4px' }}>SERVIO OS</div>
-        <div style={{ fontSize:'11px', color:'#7A6E5F', letterSpacing:'2px', textTransform:'uppercase', marginBottom:'28px' }}>Admin Panel</div>
-        <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="Mot de passe admin" style={{ ...S.inp, marginBottom:'12px' }} autoFocus />
-        {err && <div style={{ color:'#E05252', fontSize:'12px', marginBottom:'10px' }}>{err}</div>}
-        <button type="submit" style={S.btnGold}>Accéder</button>
-      </form>
-    </div>
-  )
-}
-
-// ═══════════════ MENU EDITOR COMPONENT ═══════════════
-function MenuEditor({ menu, setMenu }: { menu: any, setMenu: (m: any) => void }) {
-  const [selCat, setSelCat] = useState(Object.keys(menu)[0] || '')
-  const [newCatName, setNewCatName] = useState('')
-  const [newCatIcon, setNewCatIcon] = useState('')
-  const [newItemName, setNewItemName] = useState('')
-  const [newItemEmoji, setNewItemEmoji] = useState('')
-  const [newItemPrice, setNewItemPrice] = useState('')
-  const [newItemHasVar, setNewItemHasVar] = useState(false)
-  const [newItemPriceMoy, setNewItemPriceMoy] = useState('')
-  const [newItemPriceMax, setNewItemPriceMax] = useState('')
-
-  function addCategory() {
-    if (!newCatName.trim()) return
-    const m = { ...menu, [newCatName.trim()]: { icon: newCatIcon || '🍽️', items: [] } }
-    setMenu(m)
-    setSelCat(newCatName.trim())
-    setNewCatName(''); setNewCatIcon('')
-  }
-
-  function deleteCategory(cat: string) {
-    if (!confirm(`Supprimer la catégorie "${cat}" et tous ses articles ?`)) return
-    const m = { ...menu }; delete m[cat]; setMenu(m)
-    setSelCat(Object.keys(m)[0] || '')
-  }
-
-  function addItem() {
-    if (!newItemName.trim() || !selCat) return
-    const id = selCat.slice(0,2).toLowerCase() + (menu[selCat]?.items?.length || 0 + 1)
-    let item: any = { id, name: newItemName.trim(), e: newItemEmoji || '🍽️' }
-    if (newItemHasVar) {
-      item.v = [{ l:'Moy', p: parseFloat(newItemPriceMoy) || 0 }, { l:'Max', p: parseFloat(newItemPriceMax) || 0 }]
-    } else {
-      item.p = parseFloat(newItemPrice) || 0
-    }
-    const m = { ...menu }
-    m[selCat] = { ...m[selCat], items: [...(m[selCat]?.items || []), item] }
-    setMenu(m)
-    setNewItemName(''); setNewItemEmoji(''); setNewItemPrice(''); setNewItemPriceMoy(''); setNewItemPriceMax(''); setNewItemHasVar(false)
-  }
-
-  function deleteItem(cat: string, idx: number) {
-    const m = { ...menu }
-    m[cat] = { ...m[cat], items: m[cat].items.filter((_: any, i: number) => i !== idx) }
-    setMenu(m)
-  }
-
-  function updateItemPrice(cat: string, idx: number, price: number) {
-    const m = { ...menu }
-    const items = [...m[cat].items]
-    items[idx] = { ...items[idx], p: price }
-    m[cat] = { ...m[cat], items }
-    setMenu(m)
-  }
-
-  const cats = Object.keys(menu)
-  const currentItems = menu[selCat]?.items || []
-
-  return (
-    <div style={S.card}>
-      <div style={S.cardHdr}>
-        <span style={S.cardTitle}>🍽️ Menu — Catégories & Articles</span>
-        <span style={{ fontSize:'12px', color:'#7A6E5F' }}>{cats.length} catégories, {cats.reduce((s,c) => s + (menu[c]?.items?.length||0), 0)} articles</span>
-      </div>
-
-      {/* Category tabs */}
-      <div style={{ display:'flex', flexWrap:'wrap', borderBottom:'1px solid #231C12', padding:'0 12px' }}>
-        {cats.map(c => (
-          <div key={c} style={S.tab(c===selCat)} onClick={() => setSelCat(c)}>
-            {menu[c]?.icon} {c}
-          </div>
-        ))}
-      </div>
-
-      {/* Add category */}
-      <div style={{ display:'flex', gap:'8px', padding:'12px 20px', borderBottom:'1px solid #231C12' }}>
-        <input style={{ ...S.inp, width:'50px' }} value={newCatIcon} onChange={e=>setNewCatIcon(e.target.value)} placeholder="🍕" />
-        <input style={{ ...S.inp, flex:1 }} value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Nouvelle catégorie..." onKeyDown={e=>e.key==='Enter'&&addCategory()} />
-        <button style={S.btnGold} onClick={addCategory}>+ Catégorie</button>
-        {selCat && <button style={S.btnRed} onClick={() => deleteCategory(selCat)}>🗑️</button>}
-      </div>
-
-      {/* Items list */}
-      <div style={{ maxHeight:'300px', overflowY:'auto' }}>
-        {currentItems.length === 0 && <div style={{ padding:'20px', textAlign:'center', color:'#7A6E5F' }}>Aucun article dans cette catégorie</div>}
-        {currentItems.map((it: any, i: number) => (
-          <div key={i} style={{ ...S.row, background: i%2===0?'transparent':'#181310' }}>
-            <span style={{ fontSize:'18px', width:'28px' }}>{it.e}</span>
-            <span style={{ flex:1, fontSize:'13px' }}>{it.name}</span>
-            {it.v ? (
-              <span style={{ color:'#E8A84C', fontSize:'12px' }}>{it.v[0]?.p} / {it.v[1]?.p} DT</span>
-            ) : (
-              <input style={{ ...S.inp, width:'70px', textAlign:'right', color:'#E8A84C', fontWeight:'700' }}
-                type="number" step="0.5" value={it.p||0}
-                onChange={e => updateItemPrice(selCat, i, parseFloat(e.target.value)||0)} />
-            )}
-            <button style={{ ...S.btnRed, padding:'4px 8px' }} onClick={() => deleteItem(selCat, i)}>✕</button>
-          </div>
-        ))}
-      </div>
-
-      {/* Add item */}
-      <div style={{ padding:'16px 20px', borderTop:'1px solid #231C12', background:'#0A0804' }}>
-        <div style={{ fontSize:'11px', color:'#7A6E5F', fontWeight:'600', marginBottom:'8px' }}>AJOUTER UN ARTICLE</div>
-        <div style={{ display:'flex', gap:'8px', marginBottom:'8px', flexWrap:'wrap' }}>
-          <input style={{ ...S.inp, width:'50px' }} value={newItemEmoji} onChange={e=>setNewItemEmoji(e.target.value)} placeholder="🍕" />
-          <input style={{ ...S.inp, flex:1, minWidth:'140px' }} value={newItemName} onChange={e=>setNewItemName(e.target.value)} placeholder="Nom de l'article" />
-        </div>
-        <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'8px' }}>
-          <label style={{ fontSize:'12px', color:'#7A6E5F', cursor:'pointer', display:'flex', alignItems:'center', gap:'4px' }}>
-            <input type="checkbox" checked={newItemHasVar} onChange={e=>setNewItemHasVar(e.target.checked)} /> 2 tailles (Moy/Max)
-          </label>
-        </div>
-        {!newItemHasVar ? (
-          <input style={{ ...S.inp, width:'120px' }} type="number" step="0.5" value={newItemPrice} onChange={e=>setNewItemPrice(e.target.value)} placeholder="Prix (DT)" />
-        ) : (
-          <div style={{ display:'flex', gap:'8px' }}>
-            <input style={{ ...S.inp, width:'100px' }} type="number" step="0.5" value={newItemPriceMoy} onChange={e=>setNewItemPriceMoy(e.target.value)} placeholder="Prix Moy" />
-            <input style={{ ...S.inp, width:'100px' }} type="number" step="0.5" value={newItemPriceMax} onChange={e=>setNewItemPriceMax(e.target.value)} placeholder="Prix Max" />
-          </div>
-        )}
-        <button style={{ ...S.btnGold, marginTop:'10px' }} onClick={addItem}>+ Ajouter l'article</button>
-      </div>
-    </div>
-  )
-}
-
-// ═══════════════ CLIENT BUILDER FORM ═══════════════
-function ClientBuilder({ onDone, existingClient }: { onDone: () => void, existingClient?: any }) {
-  const [step, setStep] = useState(1)
-  const [building, setBuilding] = useState(false)
-  const [buildMsg, setBuildMsg] = useState('')
-  const [buildResult, setBuildResult] = useState<any>(null)
-  const [dbCreated, setDbCreated] = useState(false)
-
-  // Step 1: Identity
-  const [name, setName] = useState(existingClient?.name || '')
-  const [city, setCity] = useState(existingClient?.city || '')
-  const [phone, setPhone] = useState(existingClient?.phone || '')
-  const [email, setEmail] = useState(existingClient?.owner_email || '')
-  const [password, setPassword] = useState('')
-  const [logo, setLogo] = useState(existingClient?.config?.logo || '🍽️')
-  const [logoLetter, setLogoLetter] = useState('')
-  const [tagline, setTagline] = useState('')
-  const [currency, setCurrency] = useState('DT')
-  const [businessType, setBusinessType] = useState<'fastfood'|'cafe'>('fastfood')
-  const [printEnabled, setPrintEnabled] = useState(true)
-  const [tableCount, setTableCount] = useState(12)
-
-  // Step 2: PINs
-  const [managerName, setManagerName] = useState('Manager')
-  const [managerPin, setManagerPin] = useState('1234')
-  const [cashierName, setCashierName] = useState('Caissier')
-  const [cashierPin, setCashierPin] = useState('0000')
-
-  // Step 3: Menu
-  const [menu, setMenu] = useState<any>({})
-
-  // API Key (generated or from existing)
-  const [apiKey, setApiKey] = useState(existingClient?.api_key || '')
-  const [iconBase64, setIconBase64] = useState('')
-  const [iconPreview, setIconPreview] = useState('')
-
-  function generateKey() {
-    const id = Math.random().toString(36).slice(2,6).toUpperCase()
-    setApiKey('SRVO-' + id + '-' + Date.now().toString().slice(-4))
-  }
-
-  function handleIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      setIconBase64(result)
-      setIconPreview(result)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  // Step 4: Create in DB + Build EXE
-  async function createAndBuild() {
-    setBuilding(true)
-    setBuildMsg('Création du client dans la base de données...')
-
-    // 1. Create client in DB (Vercel API)
-    if (!existingClient) {
-      try {
-        const res = await fetch(`${API}/api/admin/clients`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ admin_key: ADMIN_KEY, name, email, password, api_key: apiKey, city, phone })
-        })
-        const data = await res.json()
-        if (!data.ok) { setBuildMsg('❌ Erreur DB: ' + data.error); setBuilding(false); return }
-      } catch (e: any) { setBuildMsg('❌ Erreur connexion DB: ' + e.message); setBuilding(false); return }
-    }
-
-    // 2. Save config + menu to DB
-    setBuildMsg('Sauvegarde de la configuration...')
-    try {
-      const config = { logo, logoLetter: logoLetter || name.charAt(0).toUpperCase(), tagline: tagline || `${name} — POS Pro`, currency, managerName, managerPin, cashierName, cashierPin }
-      await fetch(`${API}/api/admin/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_key: ADMIN_KEY, api_key: apiKey, config, menu, name, city, phone })
-      })
-    } catch (e) { /* non-blocking */ }
-
-    setBuildMsg('✅ Client créé dans la base de données!\n\nMaintenant lancez le build EXE...')
-    setBuilding(false)
-    setDbCreated(true)
-  }
-
-  async function buildExe() {
-    setBuilding(true)
-    setBuildMsg('🔨 Construction de l\'EXE... (~2-3 minutes)\n⚠️ Assurez-vous que build-server.js tourne sur votre PC')
-
-    try {
-      const res = await fetch(`${BUILD_SERVER}/build`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name, city, logo, logoLetter: logoLetter || name.charAt(0).toUpperCase(),
-          tagline: tagline || `${name} — POS Pro`, phone, currency,
-          syncKey: apiKey, managerName, managerPin, cashierName, cashierPin,
-          menu: Object.keys(menu).length > 0 ? menu : undefined,
-          iconBase64: iconBase64 || undefined,
-          businessType, tableCount, printEnabled,
-        })
-      })
-      const data = await res.json()
-      if (data.ok) {
-        setBuildMsg('✅ EXE construit avec succès!')
-        setBuildResult(data)
-      } else {
-        setBuildMsg('❌ Erreur build: ' + data.error)
-      }
-    } catch (e: any) {
-      setBuildMsg('❌ Build server non accessible.\n\nLancez sur votre PC:\n  cd servio-pos\n  node build-server.js\n\nPuis ouvrez localhost:3000/admin pour builder.')
-    }
-    setBuilding(false)
-  }
-
-  return (
-    <div>
-      {/* Progress steps */}
-      <div style={{ display:'flex', gap:'4px', padding:'16px 20px', borderBottom:'1px solid #231C12' }}>
-        {['Identité','PINs','Menu','Générer EXE'].map((s,i) => (
-          <div key={i} style={{ flex:1, textAlign:'center', padding:'8px', borderRadius:'6px', fontSize:'12px', fontWeight: step===i+1?'700':'400', background: step===i+1?'rgba(200,145,58,.15)':'transparent', color: step===i+1?'#E8A84C': i+1<step?'#3DB87A':'#7A6E5F', cursor:'pointer', border: step===i+1?'1px solid rgba(200,145,58,.3)':'1px solid transparent' }} onClick={()=>setStep(i+1)}>
-            {i+1 < step ? '✓ ' : ''}{s}
-          </div>
-        ))}
-      </div>
-
-      {/* Step 1: Identity */}
-      {step === 1 && (
-        <div style={S.grid2}>
-          <div style={{ gridColumn:'1/-1', marginBottom:'8px' }}>
-            <label style={S.label}>Type d'activité *</label>
-            <div style={{ display:'flex', gap:'10px', marginTop:'6px' }}>
-              <div onClick={()=>setBusinessType('fastfood')} style={{ flex:1, padding:'14px', borderRadius:'10px', border: businessType==='fastfood'?'2px solid #E8A84C':'2px solid #231C12', background: businessType==='fastfood'?'rgba(200,145,58,.1)':'#181310', cursor:'pointer', textAlign:'center' }}>
-                <div style={{ fontSize:'24px' }}>🍔</div>
-                <div style={{ fontSize:'12px', fontWeight:'700', marginTop:'4px', color: businessType==='fastfood'?'#E8A84C':'#7A6E5F' }}>Fast Food</div>
-                <div style={{ fontSize:'10px', color:'#7A6E5F' }}>Commande directe, emporter/livraison</div>
-              </div>
-              <div onClick={()=>setBusinessType('cafe')} style={{ flex:1, padding:'14px', borderRadius:'10px', border: businessType==='cafe'?'2px solid #E8A84C':'2px solid #231C12', background: businessType==='cafe'?'rgba(200,145,58,.1)':'#181310', cursor:'pointer', textAlign:'center' }}>
-                <div style={{ fontSize:'24px' }}>☕</div>
-                <div style={{ fontSize:'12px', fontWeight:'700', marginTop:'4px', color: businessType==='cafe'?'#E8A84C':'#7A6E5F' }}>Café / Restaurant</div>
-                <div style={{ fontSize:'10px', color:'#7A6E5F' }}>Gestion par tables, paiement au départ</div>
-              </div>
-            </div>
-          </div>
-          {businessType === 'cafe' && (
-            <>
-              <div><label style={S.label}>Nombre de tables</label><input style={S.inp} type="number" value={tableCount} onChange={e=>setTableCount(parseInt(e.target.value)||12)} placeholder="12" /></div>
-              <div style={{ display:'flex', alignItems:'center', gap:'8px', paddingTop:'20px' }}>
-                <label style={{ fontSize:'12px', color:'#7A6E5F', cursor:'pointer', display:'flex', alignItems:'center', gap:'6px' }}>
-                  <input type="checkbox" checked={printEnabled} onChange={e=>setPrintEnabled(e.target.checked)} /> Impression tickets activée
-                </label>
-              </div>
-            </>
-          )}
-          <div><label style={S.label}>Nom du restaurant *</label><input style={S.inp} value={name} onChange={e=>setName(e.target.value)} placeholder="Fast Food Sami" /></div>
-          <div><label style={S.label}>Ville</label><input style={S.inp} value={city} onChange={e=>setCity(e.target.value)} placeholder="Sfax, Tunisie" /></div>
-          <div><label style={S.label}>Email propriétaire *</label><input style={S.inp} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="owner@email.com" /></div>
-          <div><label style={S.label}>Mot de passe dashboard *</label><input style={S.inp} value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••" /></div>
-          <div><label style={S.label}>Logo emoji</label><input style={S.inp} value={logo} onChange={e=>setLogo(e.target.value)} placeholder="🍔" /></div>
-          <div><label style={S.label}>Lettre logo (header)</label><input style={S.inp} value={logoLetter} onChange={e=>setLogoLetter(e.target.value)} placeholder={name?name[0]?.toUpperCase():'S'} /></div>
-          <div><label style={S.label}>Slogan</label><input style={S.inp} value={tagline} onChange={e=>setTagline(e.target.value)} placeholder={`${name||'Restaurant'} — POS Pro`} /></div>
-          <div><label style={S.label}>Devise</label><input style={S.inp} value={currency} onChange={e=>setCurrency(e.target.value)} placeholder="DT" /></div>
-          <div><label style={S.label}>Téléphone</label><input style={S.inp} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+216 XX XXX XXX" /></div>
-          <div>
-            <label style={S.label}>Clé API * <button type="button" onClick={generateKey} style={{ marginLeft:'6px', background:'none', border:'1px solid #231C12', borderRadius:'4px', padding:'2px 8px', color:'#C8913A', fontSize:'10px', cursor:'pointer' }}>Générer</button></label>
-            <input style={S.inp} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="SRVO-XXXX-0000" />
-          </div>
-          <div style={{ gridColumn:'1/-1' }}>
-            <label style={S.label}>Logo / Icône EXE (PNG, 256x256 recommandé)</label>
-            <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
-              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleIconUpload} style={{ fontSize:'12px', color:'#7A6E5F' }} />
-              {iconPreview && <img src={iconPreview} alt="icon" style={{ width:'48px', height:'48px', borderRadius:'8px', border:'1px solid #231C12', objectFit:'cover' }} />}
-            </div>
-            <div style={{ fontSize:'10px', color:'#7A6E5F', marginTop:'4px' }}>Cette image sera l'icône de l'EXE et du raccourci Windows</div>
-          </div>
-          <div style={{ gridColumn:'1/-1', textAlign:'right', paddingTop:'8px' }}>
-            <button style={S.btnGold} onClick={()=>setStep(2)} disabled={!name||!email||!apiKey}>Suivant →</button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: PINs */}
-      {step === 2 && (
-        <div style={S.grid2}>
-          <div><label style={S.label}>Nom Manager</label><input style={S.inp} value={managerName} onChange={e=>setManagerName(e.target.value)} /></div>
-          <div><label style={S.label}>PIN Manager (4 chiffres)</label><input style={S.inp} value={managerPin} onChange={e=>setManagerPin(e.target.value)} maxLength={4} placeholder="1234" /></div>
-          <div><label style={S.label}>Nom Caissier</label><input style={S.inp} value={cashierName} onChange={e=>setCashierName(e.target.value)} /></div>
-          <div><label style={S.label}>PIN Caissier (4 chiffres)</label><input style={S.inp} value={cashierPin} onChange={e=>setCashierPin(e.target.value)} maxLength={4} placeholder="0000" /></div>
-          <div style={{ gridColumn:'1/-1', display:'flex', justifyContent:'space-between', paddingTop:'8px' }}>
-            <button style={{ ...S.btnGold, background:'#181310', color:'#7A6E5F', border:'1px solid #231C12' }} onClick={()=>setStep(1)}>← Retour</button>
-            <button style={S.btnGold} onClick={()=>setStep(3)}>Suivant → Menu</button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Menu */}
-      {step === 3 && (
-        <div>
-          <MenuEditor menu={menu} setMenu={setMenu} />
-          <div style={{ display:'flex', justifyContent:'space-between', padding:'0 20px 16px' }}>
-            <button style={{ ...S.btnGold, background:'#181310', color:'#7A6E5F', border:'1px solid #231C12' }} onClick={()=>setStep(2)}>← Retour</button>
-            <button style={S.btnGold} onClick={()=>setStep(4)}>Suivant → Générer EXE</button>
-          </div>
-          <div style={{ padding:'0 20px 12px', fontSize:'11px', color:'#7A6E5F' }}>
-            💡 Si vous laissez le menu vide, le POS utilisera le menu par défaut.
-          </div>
-        </div>
-      )}
-
-      {/* Step 4: Summary + Build */}
-      {step === 4 && (
-        <div style={{ padding:'20px' }}>
-          <div style={{ background:'#181310', borderRadius:'10px', padding:'16px', marginBottom:'16px' }}>
-            <div style={{ fontSize:'13px', fontWeight:'700', color:'#E8A84C', marginBottom:'10px' }}>📋 Résumé</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', fontSize:'12px' }}>
-              <span style={{ color:'#7A6E5F' }}>Restaurant:</span><span>{logo} {name}</span>
-              <span style={{ color:'#7A6E5F' }}>Type:</span><span>{businessType==='cafe'?'☕ Café/Restaurant ('+tableCount+' tables)':'🍔 Fast Food'}</span>
-              <span style={{ color:'#7A6E5F' }}>Ville:</span><span>{city || 'Tunisie'}</span>
-              <span style={{ color:'#7A6E5F' }}>Email:</span><span>{email}</span>
-              <span style={{ color:'#7A6E5F' }}>Clé API:</span><span style={{ fontFamily:'monospace', color:'#E8A84C' }}>{apiKey}</span>
-              <span style={{ color:'#7A6E5F' }}>Manager:</span><span>{managerName} (PIN: {managerPin})</span>
-              <span style={{ color:'#7A6E5F' }}>Caissier:</span><span>{cashierName} (PIN: {cashierPin})</span>
-              <span style={{ color:'#7A6E5F' }}>Menu:</span><span>{Object.keys(menu).length} catégories, {String((Object.values(menu) as any[]).reduce((s: number, c: any) => s + (c?.items?.length||0), 0))} articles</span>
-              <span style={{ color:'#7A6E5F' }}>Icône EXE:</span><span>{iconBase64 ? '✓ Image uploadée' : 'Servio (par défaut)'}</span>
-            </div>
-          </div>
-
-          {buildMsg && (
-            <div style={{ padding:'12px 16px', borderRadius:'8px', marginBottom:'12px', fontSize:'13px', background: buildMsg.includes('❌')?'rgba(224,82,82,.1)': buildMsg.includes('✅')?'rgba(61,184,122,.1)':'rgba(200,145,58,.1)', color: buildMsg.includes('❌')?'#E05252': buildMsg.includes('✅')?'#3DB87A':'#E8A84C', border:'1px solid', borderColor: buildMsg.includes('❌')?'rgba(224,82,82,.3)': buildMsg.includes('✅')?'rgba(61,184,122,.3)':'rgba(200,145,58,.3)', whiteSpace:'pre-line' }}>
-              {buildMsg}
-            </div>
-          )}
-
-          {buildResult && (
-            <div style={{ padding:'12px 16px', borderRadius:'8px', marginBottom:'12px', fontSize:'12px', background:'rgba(61,184,122,.08)', border:'1px solid rgba(61,184,122,.3)', color:'#3DB87A' }}>
-              <div style={{ fontWeight:'700', marginBottom:'4px' }}>📦 EXE prêt!</div>
-              <div>Dossier: dist_clients/{buildResult.safeName}/</div>
-              <div>Fichier: {buildResult.exePath}</div>
-            </div>
-          )}
-
-          <div style={{ display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:'8px' }}>
-            <button style={{ ...S.btnGold, background:'#181310', color:'#7A6E5F', border:'1px solid #231C12' }} onClick={()=>setStep(3)}>← Retour</button>
-            {!dbCreated ? (
-              <button style={{ ...S.btnGold, padding:'12px 28px', fontSize:'14px', opacity: building?.6:1 }} onClick={createAndBuild} disabled={building || !name || !apiKey || !email}>
-                {building ? '⏳ Création...' : '1️⃣ Créer client dans la DB'}
-              </button>
-            ) : (
-              <button style={{ ...S.btnGold, padding:'12px 28px', fontSize:'14px', background:'linear-gradient(135deg,#3DB87A,#2ea868)', opacity: building?.6:1 }} onClick={buildExe} disabled={building}>
-                {building ? '⏳ Construction...' : '2️⃣ Générer l\'EXE (local)'}
-              </button>
-            )}
-          </div>
-          {!dbCreated && (
-            <div style={{ fontSize:'11px', color:'#7A6E5F', marginTop:'10px', textAlign:'center' }}>
-              Étape 1: Crée le client en ligne (fonctionne depuis Vercel).<br/>
-              Étape 2: Génère l'EXE (nécessite <code style={{ color:'#E8A84C' }}>node build-server.js</code> sur votre PC).
-            </div>
-          )}
-
-          {buildResult && (
-            <div style={{ textAlign:'center', marginTop:'16px' }}>
-              <button style={S.btnGreen} onClick={onDone}>✓ Terminé — Retour à la liste</button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ═══════════════ ADMIN PANEL (main) ═══════════════
-function AdminPanel({ onLogout }: { onLogout: () => void }) {
-  const [clients, setClients] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    // Test against API
+    try {
+      const res = await fetch(`${API}/api/admin/clients`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ admin_key: pass }) })
+      if (res.ok) { onLogin(); sessionStorage.setItem('servio_admin_key', pass) }
+      else setErr('Mot de passe incorrect')
+    } catch { 
+      // Fallback: local check
+      if (pass === ADMIN_KEY) onLogin()
+      else setErr('Erreur de connexion')
+    }
+    setLoading(false)
+  }
+
+  return (
+    <Wrap dark={dark}>
+      <div style={{ position:'absolute', top:'16px', right:'16px' }}>
+        <button onClick={toggleTheme} style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'8px 12px', color:'var(--muted)', cursor:'pointer' }}>{dark?'☀️':'🌙'}</button>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', padding:'20px' }}>
+        <form onSubmit={submit} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'20px', padding:'48px 40px', width:'100%', maxWidth:'380px', textAlign:'center', boxShadow:'var(--shadow)' }}>
+          <div style={{ fontSize:'48px', marginBottom:'8px' }}>⚡</div>
+          <div style={{ fontSize:'24px', fontWeight:'800', color:'var(--gold-l)', letterSpacing:'3px', marginBottom:'4px' }}>SERVIO</div>
+          <div style={{ fontSize:'11px', color:'var(--muted)', letterSpacing:'2px', textTransform:'uppercase', marginBottom:'32px' }}>Admin Panel</div>
+          <input type="password" value={pass} onChange={e=>{setPass(e.target.value);setErr('')}} placeholder="Mot de passe admin"
+            style={{ width:'100%', background:'var(--card)', border:'1.5px solid var(--div)', borderRadius:'10px', padding:'14px 16px', color:'var(--txt)', fontSize:'15px', outline:'none', marginBottom:'14px', boxSizing:'border-box' }} autoFocus />
+          {err && <div style={{ color:'var(--red)', fontSize:'12px', marginBottom:'10px', padding:'8px', background:'var(--red-dim)', borderRadius:'8px' }}>{err}</div>}
+          <button type="submit" disabled={loading} style={{ width:'100%', padding:'14px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'10px', color:'#fff', fontSize:'15px', fontWeight:'700', cursor:'pointer', opacity:loading?.6:1 }}>
+            {loading ? '...' : 'Accéder'}
+          </button>
+        </form>
+      </div>
+    </Wrap>
+  )
+}
+
+// ═══════════════ PANEL ═══════════════
+function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>void, onLogout:()=>void }) {
+  const [clients, setClients] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
-  const [view, setView] = useState<'list'|'new'|'config'>('list')
-  const [editClient, setEditClient] = useState<any>(null)
+  const [actionClient, setActionClient] = useState<any>(null)
+
+  const key = sessionStorage.getItem('servio_admin_key') || ADMIN_KEY
 
   async function loadClients() {
     setLoading(true)
     try {
-      const res = await fetch(`${API}/api/admin/clients`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ admin_key: ADMIN_KEY }) })
+      const res = await fetch(`${API}/api/admin/clients`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ admin_key: key }) })
       const data = await res.json()
       if (data.ok) setClients(data.clients)
       else flash('Erreur: ' + data.error)
@@ -470,98 +108,139 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
     setLoading(false)
   }
 
-  async function togglePlan(apiKey: string, currentPlan: string) {
-    const action = currentPlan === 'suspended' ? 'activate' : 'suspend'
-    if (!confirm(`${action === 'suspend' ? 'Suspendre' : 'Réactiver'} ce client ?`)) return
+  async function doAction(apiKey: string, action: string, days?: number) {
     try {
-      const res = await fetch(`${API}/api/admin/suspend`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ admin_key: ADMIN_KEY, api_key: apiKey, action }) })
+      const body: any = { admin_key: key, api_key: apiKey, action }
+      if (days) body.days = days
+      const res = await fetch(`${API}/api/admin/suspend`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
       const data = await res.json()
-      if (data.ok) { flash(`✓ Client ${action==='suspend'?'suspendu':'réactivé'}`); loadClients() }
+      if (data.ok) { flash('✓ Action effectuée'); loadClients() }
       else flash('Erreur: ' + data.error)
     } catch { flash('Erreur de connexion') }
+    setActionClient(null)
   }
 
-  function flash(m: string) { setMsg(m); setTimeout(()=>setMsg(''),3000) }
+  function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
 
   useEffect(() => { loadClients() }, [])
 
-  return (
-    <div style={S.wrap}>
-      {/* Header */}
-      <div style={S.hdr}>
-        <div style={S.brand}>⚡ SERVIO OS — Admin Panel</div>
-        <div style={{ display:'flex', gap:'12px', alignItems:'center' }}>
-          {msg && <span style={{ fontSize:'12px', color: msg.startsWith('✓')?'#3DB87A':'#E05252' }}>{msg}</span>}
-          <button onClick={loadClients} style={{ background:'#181310', border:'1px solid #231C12', borderRadius:'6px', padding:'6px 12px', color:'#7A6E5F', cursor:'pointer', fontSize:'12px' }}>↻</button>
-          <button onClick={onLogout} style={{ background:'none', border:'1px solid rgba(224,82,82,.3)', borderRadius:'6px', padding:'6px 12px', color:'#E05252', cursor:'pointer', fontSize:'12px' }}>Déconnecter</button>
-        </div>
-      </div>
+  const active = clients.filter(c => c.plan === 'active').length
+  const suspended = clients.filter(c => c.plan !== 'active').length
 
-      <div style={S.content}>
-        {/* Stats */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px', marginBottom:'20px' }}>
+  return (
+    <Wrap dark={dark}>
+      {/* Header */}
+      <header style={{ background:'var(--panel)', borderBottom:'1px solid var(--div)', padding:'0 24px', height:'56px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:100 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+          <div style={{ fontSize:'20px' }}>⚡</div>
+          <span style={{ fontSize:'16px', fontWeight:'700', color:'var(--gold-l)' }}>SERVIO</span>
+          <span style={{ fontSize:'12px', color:'var(--muted)' }}>Admin</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+          {msg && <span style={{ fontSize:'12px', color:msg.startsWith('✓')?'var(--green)':'var(--red)', padding:'4px 10px', background:msg.startsWith('✓')?'var(--green-dim)':'var(--red-dim)', borderRadius:'6px' }}>{msg}</span>}
+          <button onClick={loadClients} style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'7px 12px', color:'var(--muted)', cursor:'pointer', fontSize:'13px' }}>↻</button>
+          <button onClick={toggleTheme} style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'7px 12px', color:'var(--muted)', cursor:'pointer' }}>{dark?'☀️':'🌙'}</button>
+          <button onClick={onLogout} style={{ background:'none', border:'1px solid var(--div)', borderRadius:'8px', padding:'7px 14px', color:'var(--muted)', cursor:'pointer', fontSize:'12px' }}>Déconnecter</button>
+        </div>
+      </header>
+
+      <div style={{ maxWidth:'1000px', margin:'0 auto', padding:'24px' }}>
+        {/* KPIs */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'14px', marginBottom:'24px' }}>
           {[
-            { label:'Total clients', val: clients.length, color:'#E8A84C' },
-            { label:'Actifs', val: clients.filter(c=>c.plan==='active').length, color:'#3DB87A' },
-            { label:'Suspendus', val: clients.filter(c=>c.plan==='suspended').length, color:'#E05252' },
+            { label:'Total clients', val:clients.length, color:'var(--gold-l)', icon:'👥' },
+            { label:'Actifs', val:active, color:'var(--green)', icon:'✓' },
+            { label:'Suspendus', val:suspended, color:'var(--red)', icon:'🔒' },
           ].map((k,i) => (
-            <div key={i} style={{ background:'#0F0C08', border:'1px solid #231C12', borderRadius:'10px', padding:'16px', textAlign:'center' }}>
-              <div style={{ fontSize:'28px', fontWeight:'700', color:k.color }}>{k.val}</div>
-              <div style={{ fontSize:'11px', color:'#7A6E5F', marginTop:'4px' }}>{k.label}</div>
+            <div key={i} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'12px', padding:'20px', textAlign:'center', position:'relative', overflow:'hidden' }}>
+              <div style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:k.color }}/>
+              <div style={{ fontSize:'32px', fontWeight:'800', color:k.color }}>{k.val}</div>
+              <div style={{ fontSize:'12px', color:'var(--muted)', marginTop:'4px' }}>{k.label}</div>
             </div>
           ))}
         </div>
 
-        {/* View switcher */}
-        {view === 'list' && (
-          <div style={S.card}>
-            <div style={S.cardHdr}>
-              <span style={S.cardTitle}>👥 Clients</span>
-              <div style={{ fontSize:'11px', color:'#7A6E5F' }}>Pour créer un client + EXE → <code style={{ color:'#E8A84C' }}>node build-server.js</code> puis ouvrir localhost:4500</div>
-            </div>
-            {loading
-              ? <div style={{ padding:'30px', textAlign:'center', color:'#7A6E5F' }}>Chargement...</div>
-              : clients.length === 0
-                ? <div style={{ padding:'30px', textAlign:'center', color:'#7A6E5F' }}>Aucun client</div>
-                : clients.map((c, i) => (
-                  <div key={i} style={{ ...S.row, background: i%2===0?'transparent':'#181310' }}>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontWeight:'700', fontSize:'14px' }}>{c.name}</div>
-                      <div style={{ fontSize:'11px', color:'#7A6E5F', marginTop:'2px' }}>{c.owner_email} · {c.city}</div>
-                    </div>
-                    <div style={{ fontSize:'11px', color:'#7A6E5F', fontFamily:'monospace' }}>{c.api_key}</div>
-                    <span style={S.badge(c.plan)}>{c.plan==='active'?'✓ Actif':'✗ Suspendu'}</span>
-                    <button onClick={() => togglePlan(c.api_key, c.plan)} style={c.plan==='active'?S.btnRed:S.btnGreen}>
-                      {c.plan==='active'?'🔒 Suspendre':'🔓 Réactiver'}
-                    </button>
-                  </div>
-                ))
-            }
-          </div>
-        )}
+        {/* Info bar */}
+        <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', padding:'12px 18px', marginBottom:'20px', fontSize:'12px', color:'var(--muted)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'8px' }}>
+          <span>📂 Pour créer un nouveau client + EXE → <code style={{ color:'var(--gold-l)', background:'var(--panel)', padding:'2px 8px', borderRadius:'4px' }}>node build-server.js</code> puis ouvrir <code style={{ color:'var(--gold-l)', background:'var(--panel)', padding:'2px 8px', borderRadius:'4px' }}>localhost:4500</code></span>
+        </div>
 
-        {view === 'new' && (
-          <div style={S.card}>
-            <div style={S.cardHdr}>
-              <span style={S.cardTitle}>⚡ Nouveau Client — Assistant de création</span>
-              <button style={{ ...S.btnRed, fontSize:'11px' }} onClick={() => setView('list')}>✕ Annuler</button>
-            </div>
-            <ClientBuilder onDone={() => { setView('list'); loadClients() }} />
+        {/* Client list */}
+        <div style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'12px', overflow:'hidden' }}>
+          <div style={{ padding:'16px 20px', borderBottom:'1px solid var(--div)', display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--card)' }}>
+            <span style={{ fontWeight:'700', fontSize:'15px', color:'var(--gold-l)' }}>👥 Clients</span>
+            <span style={{ fontSize:'11px', color:'var(--muted)' }}>{clients.length} total</span>
           </div>
-        )}
+
+          {loading ? (
+            <div style={{ padding:'40px', textAlign:'center', color:'var(--muted)' }}>Chargement...</div>
+          ) : clients.length === 0 ? (
+            <div style={{ padding:'40px', textAlign:'center', color:'var(--muted)' }}>Aucun client</div>
+          ) : (
+            clients.map((c, i) => (
+              <div key={i} style={{ padding:'16px 20px', borderBottom:'1px solid var(--div)', display:'flex', alignItems:'center', gap:'12px', flexWrap:'wrap' }}>
+                {/* Client info */}
+                <div style={{ flex:1, minWidth:'180px' }}>
+                  <div style={{ fontWeight:'700', fontSize:'14px' }}>{c.name}</div>
+                  <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'2px' }}>{c.owner_email} · {c.city || ''}</div>
+                  {c.suspend_at && <div style={{ fontSize:'10px', color:'var(--orange)', marginTop:'3px' }}>⏰ Auto-suspend: {new Date(c.suspend_at).toLocaleDateString('fr-TN')}</div>}
+                </div>
+
+                {/* API key */}
+                <div style={{ fontSize:'11px', color:'var(--muted)', fontFamily:'monospace', padding:'4px 8px', background:'var(--card)', borderRadius:'4px' }}>{c.api_key}</div>
+
+                {/* Status badge */}
+                <span style={{ padding:'4px 12px', borderRadius:'20px', fontSize:'11px', fontWeight:'600',
+                  background: c.plan==='active' ? 'var(--green-dim)' : 'var(--red-dim)',
+                  color: c.plan==='active' ? 'var(--green)' : c.plan==='suspended_exe' ? 'var(--orange)' : c.plan==='suspended_dash' ? 'var(--blue)' : 'var(--red)',
+                  border: `1px solid ${c.plan==='active'?'rgba(61,184,122,.2)':'rgba(224,82,82,.2)'}`,
+                }}>
+                  {c.plan==='active'?'✓ Actif':c.plan==='suspended_exe'?'💻 EXE bloqué':c.plan==='suspended_dash'?'📊 Dash bloqué':'✗ Tout suspendu'}
+                </span>
+
+                {/* Actions */}
+                {c.plan === 'active' ? (
+                  <button onClick={() => setActionClient(c)} style={{ padding:'7px 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--muted)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
+                    Actions ▾
+                  </button>
+                ) : (
+                  <button onClick={() => doAction(c.api_key, 'activate')} style={{ padding:'7px 14px', background:'var(--green-dim)', border:'1px solid rgba(61,184,122,.3)', borderRadius:'8px', color:'var(--green)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
+                    🔓 Réactiver
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Action modal */}
+      {actionClient && (
+        <div onClick={() => setActionClient(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', width:'100%', maxWidth:'400px', boxShadow:'var(--shadow)' }}>
+            <div style={{ fontSize:'16px', fontWeight:'700', marginBottom:'4px' }}>{actionClient.name}</div>
+            <div style={{ fontSize:'12px', color:'var(--muted)', marginBottom:'20px' }}>{actionClient.api_key}</div>
+            
+            <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+              <button onClick={() => doAction(actionClient.api_key, 'suspend_all')} style={{ padding:'14px', background:'var(--red-dim)', border:'1px solid rgba(224,82,82,.3)', borderRadius:'10px', color:'var(--red)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
+                🔒 Suspendre TOUT <span style={{ float:'right', opacity:.6 }}>EXE + Dashboard</span>
+              </button>
+              <button onClick={() => doAction(actionClient.api_key, 'suspend_exe')} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--orange)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
+                💻 Suspendre EXE seul <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>Dashboard reste actif</span>
+              </button>
+              <button onClick={() => doAction(actionClient.api_key, 'suspend_dash')} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--blue)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
+                📊 Suspendre Dashboard seul <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>EXE reste actif</span>
+              </button>
+              <button onClick={() => doAction(actionClient.api_key, 'schedule', 30)} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--gold-l)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
+                ⏰ Auto-suspendre dans 30 jours <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>Période d'essai</span>
+              </button>
+              <button onClick={() => setActionClient(null)} style={{ padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Wrap>
   )
-}
-
-// ═══════════════ ROOT COMPONENT ═══════════════
-export default function AdminPage() {
-  const [authed, setAuthed] = useState(false)
-
-  useEffect(() => {
-    if (sessionStorage.getItem('admin_auth') === '1') setAuthed(true)
-  }, [])
-
-  if (!authed) return <AdminLogin onLogin={() => setAuthed(true)} />
-  return <AdminPanel onLogout={() => { sessionStorage.removeItem('admin_auth'); setAuthed(false) }} />
 }
