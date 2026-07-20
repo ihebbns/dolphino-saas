@@ -66,7 +66,6 @@ export async function GET(req: Request) {
       restaurantName: r.name,
       restaurantCity: r.city || 'Tunisie',
       phone: r.phone || '+216 52 050 581',
-      logo: '🍽️',
       logoLetter: (r.name || 'R').charAt(0).toUpperCase(),
       tagline: `${r.name} — POS Pro`,
       currency: 'DT',
