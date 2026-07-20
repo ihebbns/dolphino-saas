@@ -57,9 +57,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, action, api_key: clientKey, plan: 'active' })
     case 'schedule':
       const days = parseInt(body.days) || 30
+      const suspendTarget = body.suspend_target || 'suspended' // 'suspended', 'suspended_exe', 'suspended_dash'
       const scheduleDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
-      await sql`UPDATE restaurants SET suspend_at = ${scheduleDate}::timestamptz WHERE api_key = ${clientKey}`
-      return NextResponse.json({ ok: true, action, api_key: clientKey, suspend_at: scheduleDate, days })
+      await sql`UPDATE restaurants SET suspend_at = ${scheduleDate}::timestamptz, config = jsonb_set(COALESCE(config,'{}'), '{suspend_target}', ${JSON.stringify(suspendTarget)}::jsonb) WHERE api_key = ${clientKey}`
+      return NextResponse.json({ ok: true, action, api_key: clientKey, suspend_at: scheduleDate, days, suspend_target: suspendTarget })
     case 'cancel_schedule':
       await sql`UPDATE restaurants SET suspend_at = NULL WHERE api_key = ${clientKey}`
       return NextResponse.json({ ok: true, action, api_key: clientKey })

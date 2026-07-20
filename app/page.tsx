@@ -506,6 +506,157 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
   )
 }
 
+// ════════════════ STOCK SECTION (Retail) ════════════════
+function StockSection({ stock }: { stock: any[] }) {
+  const [search, setSearch] = useState('')
+  const [catFilter, setCatFilter] = useState('Tous')
+
+  // Group by category
+  const categories = useMemo(() => {
+    const cats = new Set<string>()
+    stock.forEach((it: any) => { if (it.category) cats.add(it.category) })
+    return ['Tous', ...Array.from(cats).sort()]
+  }, [stock])
+
+  // Filter
+  const filtered = useMemo(() => {
+    let items = stock
+    if (catFilter !== 'Tous') items = items.filter((it: any) => it.category === catFilter)
+    if (search) {
+      const q = search.toLowerCase()
+      items = items.filter((it: any) =>
+        it.item_name?.toLowerCase().includes(q) ||
+        it.barcode?.includes(q)
+      )
+    }
+    return items
+  }, [stock, catFilter, search])
+
+  // Stats
+  const totalProducts = stock.length
+  const totalValue = stock.reduce((sum: number, it: any) => sum + (+(it.sell_price || 0) * +(it.quantity || 0)), 0)
+  const totalCost = stock.reduce((sum: number, it: any) => sum + (+(it.cost || 0) * +(it.quantity || 0)), 0)
+  const lowStock = stock.filter((it: any) => (it.quantity || 0) <= 5 && (it.quantity || 0) > 0)
+  const outOfStock = stock.filter((it: any) => (it.quantity || 0) <= 0)
+  const lastSync = stock.length > 0 && stock[0].updated_at
+    ? new Date(stock[0].updated_at).toLocaleString('fr-TN')
+    : '—'
+
+  return (
+    <>
+      {/* KPIs */}
+      <div className={s.section}>
+        <div className={s.kpiGrid}>
+          <div className={`${s.kpiCard} ${s.kpiCardBlue}`}>
+            <div className={s.kpiIcon}>📦</div>
+            <div className={s.kpiVal}>{totalProducts}</div>
+            <div className={s.kpiLbl}>Produits</div>
+          </div>
+          <div className={`${s.kpiCard} ${s.kpiCardGold}`}>
+            <div className={s.kpiIcon}>💰</div>
+            <div className={s.kpiVal}>{fmt(totalValue)}<span> DT</span></div>
+            <div className={s.kpiLbl}>Valeur stock (vente)</div>
+          </div>
+          <div className={`${s.kpiCard} ${s.kpiCardGreen}`}>
+            <div className={s.kpiIcon}>📈</div>
+            <div className={s.kpiVal}>{fmt(totalValue - totalCost)}<span> DT</span></div>
+            <div className={s.kpiLbl}>Marge potentielle</div>
+          </div>
+          <div className={`${s.kpiCard} ${s.kpiCardOrange}`}>
+            <div className={s.kpiIcon}>⚠️</div>
+            <div className={s.kpiVal}>{lowStock.length}</div>
+            <div className={s.kpiLbl}>Stock bas (≤5)</div>
+          </div>
+          <div className={`${s.kpiCard} ${(s as any).kpiCardRed || s.kpiCardOrange}`} style={{borderColor:'rgba(224,82,82,.3)'}}>
+            <div className={s.kpiIcon}>🚫</div>
+            <div className={s.kpiVal} style={{color:'var(--red)'}}>{outOfStock.length}</div>
+            <div className={s.kpiLbl}>Rupture de stock</div>
+          </div>
+          <div className={`${s.kpiCard} ${s.kpiCardBlue}`}>
+            <div className={s.kpiIcon}>🔄</div>
+            <div className={s.kpiVal} style={{fontSize:14}}>{lastSync}</div>
+            <div className={s.kpiLbl}>Dernière synchro</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {(outOfStock.length > 0 || lowStock.length > 0) && (
+        <div className={s.section}>
+          <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🚨</span> Alertes Stock</div></div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:'8px' }}>
+            {outOfStock.map((it: any, i: number) => (
+              <div key={'out'+i} style={{ background:'var(--panel)', border:'2px solid rgba(224,82,82,.4)', borderRadius:'var(--radius,9px)', padding:'12px', textAlign:'center' }}>
+                <div style={{ fontSize:'24px', marginBottom:'4px' }}>{it.item_emoji || '📦'}</div>
+                <div style={{ fontSize:'11px', fontWeight:'600', marginBottom:'2px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.item_name}</div>
+                <div style={{ fontSize:'9px', color:'var(--muted)', marginBottom:'4px' }}>{it.category}</div>
+                <div style={{ fontSize:'18px', fontWeight:'800', color:'var(--red)' }}>RUPTURE</div>
+              </div>
+            ))}
+            {lowStock.map((it: any, i: number) => (
+              <div key={'low'+i} style={{ background:'var(--panel)', border:'2px solid rgba(232,136,42,.4)', borderRadius:'var(--radius,9px)', padding:'12px', textAlign:'center' }}>
+                <div style={{ fontSize:'24px', marginBottom:'4px' }}>{it.item_emoji || '📦'}</div>
+                <div style={{ fontSize:'11px', fontWeight:'600', marginBottom:'2px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.item_name}</div>
+                <div style={{ fontSize:'9px', color:'var(--muted)', marginBottom:'4px' }}>{it.category}</div>
+                <div style={{ fontSize:'18px', fontWeight:'800', color:'var(--orange)' }}>{it.quantity}</div>
+                <div style={{ fontSize:'9px', color:'var(--muted)' }}>restant</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Full inventory table */}
+      <div className={s.section}>
+        <div className={s.sectionHdr}><div className={s.sectionTitle}><span>📋</span> Inventaire complet</div></div>
+        <div className={s.filters} style={{marginBottom:12}}>
+          <input className={s.filterSearch} placeholder="🔍 Rechercher par nom ou code-barres..."
+            value={search} onChange={e=>setSearch(e.target.value)} style={{maxWidth:300}}/>
+          {categories.map(c => (
+            <button key={c} className={`${s.filterBtn} ${catFilter===c?s.filterBtnActive:''}`} onClick={()=>setCatFilter(c)}>
+              {c}
+            </button>
+          ))}
+          <span style={{fontSize:12,color:'var(--muted)',marginLeft:'auto'}}>{filtered.length} produit{filtered.length!==1?'s':''}</span>
+        </div>
+        <div className={s.tableWrap}>
+          <div className={s.tableScroll}>
+            {filtered.length === 0
+              ? <div className={s.empty}><div className={s.emptyIcon}>📦</div><div className={s.emptyText}>Aucun produit trouvé</div></div>
+              : <table className={s.table}>
+                  <thead><tr>
+                    <th></th><th>Produit</th><th>Catégorie</th><th>Code-barres</th><th>Prix vente</th><th>Prix achat</th><th>Marge</th><th>Stock</th>
+                  </tr></thead>
+                  <tbody>
+                    {filtered.map((it: any, i: number) => {
+                      const qty = +(it.quantity || 0)
+                      const price = +(it.sell_price || 0)
+                      const cost = +(it.cost || 0)
+                      const margin = price - cost
+                      const qtyColor = qty <= 0 ? 'var(--red)' : qty <= 5 ? 'var(--orange)' : 'var(--green)'
+                      return (
+                        <tr key={i}>
+                          <td style={{fontSize:18,textAlign:'center',width:30}}>{it.item_emoji || '📦'}</td>
+                          <td style={{fontWeight:600,fontSize:13}}>{it.item_name}</td>
+                          <td className={s.muted} style={{fontSize:11}}>{it.category || '—'}</td>
+                          <td style={{fontFamily:'monospace',fontSize:11,color:'var(--muted)'}}>{it.barcode || '—'}</td>
+                          <td className={s.bold} style={{color:'var(--gold-l)'}}>{price > 0 ? f(price)+' DT' : '—'}</td>
+                          <td style={{fontSize:12,color:'var(--muted)'}}>{cost > 0 ? f(cost)+' DT' : '—'}</td>
+                          <td style={{fontSize:12,fontWeight:600,color: margin > 0 ? 'var(--green)' : 'var(--muted)'}}>{margin > 0 ? f(margin)+' DT' : '—'}</td>
+                          <td style={{fontWeight:800,fontSize:14,color:qtyColor}}>{qty <= 0 ? 'RUPTURE' : qty}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+            }
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ════════════════ DASHBOARD ════════════════
 function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any; onLogout:()=>void }) {
   const [date,       setDate]       = useState(today())
@@ -584,6 +735,7 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
     { id:'products',  label:'🏆 Produits'         },
     { id:'orders',    label:'🧾 Commandes'         },
     { id:'sessions',  label:'🔒 Caisses'           },
+    ...(data?.stock && data.stock.length > 0 && data.stock[0]?.category ? [{ id:'stock', label:'📦 Stock' }] : []),
   ]
 
   const k = data?.kpis
@@ -760,6 +912,11 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
               <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🔒</span> Historique des clôtures de caisse</div></div>
               <SessionsSection sessions={data.sessions} recent={data.recent}/>
             </div>
+          </>}
+
+          {/* ── STOCK (Retail) ── */}
+          {activeTab === 'stock' && data.stock && <>
+            <StockSection stock={data.stock} />
           </>}
         </>}
       </div>

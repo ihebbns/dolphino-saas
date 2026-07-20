@@ -48,9 +48,11 @@ export async function GET(req: Request) {
 
     // Check scheduled suspend
     if (r.suspend_at && new Date(r.suspend_at) <= new Date() && r.plan === 'active') {
-      // Auto-suspend has triggered
-      await sql`UPDATE restaurants SET plan = 'suspended' WHERE api_key = ${key}`
-      r.plan = 'suspended'
+      // Auto-suspend has triggered — use configured target or default to 'suspended' (both)
+      const cfg = (r.config && typeof r.config === 'object') ? r.config : {}
+      const suspendPlan = cfg.suspend_target || 'suspended'
+      await sql`UPDATE restaurants SET plan = ${suspendPlan} WHERE api_key = ${key}`
+      r.plan = suspendPlan
     }
 
     if (r.plan === 'suspended' || r.plan === 'suspended_exe') {

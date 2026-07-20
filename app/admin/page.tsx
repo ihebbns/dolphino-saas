@@ -88,12 +88,88 @@ function Login({ dark, toggleTheme, onLogin }: { dark:boolean, toggleTheme:()=>v
   )
 }
 
+// ═══════════════ SCHEDULE SECTION ═══════════════
+function ScheduleSection({ apiKey, suspendAt, onAction, onCancel }: { apiKey:string, suspendAt?:string, onAction:(key:string,action:string,days?:number,target?:string)=>void, onCancel:()=>void }) {
+  const [target, setTarget] = useState('suspend_all')
+  const [days, setDays] = useState(30)
+  const [customDate, setCustomDate] = useState('')
+
+  const targets = [
+    { id:'suspend_all', label:'🔒 Tout', desc:'EXE + Dashboard' },
+    { id:'suspend_exe', label:'💻 EXE seul', desc:'Dashboard reste' },
+    { id:'suspend_dash', label:'📊 Dashboard seul', desc:'EXE reste' },
+  ]
+
+  function scheduleNow(){
+    const d = customDate ? Math.ceil((new Date(customDate).getTime() - Date.now()) / (24*60*60*1000)) : days
+    if(d <= 0){ alert('Date invalide'); return; }
+    onAction(apiKey, 'schedule', d, target)
+  }
+
+  return (
+    <div style={{ marginBottom:'16px' }}>
+      {/* Target selection */}
+      <div style={{ fontSize:'10px', color:'var(--muted)', marginBottom:'6px' }}>Cible de la suspension :</div>
+      <div style={{ display:'flex', gap:'6px', marginBottom:'12px' }}>
+        {targets.map(t => (
+          <button key={t.id} onClick={() => setTarget(t.id)} style={{
+            flex:1, padding:'10px 6px', background: target===t.id ? 'var(--gold-dim)' : 'var(--card)',
+            border: `1.5px solid ${target===t.id ? 'var(--gold)' : 'var(--div)'}`,
+            borderRadius:'8px', cursor:'pointer', fontSize:'11px', fontWeight:'600', textAlign:'center',
+            color: target===t.id ? 'var(--gold-l)' : 'var(--muted)', transition:'all .12s'
+          }}>
+            <div>{t.label}</div>
+            <div style={{ fontSize:'9px', opacity:.7, marginTop:'2px' }}>{t.desc}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Quick days */}
+      <div style={{ fontSize:'10px', color:'var(--muted)', marginBottom:'6px' }}>Suspendre dans :</div>
+      <div style={{ display:'flex', gap:'6px', marginBottom:'10px' }}>
+        {[3,7,15,30,60].map(d => (
+          <button key={d} onClick={() => { setDays(d); setCustomDate(''); }} style={{
+            flex:1, padding:'10px 4px', background: days===d && !customDate ? 'var(--gold-dim)' : 'var(--card)',
+            border: `1px solid ${days===d && !customDate ? 'var(--gold)' : 'var(--div)'}`,
+            borderRadius:'6px', cursor:'pointer', fontSize:'12px', fontWeight:'600', textAlign:'center',
+            color: days===d && !customDate ? 'var(--gold-l)' : 'var(--muted)'
+          }}>
+            {d}j
+          </button>
+        ))}
+      </div>
+
+      {/* Custom date */}
+      <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'12px' }}>
+        <span style={{ fontSize:'11px', color:'var(--muted)' }}>Ou date précise :</span>
+        <input type="date" value={customDate} onChange={e => setCustomDate(e.target.value)}
+          min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+          style={{ flex:1, background:'var(--card)', border:'1px solid var(--div)', borderRadius:'6px', padding:'8px', color:'var(--txt)', fontSize:'12px', outline:'none' }} />
+      </div>
+
+      {/* Confirm button */}
+      <button onClick={scheduleNow} style={{ width:'100%', padding:'12px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'8px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700' }}>
+        ⏰ Programmer la suspension ({customDate || days+' jours'}) — {targets.find(t=>t.id===target)?.label}
+      </button>
+
+      {/* Cancel existing */}
+      {suspendAt && (
+        <button onClick={onCancel} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--green)', cursor:'pointer', fontSize:'13px', fontWeight:'600', marginTop:'8px' }}>
+          ✕ Annuler la programmation ({new Date(suspendAt).toLocaleDateString('fr-TN')})
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════ PANEL ═══════════════
 function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>void, onLogout:()=>void }) {
   const [clients, setClients] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
   const [actionClient, setActionClient] = useState<any>(null)
+  const [demoRequests, setDemoRequests] = useState<any[]>([])
+  const [showDemos, setShowDemos] = useState(false)
 
   const key = sessionStorage.getItem('servio_admin_key') || ADMIN_KEY
 
@@ -108,10 +184,19 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
     setLoading(false)
   }
 
-  async function doAction(apiKey: string, action: string, days?: number) {
+  async function loadDemoRequests() {
+    try {
+      const res = await fetch(`${API}/api/demo-request?admin_key=${key}`)
+      const data = await res.json()
+      if (data.ok) setDemoRequests(data.requests || [])
+    } catch { /* silent */ }
+  }
+
+  async function doAction(apiKey: string, action: string, days?: number, target?: string) {
     try {
       const body: any = { admin_key: key, api_key: apiKey, action }
       if (days) body.days = days
+      if (target) body.suspend_target = target
       const res = await fetch(`${API}/api/admin/suspend`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
       const data = await res.json()
       if (data.ok) { flash('✓ Action effectuée'); loadClients() }
@@ -122,7 +207,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
 
-  useEffect(() => { loadClients() }, [])
+  useEffect(() => { loadClients(); loadDemoRequests() }, [])
 
   const active = clients.filter(c => c.plan === 'active').length
   const suspended = clients.filter(c => c.plan !== 'active').length
@@ -214,6 +299,66 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
         </div>
       </div>
 
+      {/* Demo Requests Section */}
+      <div style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'12px', overflow:'hidden', marginTop:'20px' }}>
+        <div onClick={() => { setShowDemos(!showDemos); if(!showDemos && !demoRequests.length) loadDemoRequests(); }} style={{ padding:'16px 20px', borderBottom: showDemos ? '1px solid var(--div)' : 'none', display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--card)', cursor:'pointer' }}>
+          <span style={{ fontWeight:'700', fontSize:'15px', color:'var(--orange)' }}>📋 Demandes de demo ({demoRequests.length})</span>
+          <span style={{ fontSize:'12px', color:'var(--muted)' }}>{showDemos ? '▲ Fermer' : '▼ Ouvrir'}</span>
+        </div>
+
+        {showDemos && (
+          <div style={{ maxHeight:'600px', overflowY:'auto' }}>
+            {demoRequests.length === 0 ? (
+              <div style={{ padding:'40px', textAlign:'center', color:'var(--muted)' }}>Aucune demande</div>
+            ) : (
+              demoRequests.map((d: any, i: number) => (
+                <div key={i} style={{ padding:'16px 20px', borderBottom:'1px solid var(--div)' }}>
+                  {/* Header */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
+                    <div>
+                      <div style={{ fontWeight:'700', fontSize:'14px' }}>{d.business_name}</div>
+                      <div style={{ fontSize:'11px', color:'var(--muted)' }}>{d.business_type} · {d.city || '—'} · {new Date(d.created_at).toLocaleDateString('fr-TN')} {new Date(d.created_at).toLocaleTimeString('fr-TN')}</div>
+                    </div>
+                    <span style={{ padding:'3px 10px', borderRadius:'12px', fontSize:'10px', fontWeight:'600',
+                      background: d.status==='new' ? 'var(--gold-dim)' : d.status==='contacted' ? 'rgba(74,144,217,.1)' : d.status==='converted' ? 'var(--green-dim)' : 'var(--card)',
+                      color: d.status==='new' ? 'var(--gold-l)' : d.status==='contacted' ? 'var(--blue)' : d.status==='converted' ? 'var(--green)' : 'var(--muted)',
+                      border: '1px solid var(--div)',
+                    }}>{d.status === 'new' ? '🆕 Nouveau' : d.status === 'contacted' ? '📞 Contacte' : d.status === 'converted' ? '✓ Converti' : d.status}</span>
+                  </div>
+                  {/* Details grid */}
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px 16px', fontSize:'12px', background:'var(--card)', borderRadius:'8px', padding:'12px', marginBottom:'8px' }}>
+                    <div><span style={{ color:'var(--muted)' }}>👤 Gerant:</span> {d.owner_name || '—'}</div>
+                    <div><span style={{ color:'var(--muted)' }}>📞 Tel:</span> <strong style={{ color:'var(--gold-l)' }}>{d.phone}</strong></div>
+                    <div><span style={{ color:'var(--muted)' }}>📧 Email:</span> {d.email || '—'}</div>
+                    <div><span style={{ color:'var(--muted)' }}>📍 Adresse:</span> {d.address || '—'}</div>
+                    <div><span style={{ color:'var(--muted)' }}>🪑 Tables:</span> {d.table_count || '—'}</div>
+                    <div><span style={{ color:'var(--muted)' }}>👥 Employes:</span> {d.employee_count || '—'}</div>
+                    <div style={{ gridColumn:'1/-1' }}><span style={{ color:'var(--muted)' }}>💻 Systeme actuel:</span> {d.current_system || '—'}</div>
+                    {d.main_problem && <div style={{ gridColumn:'1/-1' }}><span style={{ color:'var(--muted)' }}>⚠️ Probleme:</span> <span style={{ color:'var(--red)' }}>{d.main_problem}</span></div>}
+                    {d.has_computer && <div><span style={{ color:'var(--muted)' }}>🖥️ PC:</span> {d.has_computer}</div>}
+                    {d.has_printer && <div><span style={{ color:'var(--muted)' }}>🖨️ Imprimante:</span> {d.has_printer}</div>}
+                    {d.has_cash_drawer && <div><span style={{ color:'var(--muted)' }}>💰 Tiroir:</span> {d.has_cash_drawer}</div>}
+                    {d.has_scanner && <div><span style={{ color:'var(--muted)' }}>📱 Scanner:</span> {d.has_scanner}</div>}
+                    {d.other_hardware && <div style={{ gridColumn:'1/-1' }}><span style={{ color:'var(--muted)' }}>🔧 Autre materiel:</span> {d.other_hardware}</div>}
+                  </div>
+                  {/* Menu & features */}
+                  {d.menu_categories && <div style={{ fontSize:'11px', marginBottom:'4px' }}><span style={{ color:'var(--muted)' }}>🍽️ Menu:</span> {d.menu_categories}</div>}
+                  {d.menu_notes && <div style={{ fontSize:'11px', marginBottom:'4px', color:'var(--muted)' }}>📝 {d.menu_notes}</div>}
+                  {d.features && Array.isArray(d.features) && d.features.length > 0 && (
+                    <div style={{ display:'flex', gap:'4px', flexWrap:'wrap', marginTop:'6px' }}>
+                      {d.features.map((feat: string, fi: number) => (
+                        <span key={fi} style={{ padding:'2px 8px', fontSize:'10px', background:'var(--gold-dim)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--gold-l)' }}>{feat}</span>
+                      ))}
+                    </div>
+                  )}
+                  {d.notes && <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'6px', fontStyle:'italic' }}>💬 {d.notes}</div>}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Action modal */}
       {actionClient && (
         <div onClick={() => setActionClient(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
@@ -237,24 +382,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
             {/* Schedule options */}
             <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Programmer une suspension</div>
-            <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'16px' }}>
-              <button onClick={() => doAction(actionClient.api_key, 'schedule', 7)} style={{ flex:1, padding:'12px 8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor:'pointer', fontSize:'12px', fontWeight:'600', textAlign:'center' }}>
-                ⏰ 7 jours
-              </button>
-              <button onClick={() => doAction(actionClient.api_key, 'schedule', 15)} style={{ flex:1, padding:'12px 8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor:'pointer', fontSize:'12px', fontWeight:'600', textAlign:'center' }}>
-                ⏰ 15 jours
-              </button>
-              <button onClick={() => doAction(actionClient.api_key, 'schedule', 30)} style={{ flex:1, padding:'12px 8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor:'pointer', fontSize:'12px', fontWeight:'600', textAlign:'center' }}>
-                ⏰ 30 jours
-              </button>
-            </div>
-
-            {/* Cancel schedule (if active) */}
-            {actionClient.suspend_at && (
-              <button onClick={() => doAction(actionClient.api_key, 'cancel_schedule')} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--green)', cursor:'pointer', fontSize:'13px', fontWeight:'600', marginBottom:'16px' }}>
-                ✕ Annuler la programmation ({new Date(actionClient.suspend_at).toLocaleDateString('fr-TN')})
-              </button>
-            )}
+            <ScheduleSection apiKey={actionClient.api_key} suspendAt={actionClient.suspend_at} onAction={doAction} onCancel={() => doAction(actionClient.api_key, 'cancel_schedule')} />
 
             <button onClick={() => setActionClient(null)} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
               Fermer

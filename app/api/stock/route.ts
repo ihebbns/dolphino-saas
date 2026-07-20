@@ -2,8 +2,8 @@
 // /api/stock
 //
 // GET  ?key=XXX              → returns all stock items for restaurant
-// POST ?key=XXX  body={items:[{item_id,item_name,item_emoji,quantity}]}
-//                            → set/update stock quantities (manager sets stock)
+// POST ?key=XXX  body={items:[{item_id,item_name,item_emoji,quantity,barcode?,cost?,category?,sell_price?}]}
+//                            → set/update stock quantities (full catalog sync from POS)
 // PATCH ?key=XXX body={sold:[{item_id, qty}]}
 //                            → decrease stock after a sale (called by EXE)
 // ═══════════════════════════════════════════════════
@@ -35,15 +35,15 @@ export async function GET(req: Request) {
   const rid = rows[0].id
 
   const stock = await sql`
-    SELECT item_id, item_name, item_emoji, quantity, updated_at
+    SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at
     FROM stock
     WHERE restaurant_id = ${rid}
-    ORDER BY item_name ASC
+    ORDER BY category ASC, item_name ASC
   `
   return cors(NextResponse.json({ ok: true, stock }))
 }
 
-// ── POST — set stock (manager sets quantities from dashboard) ──
+// ── POST — full catalog sync (retail POS sends entire product list with current quantities) ──
 export async function POST(req: Request) {
   const key = getApiKey(req)
   if (!key) return cors(NextResponse.json({ ok: false, error: 'API key required' }, { status: 401 }))
@@ -55,24 +55,49 @@ export async function POST(req: Request) {
   let body: any
   try { body = await req.json() } catch { return cors(NextResponse.json({ ok: false, error: 'Bad JSON' }, { status: 400 })) }
 
-  const items: { item_id: string; item_name: string; item_emoji: string; quantity: number }[] = body.items || []
+  const items: {
+    item_id: string
+    item_name: string
+    item_emoji?: string
+    quantity: number
+    barcode?: string
+    cost?: number
+    category?: string
+    sell_price?: number
+  }[] = body.items || []
+
   if (!items.length) return cors(NextResponse.json({ ok: false, error: 'No items provided' }, { status: 400 }))
 
-  for (const it of items) {
-    const id   = String(it.item_id).slice(0, 64)
-    const name = String(it.item_name).slice(0, 100)
-    const emoji= String(it.item_emoji || '🥤').slice(0, 10)
-    const qty  = Math.max(0, parseInt(String(it.quantity)) || 0)
+  // Limit to 2000 products per sync to prevent abuse
+  const batch = items.slice(0, 2000)
+
+  for (const it of batch) {
+    const id         = String(it.item_id).slice(0, 64)
+    const name       = String(it.item_name).slice(0, 100)
+    const emoji      = String(it.item_emoji || '📦').slice(0, 10)
+    const qty        = Math.max(0, parseInt(String(it.quantity)) || 0)
+    const barcode    = String(it.barcode || '').slice(0, 64)
+    const cost       = Math.max(0, parseFloat(String(it.cost)) || 0)
+    const category   = String(it.category || '').slice(0, 100)
+    const sellPrice  = Math.max(0, parseFloat(String(it.sell_price)) || 0)
 
     await sql`
-      INSERT INTO stock (restaurant_id, item_id, item_name, item_emoji, quantity, updated_at)
-      VALUES (${rid}, ${id}, ${name}, ${emoji}, ${qty}, NOW())
+      INSERT INTO stock (restaurant_id, item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at)
+      VALUES (${rid}, ${id}, ${name}, ${emoji}, ${qty}, ${barcode}, ${cost}, ${category}, ${sellPrice}, NOW())
       ON CONFLICT (restaurant_id, item_id)
-      DO UPDATE SET quantity = ${qty}, item_name = ${name}, item_emoji = ${emoji}, updated_at = NOW()
+      DO UPDATE SET
+        quantity   = ${qty},
+        item_name  = ${name},
+        item_emoji = ${emoji},
+        barcode    = ${barcode},
+        cost       = ${cost},
+        category   = ${category},
+        sell_price = ${sellPrice},
+        updated_at = NOW()
     `
   }
 
-  return cors(NextResponse.json({ ok: true, updated: items.length }))
+  return cors(NextResponse.json({ ok: true, updated: batch.length }))
 }
 
 // ── PATCH — decrease stock after a sale (called by EXE sync) ──
