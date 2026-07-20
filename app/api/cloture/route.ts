@@ -66,9 +66,7 @@ export async function POST(req: Request) {
   `
 
   // Save to sessions table — EACH clôture creates its OWN row.
-  // No ON CONFLICT: multiple caissiers / shifts per day each get a distinct session,
-  // linked to their orders via session_id.
-  const [session] = await sql`
+  await sql`
     INSERT INTO sessions
       (restaurant_id, business_date, cashier, opened_at, closed_at,
        fond_initial, total_sales, orders_count, cash_sales, card_sales,
@@ -79,8 +77,7 @@ export async function POST(req: Request) {
        COALESCE(${closedAtISO}::timestamptz, NOW()),
        ${fondInitial}, ${total}, ${ordersCount}, ${cashTotal}, ${cardTotal},
        ${mobileTotal}, ${montantCompte}, ${theorique}, ${ecart}, ${sessionId})
-    RETURNING id
   `
 
-  return cors(NextResponse.json({ ok: true, businessDate: bizDate, sessionId, sessionRowId: session?.id }))
+  return cors(NextResponse.json({ ok: true, businessDate: bizDate, sessionId }))
 }

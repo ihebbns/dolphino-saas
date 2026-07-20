@@ -33,17 +33,32 @@ export async function POST(req: Request) {
   const sessionId = String(sale.sessionId ?? sale.session_id ?? '').slice(0, 64)
 
   try {
-    await sql`
-      INSERT INTO sales
-        (restaurant_id,num,business_date,sale_date,sale_time,items,subtotal,discount,disc_pct,grand,pay_method,received,monnaie,order_type,cli_name,cli_tel,cashier,session_id)
-      VALUES
-        (${rid},${num},${bizDate},${(sale.date||'').slice(0,30)},${(sale.time||'').slice(0,30)},
-         ${items}::jsonb,${+sale.s||0},${+sale.d||0},${+sale.disc||0},${+sale.g},
-         ${(sale.payMode||'cash').slice(0,20)},${+sale.r||+sale.g},${+sale.monnaie||0},
-         ${(sale.type||'place').slice(0,20)},${(sale.cliName||'').slice(0,100)},
-         ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)},${sessionId})
-      ON CONFLICT (restaurant_id,num,business_date,cashier)
-      DO UPDATE SET session_id = EXCLUDED.session_id`
+    // Try with session_id first (works after migration to VARCHAR)
+    try {
+      await sql`
+        INSERT INTO sales
+          (restaurant_id,num,business_date,sale_date,sale_time,items,subtotal,discount,disc_pct,grand,pay_method,received,monnaie,order_type,cli_name,cli_tel,cashier,session_id)
+        VALUES
+          (${rid},${num},${bizDate},${(sale.date||'').slice(0,30)},${(sale.time||'').slice(0,30)},
+           ${items}::jsonb,${+sale.s||0},${+sale.d||0},${+sale.disc||0},${+sale.g},
+           ${(sale.payMode||'cash').slice(0,20)},${+sale.r||+sale.g},${+sale.monnaie||0},
+           ${(sale.type||'place').slice(0,20)},${(sale.cliName||'').slice(0,100)},
+           ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)},${sessionId})
+        ON CONFLICT (restaurant_id,num,business_date,cashier)
+        DO UPDATE SET session_id = EXCLUDED.session_id`
+    } catch (colErr: any) {
+      // Fallback: without session_id (column missing or type mismatch)
+      await sql`
+        INSERT INTO sales
+          (restaurant_id,num,business_date,sale_date,sale_time,items,subtotal,discount,disc_pct,grand,pay_method,received,monnaie,order_type,cli_name,cli_tel,cashier)
+        VALUES
+          (${rid},${num},${bizDate},${(sale.date||'').slice(0,30)},${(sale.time||'').slice(0,30)},
+           ${items}::jsonb,${+sale.s||0},${+sale.d||0},${+sale.disc||0},${+sale.g},
+           ${(sale.payMode||'cash').slice(0,20)},${+sale.r||+sale.g},${+sale.monnaie||0},
+           ${(sale.type||'place').slice(0,20)},${(sale.cliName||'').slice(0,100)},
+           ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)})
+        ON CONFLICT (restaurant_id,num,business_date,cashier) DO NOTHING`
+    }
     return cors(NextResponse.json({ ok:true, num }))
   } catch(e:any) {
     return cors(NextResponse.json({ ok:false, error:e.message }, { status:500 }))
