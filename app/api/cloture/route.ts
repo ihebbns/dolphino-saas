@@ -42,6 +42,7 @@ export async function POST(req: Request) {
   const ecart        = parseFloat(body.ecart)        || 0
   const cashier      = (body.cashier || '').slice(0, 80)
   const sessionId    = String(body.sessionId ?? body.session_id ?? '').slice(0, 64)
+  const cashMovements = Array.isArray(body.cashMovements) ? body.cashMovements : []
   // Only accept full ISO timestamps (safe to cast). Ignore locale time strings.
   const isIso = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)
   const openedAtISO  = isIso(body.openedAtISO) ? body.openedAtISO : null
@@ -70,13 +71,13 @@ export async function POST(req: Request) {
     INSERT INTO sessions
       (restaurant_id, business_date, cashier, opened_at, closed_at,
        fond_initial, total_sales, orders_count, cash_sales, card_sales,
-       mobile_sales, montant_compte, theorique, ecart, session_id)
+       mobile_sales, montant_compte, theorique, ecart, session_id, cash_movements)
     VALUES
       (${rid}, ${bizDate}::date, ${cashier},
        COALESCE(${openedAtISO}::timestamptz, NOW()),
        COALESCE(${closedAtISO}::timestamptz, NOW()),
        ${fondInitial}, ${total}, ${ordersCount}, ${cashTotal}, ${cardTotal},
-       ${mobileTotal}, ${montantCompte}, ${theorique}, ${ecart}, ${sessionId})
+       ${mobileTotal}, ${montantCompte}, ${theorique}, ${ecart}, ${sessionId}, ${JSON.stringify(cashMovements)}::jsonb)
   `
 
   return cors(NextResponse.json({ ok: true, businessDate: bizDate, sessionId }))

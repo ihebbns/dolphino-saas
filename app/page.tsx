@@ -477,6 +477,22 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
             <div className={s.sessionRow}><span>💵 Espèces</span><span>{f(r.cash_sales)} DT</span></div>
             <div className={s.sessionRow}><span>💳 Carte/Mobile</span><span>{f(+r.card_sales + +r.mobile_sales)} DT</span></div>
             <div className={s.sessionRow}><span>📊 Commandes</span><span>{r.orders_count}</span></div>
+            {/* Cash movements (ajouts/retraits) */}
+            {r.cash_movements && Array.isArray(r.cash_movements) && r.cash_movements.length > 0 && (
+              <div style={{ margin:'8px 0', padding:'8px', background:'var(--card)', borderRadius:'8px', border:'1px solid var(--div)' }}>
+                <div style={{ fontSize:'10px', color:'var(--muted)', fontWeight:'600', marginBottom:'6px', textTransform:'uppercase', letterSpacing:'1px' }}>Mouvements de caisse</div>
+                {r.cash_movements.map((m: any, mi: number) => (
+                  <div key={mi} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', borderBottom: mi < r.cash_movements.length-1 ? '1px solid var(--div)' : 'none', fontSize:'12px' }}>
+                    <span style={{ color: m.type==='out' ? 'var(--red)' : 'var(--green)', fontWeight: m.type==='out' ? 800 : 600 }}>
+                      {m.type==='in' ? '➕' : '➖'} {m.type==='in' ? 'Ajout' : 'Retrait'} {m.reason ? `(${m.reason})` : ''}
+                    </span>
+                    <span style={{ fontWeight:700, color: m.type==='out' ? 'var(--red)' : 'var(--green)' }}>
+                      {m.type==='in' ? '+' : '−'}{f(m.amount)} DT
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {r.theorique != null && <div className={s.sessionRow}><span>💼 Théorique</span><span style={{color:'var(--gold-l)',fontWeight:700}}>{f(r.theorique)} DT</span></div>}
             {r.montant_compte != null && <div className={s.sessionRow}><span>🧮 Compté</span><span>{f(r.montant_compte)} DT</span></div>}
             {ecart !== null && (

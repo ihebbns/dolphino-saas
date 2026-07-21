@@ -147,7 +147,8 @@ export async function GET(req: Request) {
       mobile_sales::float,
       montant_compte::float,
       theorique::float,
-      ecart::float
+      ecart::float,
+      cash_movements
     FROM sessions
     WHERE restaurant_id=${rid}
       AND business_date = ${date}::date
