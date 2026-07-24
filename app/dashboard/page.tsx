@@ -244,10 +244,34 @@ function CategoryBreakdown({ items }: { items: any[] }) {
   )
 }
 
-function TopProducts({ items, filter, onFilter }: { items: any[], filter: string, onFilter:(f:string)=>void }) {
-  const cats = useMemo(() => ['Tous', ...Array.from(new Set(items.map((it:any) => itemCategory(it.name)).filter(Boolean)))], [items])
-  const filtered = filter === 'Tous' ? items : items.filter((it:any) => it.name.startsWith(filter + ' '))
-  const max = filtered[0]?.qty || 1
+function TopProducts({ products, filter, onFilter }: { products: any[], filter: string, onFilter:(f:string)=>void }) {
+  // Sort mode requested by the owner: by units sold, or by profitability.
+  const [sortBy, setSortBy] = useState<'qty'|'margin'>('qty')
+
+  const cats = useMemo(
+    () => ['Tous', ...Array.from(new Set(products.map((it:any) => itemCategory(it.name)).filter(Boolean)))],
+    [products]
+  )
+
+  const filtered = useMemo(() => {
+    const base = filter === 'Tous' ? products : products.filter((it:any) => it.name.startsWith(filter + ' '))
+    const arr = [...base]
+    if (sortBy === 'margin') {
+      arr.sort((a:any, b:any) => {
+        // Products with unknown cost can't be ranked by margin — sink them to the bottom.
+        if (!!a.costKnown !== !!b.costKnown) return a.costKnown ? -1 : 1
+        return ((b.marginPct||0) - (a.marginPct||0)) || ((b.profit||0) - (a.profit||0))
+      })
+    } else {
+      arr.sort((a:any, b:any) => ((b.qty||0) - (a.qty||0)) || ((b.revenue||0) - (a.revenue||0)))
+    }
+    return arr
+  }, [products, filter, sortBy])
+
+  const display = filtered.slice(0, 15)
+  // Bar metric follows the active sort; unknown-cost margin counts as 0 so it never fakes a full bar.
+  const metric = (it:any) => sortBy === 'margin' ? (it.costKnown ? (it.marginPct||0) : 0) : (it.qty||0)
+  const max = Math.max(1, ...display.map(metric))
 
   return (
     <>
@@ -257,24 +281,38 @@ function TopProducts({ items, filter, onFilter }: { items: any[], filter: string
             {CAT_EMOJI[c] || ''} {c}
           </button>
         ))}
+        <div className={s.sortToggle}>
+          <button className={`${s.filterBtn} ${sortBy==='qty'?s.filterBtnActive:''}`} onClick={()=>setSortBy('qty')}>🔥 Plus vendus</button>
+          <button className={`${s.filterBtn} ${sortBy==='margin'?s.filterBtnActive:''}`} onClick={()=>setSortBy('margin')}>💰 Plus rentables</button>
+        </div>
       </div>
       <div className={s.chartBox}>
-        {filtered.length === 0
+        {display.length === 0
           ? <div className={s.empty}><div className={s.emptyIcon}>📊</div><div className={s.emptyText}>Aucune vente</div></div>
           : <div className={s.topList}>
-              {filtered.slice(0,15).map((it:any, i:number) => (
-                <div key={i} className={s.topItem}>
-                  <div className={`${s.topRank} ${i===0?s.topRank1:i===1?s.topRank2:i===2?s.topRank3:s.topRankN}`}>
-                    {i < 3 ? ['🥇','🥈','🥉'][i] : i+1}
+              {display.map((it:any, i:number) => {
+                const barPct = Math.max(0, Math.min(100, Math.round(metric(it) / max * 100)))
+                return (
+                  <div key={i} className={s.topItem}>
+                    <div className={`${s.topRank} ${i===0?s.topRank1:i===1?s.topRank2:i===2?s.topRank3:s.topRankN}`}>
+                      {i < 3 ? ['🥇','🥈','🥉'][i] : i+1}
+                    </div>
+                    <div className={s.topEmoji}>{itemEmoji(it.name)}</div>
+                    <div className={s.topName}>{it.name}</div>
+                    <div className={s.topBarWrap}>
+                      <div className={s.topBar} style={{width:`${barPct}%`}}/>
+                    </div>
+                    <div className={s.topMetrics}>
+                      <div className={s.topQty}>{it.qty} <span style={{fontSize:10,color:'var(--muted)',fontWeight:400}}>fois</span></div>
+                      <div className={s.topMargin}>
+                        {it.costKnown
+                          ? <>{(it.marginPct||0).toFixed(0)}% · <span style={{color:(it.profit||0)>=0?'var(--green)':'var(--red)'}}>{f(it.profit)} DT</span></>
+                          : <>— · <span style={{color:'var(--muted)'}}>≤ {f(it.profit)} DT</span></>}
+                      </div>
+                    </div>
                   </div>
-                  <div className={s.topEmoji}>{itemEmoji(it.name)}</div>
-                  <div className={s.topName}>{it.name}</div>
-                  <div className={s.topBarWrap}>
-                    <div className={s.topBar} style={{width:`${Math.round(it.qty/max*100)}%`}}/>
-                  </div>
-                  <div className={s.topQty}>{it.qty} <span style={{fontSize:10,color:'var(--muted)',fontWeight:400}}>fois</span></div>
-                </div>
-              ))}
+                )
+              })}
             </div>
         }
       </div>
@@ -1042,7 +1080,7 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
           {activeTab === 'products' && <>
             <div className={s.section}>
               <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🏆</span> Articles vendus</div></div>
-              <TopProducts items={data.topItems} filter={catFilter} onFilter={setCatFilter}/>
+              <TopProducts products={data.productProfit || []} filter={catFilter} onFilter={setCatFilter}/>
             </div>
           </>}
 

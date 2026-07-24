@@ -100,7 +100,7 @@ export async function GET(req: Request) {
     }
   }
   const topItems = Object.entries(productStats)
-    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .sort((a, b) => (b[1].qty - a[1].qty) || (b[1].revenue - a[1].revenue))
     .slice(0, 15)
     .map(([name, stats]) => ({ name, qty: stats.qty, revenue: stats.revenue }))
 
