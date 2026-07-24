@@ -81,6 +81,12 @@ export async function POST(req: Request) {
     const category   = String(it.category || '').slice(0, 100)
     const sellPrice  = Math.max(0, parseFloat(String(it.sell_price)) || 0)
 
+    // Strict field ownership:
+    //   • cost / sell_price / category are WEB-OWNED — never overwritten by a POS sync.
+    //   • quantity / item_name / item_emoji / barcode flow POS → web.
+    // For brand-new rows we insert whatever the POS provided (cost defaults to 0);
+    // for existing rows we update ONLY the POS-owned fields so a web-entered cost
+    // can never be clobbered.
     await sql`
       INSERT INTO stock (restaurant_id, item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at)
       VALUES (${rid}, ${id}, ${name}, ${emoji}, ${qty}, ${barcode}, ${cost}, ${category}, ${sellPrice}, NOW())
@@ -90,9 +96,6 @@ export async function POST(req: Request) {
         item_name  = ${name},
         item_emoji = ${emoji},
         barcode    = ${barcode},
-        cost       = ${cost},
-        category   = ${category},
-        sell_price = ${sellPrice},
         updated_at = NOW()
     `
   }
