@@ -673,6 +673,168 @@ function StockSection({ stock }: { stock: any[] }) {
   )
 }
 
+// ════════════════ RENTABILITÉ / BÉNÉFICE ════════════════
+function ProfitSection({ data }: { data: any }) {
+  const p        = data.profit || { revenue:0, cogs:0, netProfit:0, marginPct:0, coveragePct:0 }
+  const products: any[] = data.productProfit || []
+  const trend:    any[] = data.profitTrend || []
+  const val      = data.stockValuation || { totalValue:0, lowStock:[] }
+  const [showAll, setShowAll] = useState(false)
+
+  const shown = showAll ? products : products.slice(0, 12)
+  const trendMax = Math.max(1, ...trend.map((t:any) => Math.max(+t.revenue||0, +t.netProfit||0)))
+  const coverageIncomplete = (p.coveragePct || 0) < 99.5 && (p.revenue || 0) > 0
+
+  const cards = [
+    { icon:'💰', val: fmt(p.revenue),  unit:'DT', lbl:"Chiffre d'affaires",    color:'kpiCardGold'   },
+    { icon:'📦', val: fmt(p.cogs),     unit:'DT', lbl:'Coût matières',          color:'kpiCardOrange' },
+    { icon:'📈', val: fmt(p.netProfit),unit:'DT', lbl:'Bénéfice net',           color: (p.netProfit>=0?'kpiCardGreen':'kpiCardRed') },
+    { icon:'🎯', val: (p.marginPct||0).toFixed(1), unit:'%', lbl:'Marge nette', color:'kpiCardBlue'   },
+    { icon:'🛡️', val: (p.coveragePct||0).toFixed(0), unit:'%', lbl:'Couverture coût', color:'kpiCardPurple' },
+  ]
+
+  return (
+    <>
+      {/* Header + link to catalog */}
+      <div className={s.section}>
+        <div className={s.sectionHdr}>
+          <div className={s.sectionTitle}><span>💵</span> Rentabilité du jour</div>
+          <a href="/catalog" style={{ textDecoration:'none' }}>
+            <button className={s.btnIcon} style={{ fontSize:12 }}>🛠️ Gérer les produits &amp; coûts →</button>
+          </a>
+        </div>
+
+        <div className={s.kpiGrid}>
+          {cards.map((c,i) => (
+            <div key={i} className={`${s.kpiCard} ${(s as any)[c.color] || s.kpiCardGold}`}>
+              <div className={s.kpiIcon}>{c.icon}</div>
+              <div className={s.kpiVal}>{c.val}{c.unit && <span> {c.unit}</span>}</div>
+              <div className={s.kpiLbl}>{c.lbl}</div>
+            </div>
+          ))}
+        </div>
+
+        {coverageIncomplete && (
+          <div style={{ marginTop:12, padding:'10px 14px', borderRadius:10, fontSize:12.5, lineHeight:1.5,
+                        background:'rgba(232,136,42,.08)', border:'1px solid rgba(232,136,42,.3)', color:'var(--orange)' }}>
+            ⚠️ Couverture coût {Math.round(p.coveragePct)}% : certaines ventes n'ont pas de coût enregistré.
+            Le bénéfice affiché est un <b>maximum</b> (le coût manquant est compté comme 0).
+            Renseignez les coûts dans <a href="/catalog" style={{ color:'var(--gold-l)' }}>Produits &amp; Coûts</a> pour un chiffre exact sur les ventes futures.
+          </div>
+        )}
+      </div>
+
+      {/* Trend: revenue vs net profit (7 days) */}
+      <div className={s.section}>
+        <div className={s.chartBox}>
+          <div className={s.chartTitle}>
+            📊 Bénéfice vs Chiffre d'affaires <span className={s.chartSubtitle}>(7 derniers jours)</span>
+          </div>
+          <div style={{ display:'flex', gap:16, marginBottom:12, fontSize:11, color:'var(--muted)' }}>
+            <span style={{ display:'flex', alignItems:'center', gap:6 }}><span style={{ width:10, height:10, borderRadius:2, background:'var(--gold-l)' }}/> CA</span>
+            <span style={{ display:'flex', alignItems:'center', gap:6 }}><span style={{ width:10, height:10, borderRadius:2, background:'var(--green)' }}/> Bénéfice net</span>
+          </div>
+          <div className={s.barChart}>
+            {trend.map((t:any, i:number) => {
+              const d   = new Date(t.day + 'T12:00')
+              const lbl = d.toLocaleDateString('fr-TN', { weekday:'short', day:'numeric' })
+              const revH = Math.round((+t.revenue||0) / trendMax * 100)
+              const proH = Math.round(Math.max(0, +t.netProfit||0) / trendMax * 100)
+              return (
+                <div key={i} className={s.barCol} title={`${t.day} · CA ${f(t.revenue)} DT · Bénéfice ${f(t.netProfit)} DT`}>
+                  <div className={s.barVal}>{(+t.netProfit) !== 0 ? f(t.netProfit) : ''}</div>
+                  <div className={s.barWrap} style={{ gap:3 }}>
+                    <div style={{ flex:1, height:`${Math.max(revH,3)}%`, background:'linear-gradient(180deg,var(--gold-l),var(--gold))', borderRadius:'6px 6px 0 0', minHeight:3 }}/>
+                    <div style={{ flex:1, height:`${Math.max(proH,2)}%`, background:(+t.netProfit>=0?'var(--green)':'var(--red)'), borderRadius:'6px 6px 0 0', minHeight:2 }}/>
+                  </div>
+                  <div className={s.barLbl}>{lbl}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Per-product profitability */}
+      <div className={s.section}>
+        <div className={s.sectionHdr}>
+          <div className={s.sectionTitle}><span>🏆</span> Rentabilité par produit</div>
+          {products.length > 12 && (
+            <button className={s.btnIcon} style={{ fontSize:12 }} onClick={()=>setShowAll(v=>!v)}>
+              {showAll ? 'Réduire' : `Voir tout (${products.length})`}
+            </button>
+          )}
+        </div>
+        <div className={s.tableWrap}>
+          <div className={s.tableScroll}>
+            {products.length === 0
+              ? <div className={s.empty}><div className={s.emptyIcon}>💵</div><div className={s.emptyText}>Aucune vente ce jour</div></div>
+              : <table className={s.table}>
+                  <thead><tr>
+                    <th>Produit</th><th>Qté</th><th>CA</th><th>Coût</th><th>Bénéfice</th><th>Marge</th><th>Statut</th>
+                  </tr></thead>
+                  <tbody>
+                    {shown.map((pr:any, i:number) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight:600, fontSize:13 }}>{itemEmoji(pr.name)} {pr.name}</td>
+                        <td className={s.muted}>{pr.qty}</td>
+                        <td>{f(pr.revenue)} DT</td>
+                        <td className={s.muted}>{pr.costKnown ? f(pr.cost)+' DT' : '—'}</td>
+                        <td className={s.bold} style={{ color: pr.profit>=0 ? 'var(--green)' : 'var(--red)', whiteSpace:'nowrap' }}>
+                          {pr.costKnown ? '' : '≤ '}{f(pr.profit)} DT
+                        </td>
+                        <td style={{ color: pr.marginPct>=0 ? 'var(--txt)' : 'var(--red)' }}>{(pr.marginPct||0).toFixed(0)}%</td>
+                        <td>
+                          {pr.costKnown
+                            ? <span className={`${s.badge} ${s.badgeActive}`}>coût OK</span>
+                            : <span className={`${s.badge} ${s.badgeSuspended}`}>coût inconnu</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+            }
+          </div>
+        </div>
+      </div>
+
+      {/* Stock valuation + low stock */}
+      <div className={s.section}>
+        <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🏷️</span> Valorisation du stock</div></div>
+        <div className={s.kpiGrid}>
+          <div className={`${s.kpiCard} ${s.kpiCardGold}`}>
+            <div className={s.kpiIcon}>💼</div>
+            <div className={s.kpiVal}>{fmt(val.totalValue)}<span> DT</span></div>
+            <div className={s.kpiLbl}>Valeur du stock (au coût)</div>
+          </div>
+          <div className={`${s.kpiCard} ${s.kpiCardOrange}`}>
+            <div className={s.kpiIcon}>⚠️</div>
+            <div className={s.kpiVal} style={{ color: (val.lowStock?.length||0) > 0 ? 'var(--orange)' : 'var(--txt)' }}>{val.lowStock?.length || 0}</div>
+            <div className={s.kpiLbl}>Produits en stock bas</div>
+          </div>
+        </div>
+        {val.lowStock && val.lowStock.length > 0 && (
+          <div style={{ marginTop:14 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:8 }}>
+              {val.lowStock.map((it:any, i:number) => (
+                <div key={i} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderLeft:`3px solid ${it.quantity<=0?'var(--red)':'var(--orange)'}`, borderRadius:'var(--radius,9px)', padding:'12px', textAlign:'center' }}>
+                  <div style={{ fontSize:22, marginBottom:4 }}>{it.item_emoji || '📦'}</div>
+                  <div style={{ fontSize:12, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.item_name}</div>
+                  <div style={{ fontSize:10, color:'var(--muted)', marginBottom:4 }}>{it.category || '—'}</div>
+                  <div style={{ fontSize:18, fontWeight:800, color: it.quantity<=0 ? 'var(--red)' : 'var(--orange)' }}>
+                    {it.quantity<=0 ? 'RUPTURE' : it.quantity}
+                  </div>
+                  <div style={{ fontSize:9, color:'var(--muted)' }}>seuil: {it.low_threshold}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 // ════════════════ DASHBOARD ════════════════
 function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any; onLogout:()=>void }) {
   const [date,       setDate]       = useState(today())
@@ -748,6 +910,7 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
 
   const tabs = [
     { id:'overview',  label:'📊 Vue d\'ensemble' },
+    { id:'profit',    label:'💵 Rentabilité'      },
     { id:'products',  label:'🏆 Produits'         },
     { id:'orders',    label:'🧾 Commandes'         },
     { id:'sessions',  label:'🔒 Caisses'           },
@@ -771,6 +934,7 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
           <button className={`${s.filterBtn} ${date===today()?s.filterBtnActive:''}`} onClick={()=>setDate(today())}>Aujourd'hui</button>
           <button className={s.filterBtn} onClick={()=>{const d=new Date();d.setDate(d.getDate()-1);setDate(d.toISOString().split('T')[0])}}>Hier</button>
           <input type="date" className={s.datePick} value={date} max={today()} onChange={e=>setDate(e.target.value)}/>
+          <a href="/catalog" className={s.btnIcon} title="Produits & Coûts" style={{ textDecoration:'none' }}>📦</a>
           <button className={s.btnIcon} onClick={()=>load(date)} title="Actualiser">↻</button>
           <button className={s.btnIcon} onClick={exportPDF} title="Exporter PDF">📄</button>
           <button className={s.btnIcon} onClick={toggle} title="Thème">{theme==='dark'?'☀️':'🌙'}</button>
@@ -870,6 +1034,9 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
               </div>
             </div>
           </>}
+
+          {/* ── RENTABILITÉ ── */}
+          {activeTab === 'profit' && <ProfitSection data={data}/>}
 
           {/* ── PRODUCTS ── */}
           {activeTab === 'products' && <>

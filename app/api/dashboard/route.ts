@@ -110,6 +110,89 @@ export async function GET(req: Request) {
     .slice(0, 5)
     .map(([name, stats]) => ({ name, qty: stats.qty, revenue: stats.revenue }))
 
+  // ═══ RENTABILITÉ / BÉNÉFICE (day-accurate, from FROZEN per-line cost it.c) ═══
+  // CORE RULE: profit is derived ONLY from the cost that was frozen into each
+  // sale line at sale time (it.c). We NEVER read a product's *current* cost, so
+  // editing a cost later cannot change any past day. A line whose `c` is missing
+  // (old POS) is treated as cost 0 (never shown as guaranteed profit) and counts
+  // against the "coverage" figure. A line with c=0 is a KNOWN cost (100% margin).
+  const lineHasCost = (it: any) =>
+    it && it.c !== undefined && it.c !== null && String(it.c) !== '' && !isNaN(parseFloat(it.c))
+  const lineUnitCost = (it: any) => (lineHasCost(it) ? Math.max(0, parseFloat(it.c)) : 0)
+  const lineQty = (it: any) => parseInt(it?.qty) || 1
+  const linePrice = (it: any) => Math.max(0, parseFloat(it?.price ?? it?.p) || 0)
+
+  const revenue = +kpis.total_revenue || 0     // SUM(grand) — headline revenue
+  let dayCogs = 0                              // SUM(unitCost * qty)
+  let dayLineRevenue = 0                       // SUM(price * qty) over all lines
+  let dayLineRevenueWithCost = 0               // SUM(price * qty) over lines whose cost is KNOWN
+  const prodProfit: Record<string, { qty: number; revenue: number; cost: number; linesMissingCost: number }> = {}
+
+  for (const row of allSales) {
+    for (const it of (row.items || [])) {
+      const qty = lineQty(it)
+      const price = linePrice(it)
+      const unitCost = lineUnitCost(it)
+      const lineRev = price * qty
+      const lineCost = unitCost * qty
+      dayCogs += lineCost
+      dayLineRevenue += lineRev
+      if (lineHasCost(it)) dayLineRevenueWithCost += lineRev
+
+      const name = it.name || '?'
+      if (!prodProfit[name]) prodProfit[name] = { qty: 0, revenue: 0, cost: 0, linesMissingCost: 0 }
+      prodProfit[name].qty += qty
+      prodProfit[name].revenue += lineRev
+      prodProfit[name].cost += lineCost
+      if (!lineHasCost(it)) prodProfit[name].linesMissingCost += 1
+    }
+  }
+
+  const netProfit = revenue - dayCogs
+  const profit = {
+    revenue,
+    cogs: dayCogs,
+    netProfit,
+    marginPct: revenue > 0 ? (netProfit / revenue) * 100 : 0,
+    coveragePct: dayLineRevenue > 0 ? Math.min(100, (dayLineRevenueWithCost / dayLineRevenue) * 100) : 0,
+  }
+
+  const productProfit = Object.entries(prodProfit)
+    .map(([name, p]) => ({
+      name,
+      qty: p.qty,
+      revenue: p.revenue,
+      cost: p.cost,
+      profit: p.revenue - p.cost,
+      marginPct: p.revenue > 0 ? ((p.revenue - p.cost) / p.revenue) * 100 : 0,
+      costKnown: p.linesMissingCost === 0,   // false if ANY sold unit lacked a frozen cost
+    }))
+    .sort((a, b) => b.profit - a.profit)
+
+  // ═══ Tendance bénéfice vs CA — 7 derniers jours business ═══
+  const trendSales = await sql`
+    SELECT business_date::text AS day, grand::float AS grand, items
+    FROM sales
+    WHERE restaurant_id=${rid}
+      AND business_date >= (${date}::date - INTERVAL '6 days')
+      AND business_date <= ${date}::date`
+  const trendMap: Record<string, { revenue: number; cogs: number }> = {}
+  for (const row of trendSales) {
+    const d = row.day
+    if (!trendMap[d]) trendMap[d] = { revenue: 0, cogs: 0 }
+    trendMap[d].revenue += +row.grand || 0
+    for (const it of (row.items || [])) {
+      trendMap[d].cogs += lineUnitCost(it) * lineQty(it)
+    }
+  }
+  const [tY, tM, tD] = date.split('-').map(Number)
+  const profitTrend: { day: string; revenue: number; cogs: number; netProfit: number }[] = []
+  for (let i = 6; i >= 0; i--) {
+    const key = new Date(Date.UTC(tY, tM - 1, tD - i)).toISOString().split('T')[0]
+    const e = trendMap[key] || { revenue: 0, cogs: 0 }
+    profitTrend.push({ day: key, revenue: e.revenue, cogs: e.cogs, netProfit: e.revenue - e.cogs })
+  }
+
   // ═══ Ventes récentes (50 dernières) ═══
   const recent = await sql`
     SELECT num, sale_time, order_type, grand::float, pay_method,
@@ -155,11 +238,48 @@ export async function GET(req: Request) {
     ORDER BY closed_at DESC`
 
   // ═══ Stock ═══
-  const stock = await sql`
-    SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at
-    FROM stock
-    WHERE restaurant_id = ${rid}
-    ORDER BY category ASC, item_name ASC`
+  // Defensive: tracked / low_threshold may not be migrated yet on the live DB.
+  let stock: any[]
+  try {
+    stock = await sql`
+      SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, tracked, low_threshold, updated_at
+      FROM stock
+      WHERE restaurant_id = ${rid}
+      ORDER BY category ASC, item_name ASC`
+  } catch {
+    stock = await sql`
+      SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at
+      FROM stock
+      WHERE restaurant_id = ${rid}
+      ORDER BY category ASC, item_name ASC`
+  }
+
+  // ═══ Valorisation du stock + alertes stock bas ═══
+  // totalValue = SUM(quantity * cost) at CURRENT cost (this is a live snapshot,
+  // not a historical figure). lowStock = tracked items at/under their threshold.
+  let stockTotalValue = 0
+  const lowStock: any[] = []
+  for (const it of stock) {
+    const qty = parseInt(String(it.quantity)) || 0
+    const cost = Math.max(0, parseFloat(it.cost) || 0)
+    stockTotalValue += qty * cost
+    const tracked = (it.tracked === undefined || it.tracked === null) ? true : !!it.tracked
+    const threshold = (it.low_threshold === undefined || it.low_threshold === null) ? 5 : (parseInt(String(it.low_threshold)) || 0)
+    if (tracked && qty <= threshold) {
+      lowStock.push({
+        item_id: it.item_id,
+        item_name: it.item_name,
+        item_emoji: it.item_emoji || '📦',
+        category: it.category || '',
+        quantity: qty,
+        low_threshold: threshold,
+        cost,
+        sell_price: Math.max(0, parseFloat(it.sell_price) || 0),
+      })
+    }
+  }
+  lowStock.sort((a, b) => a.quantity - b.quantity)
+  const stockValuation = { totalValue: stockTotalValue, lowStock }
 
   // ═══ Peak hour identification ═══
   let peakHour = null
@@ -203,5 +323,10 @@ export async function GET(req: Request) {
     sessions,
     stock,
     insights,
+    // ── Cost / profit analytics (day-accurate, frozen-cost based) ──
+    profit,
+    productProfit,
+    profitTrend,
+    stockValuation,
   }))
 }
