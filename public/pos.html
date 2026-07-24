@@ -727,64 +727,46 @@ const MODULES = CLIENT_CONFIG.modules;
 
 // ═══════════════ DATA ═══════════════
 let MENU={
+  "Café":{icon:"☕",items:[
+    {id:"d1",name:"Express",e:"☕",p:2},
+    {id:"d2",name:"Cappuccino",e:"☕",p:3.5},
+    {id:"d3",name:"Café Crème",e:"☕",p:3},
+    {id:"d4",name:"Thé Menthe",e:"🍵",p:1.8},
+    {id:"d5",name:"Chocolat Chaud",e:"☕",p:4},
+    {id:"d6",name:"Latte",e:"☕",p:4.5}
+  ]},
   "Boisson":{icon:"🥤",items:[
-    {id:"b1",name:"Boga Menthe",e:"🥤",p:2.5},
-    {id:"b2",name:"Chocolat Chaud",e:"☕",p:3},
-    {id:"b3",name:"Citron à Amande",e:"🍋",p:3.5},
-    {id:"b4",name:"Citronade",e:"🍋",p:2.5},
-    {id:"b5",name:"Eau 0.5L",e:"💧",p:1},
-    {id:"b6",name:"Eau 1.5L",e:"💧",p:1.5},
-    {id:"b7",name:"Eau Hayet 0.75L",e:"💧",p:2},
-    {id:"b8",name:"Jus Banane",e:"🍌",p:5},
-    {id:"b9",name:"Jus d'Orange",e:"🍊",p:3.5},
-    {id:"b10",name:"Jus de Fraise",e:"🍓",p:4},
-    {id:"b11",name:"Jwajem",e:"🧃",p:7},
-    {id:"b12",name:"SDA Canette",e:"🥤",p:2.5},
-    {id:"b13",name:"Soda",e:"🥤",p:2},
-    {id:"b14",name:"Tasa w Borj",e:"🍵",p:3.5},
-    {id:"b15",name:"Tisana",e:"🌿",p:2}
+    {id:"b1",name:"Jus d'Orange",e:"🍊",p:3.5},
+    {id:"b2",name:"Eau 0.5L",e:"💧",p:1},
+    {id:"b3",name:"Eau 1.5L",e:"💧",p:1.8},
+    {id:"b4",name:"Soda Canette",e:"🥤",p:2.5},
+    {id:"b5",name:"Citronnade",e:"🍋",p:3},
+    {id:"b6",name:"Smoothie Fraise",e:"🍓",p:5}
   ]},
-  "Caffé":{icon:"☕",items:[
-    {id:"c1",name:"Américain",e:"☕",p:2},
-    {id:"c2",name:"Cappucin",e:"☕",p:2},
-    {id:"c3",name:"Cappucin Nestlé",e:"☕",p:2.5},
-    {id:"c4",name:"Crème",e:"☕",p:2.4},
-    {id:"c5",name:"Crème Nestlé",e:"☕",p:2.7},
-    {id:"c6",name:"Dose",e:"☕",p:0.5},
-    {id:"c7",name:"Express",e:"☕",p:1.9},
-    {id:"c8",name:"Expresse Nestlé",e:"☕",p:2.3},
-    {id:"c9",name:"Filtre",e:"☕",p:1.3},
-    {id:"c10",name:"Thé",e:"🍵",p:1.3},
-    {id:"c11",name:"Thé à Amande",e:"🍵",p:2.8},
-    {id:"c12",name:"Thé à Menthe",e:"🍵",p:1.6}
+  "Sandwichs":{icon:"🥪",items:[
+    {id:"s1",name:"Thon Fromage",e:"🥪",p:5},
+    {id:"s2",name:"Escalope Grillée",e:"🥪",p:7},
+    {id:"s3",name:"Poulet Pané",e:"🥪",p:6.5},
+    {id:"s4",name:"Végétarien",e:"🥗",p:5.5}
   ]},
-  "Chicha":{icon:"💨",items:[
-    {id:"ch1",name:"3mara",e:"💨",p:2},
-    {id:"ch2",name:"Chicha Maison",e:"💨",p:12},
-    {id:"ch3",name:"Chicha Chikh",e:"💨",p:3.5},
-    {id:"ch4",name:"Chicha Fakher au Choix",e:"💨",p:4.5},
-    {id:"ch5",name:"Chicha Love",e:"💨",p:6},
-    {id:"ch6",name:"Chikh Sghira",e:"💨",p:2.5}
-  ]},
-  "Jeux":{icon:"🎴",items:[
-    {id:"j1",name:"Chkobba",e:"🎴",p:3},
-    {id:"j2",name:"Rami",e:"🃏",p:3}
+  "Pizza":{icon:"🍕",items:[
+    {id:"pz1",name:"Margherita",e:"🍕",p:8},
+    {id:"pz2",name:"Thon Olive",e:"🍕",p:10},
+    {id:"pz3",name:"Quatre Fromages",e:"🍕",p:11},
+    {id:"pz4",name:"Calzone",e:"🍕",p:9}
   ]},
   "Pâtisserie":{icon:"🥐",items:[
-    {id:"p1",name:"Cake",e:"🍰",p:1.5},
-    {id:"p2",name:"Fricassé",e:"🥪",p:1.2},
-    {id:"p3",name:"Gâteaux",e:"🍰",p:2.3},
-    {id:"p4",name:"Jwajem Kbir",e:"🍪",p:8},
-    {id:"p5",name:"Jwajem Sgir",e:"🍪",p:6},
-    {id:"p6",name:"Libanaise",e:"🥙",p:2},
-    {id:"p7",name:"Mille Feuille",e:"🍰",p:2},
-    {id:"p8",name:"Pizza",e:"🍕",p:2.2},
-    {id:"p9",name:"Pol Crème",e:"🍮",p:3},
-    {id:"p10",name:"Sandwich",e:"🥪",p:3},
-    {id:"p11",name:"Soufflet",e:"🥐",p:2.5},
-    {id:"p12",name:"Tiramisu",e:"🍰",p:3.5}
+    {id:"pt1",name:"Croissant",e:"🥐",p:1.5},
+    {id:"pt2",name:"Mille Feuille",e:"🍰",p:2.5},
+    {id:"pt3",name:"Tiramisu",e:"🍰",p:4},
+    {id:"pt4",name:"Fondant Chocolat",e:"🍫",p:4.5}
   ]},
-  "Tirroir":{icon:"🗄️",items:[]}
+  "Parapharma":{icon:"🧴",items:[
+    {id:"pp1",name:"Crème Hydratante",e:"🧴",p:25,barcode:"6111000001"},
+    {id:"pp2",name:"Sérum Vitamine C",e:"💧",p:45,barcode:"6111000002"},
+    {id:"pp3",name:"Dentifrice",e:"🪥",p:8,barcode:"6111000003"},
+    {id:"pp4",name:"Shampoing",e:"🧴",p:12,barcode:"6111000004"}
+  ]}
 };
 
 const CAT_ICONS={
