@@ -90,8 +90,8 @@ export async function GET(req: Request) {
 
     // Build config response — merge DB config with defaults
     const dbConfig = (r.config && typeof r.config === 'object') ? r.config : {}
-    const dbModules = (dbConfig.modules && typeof dbConfig.modules === 'object') ? dbConfig.modules : {}
-    const config = {
+    const hasDbModules = dbConfig.modules && typeof dbConfig.modules === 'object' && Object.keys(dbConfig.modules).length > 0
+    const config: any = {
       restaurantName: r.name,
       restaurantCity: r.city || 'Tunisie',
       phone: r.phone || '+216 52 050 581',
@@ -107,9 +107,14 @@ export async function GET(req: Request) {
       zone2Cats: ['Libanais', 'Sandwichs', 'Tacos', 'Plat', 'Brik', 'Panini'],
       boissonCats: ['Boisson'],
       ...dbConfig,
-      // Always send a complete module set (stored modules override the baseline).
-      // Old baked apps ignore this key; the universal POS applies it at runtime.
-      modules: { ...DEFAULT_MODULES, ...dbModules },
+    }
+    // Only send cloud modules for self-service clients who actually have them.
+    // Baked per-client EXEs (no modules in DB) keep their compiled-in config —
+    // the POS must NOT override their baked modules with defaults.
+    if (hasDbModules) {
+      config.modules = { ...DEFAULT_MODULES, ...dbConfig.modules }
+    } else {
+      delete config.modules
     }
 
     // Menu — return as-is from DB (empty object = POS uses its local default)
