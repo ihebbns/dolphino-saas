@@ -46,6 +46,11 @@ export async function GET(req: Request) {
       COALESCE(SUM(CASE WHEN pay_method='cash' THEN grand ELSE 0 END),0)::float AS cash_total,
       COALESCE(SUM(CASE WHEN pay_method='card' THEN grand ELSE 0 END),0)::float AS card_total,
       COALESCE(SUM(CASE WHEN pay_method='mob'  THEN grand ELSE 0 END),0)::float AS mobile_total,
+      -- Credit = sold but NOT paid. It belongs in total_revenue (the sale happened)
+      -- but in none of the settled tallies above, so without this line the payment
+      -- breakdown silently fails to reconcile with the headline revenue.
+      COALESCE(SUM(CASE WHEN pay_method='credit' THEN grand ELSE 0 END),0)::float AS credit_total,
+      COUNT(*) FILTER (WHERE pay_method='credit')::int AS credit_orders,
       COALESCE(SUM(CASE WHEN order_type='place' THEN 1 ELSE 0 END),0)::int AS sur_place,
       COALESCE(SUM(CASE WHEN order_type='take'  THEN 1 ELSE 0 END),0)::int AS emporter,
       COALESCE(SUM(CASE WHEN order_type='del'   THEN 1 ELSE 0 END),0)::int AS livraison,

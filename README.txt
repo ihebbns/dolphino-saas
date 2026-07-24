@@ -37,7 +37,7 @@ STEP 3 — DEPLOY ON VERCEL
 
 STEP 4 — UPDATE ELECTRON APP
 ──────────────────────────────
-In dolphino-pos-package/index.html, find:
+In servio-pos-package/index.html, find:
 
    const SYNC_API_URL  = '...'
 

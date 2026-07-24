@@ -19,6 +19,15 @@ type Product = {
 
 const num = (v: any) => (v === '' || v === null || v === undefined ? 0 : Math.max(0, parseFloat(String(v)) || 0))
 
+// ── FIELD OWNERSHIP ──────────────────────────────────────────────────
+// PRICE (prix de vente) is owned by the caisse (EXE): the manager edits it in
+// "Gérer le menu" and the POS publishes it up to menu_json, which arrives here
+// as `price`. It is READ-ONLY on this page.
+// A product with no menu entry (price = 0) is stock-only — typically a retail
+// item created from the web — so it may still have its price set here.
+const isMenuOwned = (p: Product) => num(p.price) > 0
+const effPrice = (p: Product) => (isMenuOwned(p) ? num(p.price) : num(p.sell_price))
+
 export default function CatalogPage() {
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -75,7 +84,9 @@ export default function CatalogPage() {
           item_name: p.name,
           item_emoji: p.emoji,
           cost: num(p.cost),
-          sell_price: num(p.sell_price),
+          // Price is caisse-owned for menu products — never send it back.
+          // Only stock-only products (no menu entry) carry a web-set price.
+          ...(isMenuOwned(p) ? {} : { sell_price: num(p.sell_price) }),
           quantity: parseInt(String(p.quantity)) || 0,
           category: p.category,
           barcode: p.barcode,
@@ -142,7 +153,11 @@ export default function CatalogPage() {
 
         {/* Info banner — the golden rule */}
         <div style={S.info}>
-          💡 Modifier un coût n'affecte que les <b>ventes futures</b>. Les journées passées restent verrouillées
+          💡 <b>Le prix de vente se gère dans la caisse</b> (« Gérer le menu ») et remonte ici automatiquement —
+          il est affiché en lecture seule avec le repère <span style={S.ownerTag}>CAISSE</span>.
+          Ici vous gérez le <b>coût d'achat</b>, le stock et le bénéfice.
+          <br />
+          Modifier un coût n'affecte que les <b>ventes futures</b> : les journées passées restent verrouillées
           (chaque vente conserve le coût figé au moment de la vente). Un produit sans coût est compté à 100% de marge
           et signalé dans la couverture.
         </div>
@@ -200,8 +215,9 @@ export default function CatalogPage() {
               {filtered.length === 0 ? (
                 <tr><td colSpan={9} style={{ textAlign: 'center', color: '#7A6E5F', padding: 30 }}>Aucun produit</td></tr>
               ) : filtered.map(p => {
-                const margin = num(p.sell_price) - num(p.cost)
-                const marginPct = num(p.sell_price) > 0 ? Math.round(margin / num(p.sell_price) * 100) : 0
+                const price = effPrice(p)
+                const margin = price - num(p.cost)
+                const marginPct = price > 0 ? Math.round(margin / price * 100) : 0
                 const noCost = num(p.cost) <= 0
                 return (
                   <tr key={p.item_id} style={dirty[p.item_id] ? S.trDirty : undefined}>
@@ -218,13 +234,20 @@ export default function CatalogPage() {
                       <input style={{ ...S.cell, width: 120 }} value={p.category} onChange={e => edit(p.item_id, 'category', e.target.value)} placeholder="—" />
                     </td>
                     <td style={{ ...S.td, textAlign: 'right' }}>
-                      <input type="number" step="0.001" min="0" style={{ ...S.cellNum }} value={p.sell_price} onChange={e => edit(p.item_id, 'sell_price', e.target.value)} />
+                      {isMenuOwned(p) ? (
+                        <span title="Prix géré dans la caisse (EXE) — modifiable via « Gérer le menu »" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {num(p.price).toFixed(3)}
+                          <span style={S.ownerTag}>CAISSE</span>
+                        </span>
+                      ) : (
+                        <input type="number" step="0.001" min="0" style={S.cellNum} value={p.sell_price} onChange={e => edit(p.item_id, 'sell_price', e.target.value)} />
+                      )}
                     </td>
                     <td style={{ ...S.td, textAlign: 'right' }}>
                       <input type="number" step="0.001" min="0" style={{ ...S.cellNum, borderColor: noCost ? 'rgba(224,82,82,.4)' : '#231C12' }} value={p.cost} onChange={e => edit(p.item_id, 'cost', e.target.value)} />
                     </td>
                     <td style={{ ...S.td, textAlign: 'right', fontWeight: 700, color: margin > 0 ? '#3DB87A' : '#7A6E5F', whiteSpace: 'nowrap' }}>
-                      {num(p.sell_price) > 0 ? `${margin.toFixed(3)} (${marginPct}%)` : '—'}
+                      {price > 0 ? `${margin.toFixed(3)} (${marginPct}%)` : '—'}
                     </td>
                     <td style={{ ...S.td, textAlign: 'right' }}>
                       <input type="number" step="1" min="0" style={{ ...S.cellNum, width: 70 }} value={p.quantity} onChange={e => edit(p.item_id, 'quantity', e.target.value)} />
@@ -266,6 +289,7 @@ const S: Record<string, React.CSSProperties> = {
   box: { background: '#0F0C08', border: '1px solid #231C12', borderRadius: 16, padding: 28, width: '100%', maxWidth: 1100, boxShadow: '0 24px 60px rgba(0,0,0,.5)' },
   brand: { fontSize: 22, fontWeight: 800, color: '#E8A84C', margin: 0 },
   info: { background: 'rgba(200,145,58,.06)', border: '1px solid rgba(200,145,58,.3)', borderRadius: 10, padding: '12px 14px', fontSize: 12.5, lineHeight: 1.5, color: '#E8C99A', marginBottom: 16 },
+  ownerTag: { fontSize: 9, color: '#7A6E5F', marginLeft: 5, letterSpacing: '.5px', fontWeight: 700 },
   statRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10 },
   stat: { background: '#161210', border: '1px solid #231C12', borderRadius: 10, padding: '12px 14px', textAlign: 'center' },
   statVal: { fontSize: 22, fontWeight: 800, color: '#F0E8D8' },

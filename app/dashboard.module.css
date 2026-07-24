@@ -175,6 +175,9 @@
 .bCash{background:var(--gold-dim);color:var(--gold-l);}
 .bCard{background:var(--blue-dim);color:var(--blue);}
 .bMob{background:var(--green-dim);color:var(--green);}
+/* Credit = money NOT in the drawer. Deliberately red so an unpaid ticket
+   never looks like a settled one at a glance. */
+.bCredit{background:rgba(224,82,82,.12);color:#E05252;}
 .badgeActive{background:var(--green-dim);color:var(--green);}
 .badgeSuspended{background:var(--red-dim);color:var(--red);}
 

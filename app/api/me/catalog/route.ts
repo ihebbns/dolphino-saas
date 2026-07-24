@@ -12,8 +12,18 @@
 //
 // POST /api/me/catalog { key, item_id, ... }
 //   → upsert ONE product into `stock` by (restaurant_id, item_id).
-//     Editable: cost, sell_price, quantity, category, tracked, low_threshold,
+//     Editable: cost, quantity, category, tracked, low_threshold,
 //     barcode, item_name, item_emoji. Numbers are clamped/validated.
+//
+// ── FIELD OWNERSHIP (single owner per field, no split brain) ──────────
+//   • PRICE (prix de vente) → owned by the POS/EXE. Managers edit it in
+//     "Gérer le menu"; the POS publishes it to restaurants.menu_json.
+//     This endpoint MIRRORS it into stock.sell_price so stock valuation
+//     stays correct, and IGNORES any sell_price sent in the body for a
+//     product that exists in the menu. Only stock-only products (no menu
+//     entry) accept a web-set price.
+//   • COST (prix d'achat) → owned by the web. The POS pulls it read-only
+//     and freezes it onto each sale line at checkout.
 //
 // This endpoint can NEVER change plan / trial / api_key. It also respects the
 // dashboard suspension check (plan NOT IN suspended / suspended_dash).
@@ -45,6 +55,44 @@ function getKey(req: Request, body?: any): string {
 function slugId(cat: string, name: string): string {
   const base = `${cat}_${name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return ('m_' + base).slice(0, 64)
+}
+
+// Menu items with size variants keep their prices in `v[]`, not `p`. Reading
+// only `p` reported price 0 for every variant product (pizzas Moy/Max, etc.),
+// which made their margin meaningless. Use the lowest variant price as the
+// reference price for the catalog view.
+function itemPrice(it: any): number {
+  if (Array.isArray(it?.v) && it.v.length) {
+    const ps = it.v
+      .map((v: any) => Math.max(0, parseFloat(v?.p) || 0))
+      .filter((n: number) => n > 0)
+    if (ps.length) return Math.min(...ps)
+  }
+  return Math.max(0, parseFloat(it?.p ?? it?.price) || 0)
+}
+
+// Same id resolution the GET merge uses, so a product always maps to the same
+// stock row whether it arrived with an explicit id or not.
+function resolveId(catName: string, it: any): string {
+  const rawId = it.id ?? it._id ?? it.item_id
+  return (rawId !== undefined && rawId !== null && String(rawId).trim() !== '')
+    ? String(rawId).trim().slice(0, 64)
+    : slugId(catName, String(it.name ?? it.n ?? ''))
+}
+
+// item_id → selling price, taken from menu_json. The POS (EXE) is the sole
+// owner of price, so this index is what POST mirrors into stock.sell_price.
+function buildPriceIndex(menu: any): Map<string, number> {
+  const idx = new Map<string, number>()
+  for (const [catName, catVal] of Object.entries<any>(menu || {})) {
+    const items = Array.isArray(catVal) ? catVal
+                : (catVal && Array.isArray(catVal.items) ? catVal.items : [])
+    for (const it of items) {
+      if (!it || typeof it !== 'object') continue
+      idx.set(resolveId(catName, it), itemPrice(it))
+    }
+  }
+  return idx
 }
 
 type CatalogItem = {
@@ -97,15 +145,12 @@ export async function GET(req: Request) {
                   : (catVal && Array.isArray(catVal.items) ? catVal.items : [])
       for (const it of items) {
         if (!it || typeof it !== 'object') continue
-        const rawId = it.id ?? it._id ?? it.item_id
-        const id = (rawId !== undefined && rawId !== null && String(rawId).trim() !== '')
-          ? String(rawId).trim().slice(0, 64)
-          : slugId(catName, String(it.name ?? it.n ?? ''))
+        const id = resolveId(catName, it)
         catalog.set(id, {
           item_id: id,
           name: String(it.name ?? it.n ?? '').slice(0, 100),
           emoji: String(it.e ?? it.emoji ?? icon ?? '🍽️').slice(0, 10) || '🍽️',
-          price: Math.max(0, parseFloat(it.p ?? it.price) || 0),
+          price: itemPrice(it),
           category: String(catName).slice(0, 80),
           cost: 0, sell_price: 0, quantity: 0,
           tracked: true, low_threshold: 5, barcode: '',
@@ -165,17 +210,27 @@ export async function POST(req: Request) {
 
   try {
     const rows = await sql`
-      SELECT id FROM restaurants
+      SELECT id, menu_json FROM restaurants
       WHERE api_key = ${key} AND plan NOT IN ('suspended', 'suspended_dash')
       LIMIT 1`
     if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 403 }))
     const rid = rows[0].id
 
+    // PRICE OWNERSHIP: the POS (EXE) owns the selling price. If this product
+    // exists in the menu, its price is mirrored from menu_json and the body's
+    // sell_price is ignored — the web can never fight the caisse. Only a
+    // stock-only product (no menu entry, e.g. a retail item created here)
+    // accepts a web-set price.
+    const menuJson = (rows[0].menu_json && typeof rows[0].menu_json === 'object') ? rows[0].menu_json : {}
+    const menuPrice = buildPriceIndex(menuJson).get(itemId)
+
     // Validate / clamp — item_name is NOT NULL in the schema, so never store empty.
     const name       = (String(body.item_name ?? '').slice(0, 100)) || itemId
     const emoji      = (String(body.item_emoji ?? '📦').slice(0, 10)) || '📦'
     const cost       = Math.max(0, parseFloat(body.cost) || 0)
-    const sellPrice  = Math.max(0, parseFloat(body.sell_price) || 0)
+    const sellPrice  = (menuPrice !== undefined)
+      ? menuPrice
+      : Math.max(0, parseFloat(body.sell_price) || 0)
     const quantity   = Math.max(0, parseInt(String(body.quantity)) || 0)
     const category   = String(body.category ?? '').slice(0, 80)
     const barcode    = String(body.barcode ?? '').slice(0, 64)

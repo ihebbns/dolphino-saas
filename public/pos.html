@@ -664,7 +664,7 @@ const CLIENT_CONFIG = {
 
   // ── Sync / Dashboard ──────────────────────────────────
   syncEnabled: false,
-  syncUrl:     'https://dolphino-saas.vercel.app/api/sync',
+  syncUrl:     'https://servio.tn/api/sync',
   syncKey:     'CHANGE-ME-KEY',
 
   // ── Users / PINs ──────────────────────────────────────
@@ -727,46 +727,64 @@ const MODULES = CLIENT_CONFIG.modules;
 
 // ═══════════════ DATA ═══════════════
 let MENU={
-  "Café":{icon:"☕",items:[
-    {id:"d1",name:"Express",e:"☕",p:2},
-    {id:"d2",name:"Cappuccino",e:"☕",p:3.5},
-    {id:"d3",name:"Café Crème",e:"☕",p:3},
-    {id:"d4",name:"Thé Menthe",e:"🍵",p:1.8},
-    {id:"d5",name:"Chocolat Chaud",e:"☕",p:4},
-    {id:"d6",name:"Latte",e:"☕",p:4.5}
-  ]},
   "Boisson":{icon:"🥤",items:[
-    {id:"b1",name:"Jus d'Orange",e:"🍊",p:3.5},
-    {id:"b2",name:"Eau 0.5L",e:"💧",p:1},
-    {id:"b3",name:"Eau 1.5L",e:"💧",p:1.8},
-    {id:"b4",name:"Soda Canette",e:"🥤",p:2.5},
-    {id:"b5",name:"Citronnade",e:"🍋",p:3},
-    {id:"b6",name:"Smoothie Fraise",e:"🍓",p:5}
+    {id:"b1",name:"Boga Menthe",e:"🥤",p:2.5},
+    {id:"b2",name:"Chocolat Chaud",e:"☕",p:3},
+    {id:"b3",name:"Citron à Amande",e:"🍋",p:3.5},
+    {id:"b4",name:"Citronade",e:"🍋",p:2.5},
+    {id:"b5",name:"Eau 0.5L",e:"💧",p:1},
+    {id:"b6",name:"Eau 1.5L",e:"💧",p:1.5},
+    {id:"b7",name:"Eau Hayet 0.75L",e:"💧",p:2},
+    {id:"b8",name:"Jus Banane",e:"🍌",p:5},
+    {id:"b9",name:"Jus d'Orange",e:"🍊",p:3.5},
+    {id:"b10",name:"Jus de Fraise",e:"🍓",p:4},
+    {id:"b11",name:"Jwajem",e:"🧃",p:7},
+    {id:"b12",name:"SDA Canette",e:"🥤",p:2.5},
+    {id:"b13",name:"Soda",e:"🥤",p:2},
+    {id:"b14",name:"Tasa w Borj",e:"🍵",p:3.5},
+    {id:"b15",name:"Tisana",e:"🌿",p:2}
   ]},
-  "Sandwichs":{icon:"🥪",items:[
-    {id:"s1",name:"Thon Fromage",e:"🥪",p:5},
-    {id:"s2",name:"Escalope Grillée",e:"🥪",p:7},
-    {id:"s3",name:"Poulet Pané",e:"🥪",p:6.5},
-    {id:"s4",name:"Végétarien",e:"🥗",p:5.5}
+  "Caffé":{icon:"☕",items:[
+    {id:"c1",name:"Américain",e:"☕",p:2},
+    {id:"c2",name:"Cappucin",e:"☕",p:2},
+    {id:"c3",name:"Cappucin Nestlé",e:"☕",p:2.5},
+    {id:"c4",name:"Crème",e:"☕",p:2.4},
+    {id:"c5",name:"Crème Nestlé",e:"☕",p:2.7},
+    {id:"c6",name:"Dose",e:"☕",p:0.5},
+    {id:"c7",name:"Express",e:"☕",p:1.9},
+    {id:"c8",name:"Expresse Nestlé",e:"☕",p:2.3},
+    {id:"c9",name:"Filtre",e:"☕",p:1.3},
+    {id:"c10",name:"Thé",e:"🍵",p:1.3},
+    {id:"c11",name:"Thé à Amande",e:"🍵",p:2.8},
+    {id:"c12",name:"Thé à Menthe",e:"🍵",p:1.6}
   ]},
-  "Pizza":{icon:"🍕",items:[
-    {id:"pz1",name:"Margherita",e:"🍕",p:8},
-    {id:"pz2",name:"Thon Olive",e:"🍕",p:10},
-    {id:"pz3",name:"Quatre Fromages",e:"🍕",p:11},
-    {id:"pz4",name:"Calzone",e:"🍕",p:9}
+  "Chicha":{icon:"💨",items:[
+    {id:"ch1",name:"3mara",e:"💨",p:2},
+    {id:"ch2",name:"Chicha Maison",e:"💨",p:12},
+    {id:"ch3",name:"Chicha Chikh",e:"💨",p:3.5},
+    {id:"ch4",name:"Chicha Fakher au Choix",e:"💨",p:4.5},
+    {id:"ch5",name:"Chicha Love",e:"💨",p:6},
+    {id:"ch6",name:"Chikh Sghira",e:"💨",p:2.5}
+  ]},
+  "Jeux":{icon:"🎴",items:[
+    {id:"j1",name:"Chkobba",e:"🎴",p:3},
+    {id:"j2",name:"Rami",e:"🃏",p:3}
   ]},
   "Pâtisserie":{icon:"🥐",items:[
-    {id:"pt1",name:"Croissant",e:"🥐",p:1.5},
-    {id:"pt2",name:"Mille Feuille",e:"🍰",p:2.5},
-    {id:"pt3",name:"Tiramisu",e:"🍰",p:4},
-    {id:"pt4",name:"Fondant Chocolat",e:"🍫",p:4.5}
+    {id:"p1",name:"Cake",e:"🍰",p:1.5},
+    {id:"p2",name:"Fricassé",e:"🥪",p:1.2},
+    {id:"p3",name:"Gâteaux",e:"🍰",p:2.3},
+    {id:"p4",name:"Jwajem Kbir",e:"🍪",p:8},
+    {id:"p5",name:"Jwajem Sgir",e:"🍪",p:6},
+    {id:"p6",name:"Libanaise",e:"🥙",p:2},
+    {id:"p7",name:"Mille Feuille",e:"🍰",p:2},
+    {id:"p8",name:"Pizza",e:"🍕",p:2.2},
+    {id:"p9",name:"Pol Crème",e:"🍮",p:3},
+    {id:"p10",name:"Sandwich",e:"🥪",p:3},
+    {id:"p11",name:"Soufflet",e:"🥐",p:2.5},
+    {id:"p12",name:"Tiramisu",e:"🍰",p:3.5}
   ]},
-  "Parapharma":{icon:"🧴",items:[
-    {id:"pp1",name:"Crème Hydratante",e:"🧴",p:25,barcode:"6111000001"},
-    {id:"pp2",name:"Sérum Vitamine C",e:"💧",p:45,barcode:"6111000002"},
-    {id:"pp3",name:"Dentifrice",e:"🪥",p:8,barcode:"6111000003"},
-    {id:"pp4",name:"Shampoing",e:"🧴",p:12,barcode:"6111000004"}
-  ]}
+  "Tirroir":{icon:"🗄️",items:[]}
 };
 
 const CAT_ICONS={
@@ -927,6 +945,200 @@ let currentSession = null; // { id, fondInitial, openedAt, cashier, date }
 
 function f2(n){ return Number(n).toFixed(3); }
 
+// ═══════════════ CASH DRAWER — Toast/Square model ═══════════════
+// WHEN IT OPENS: only when physical cash actually moves.
+//   cash sale · pay-in (ajout) · pay-out (retrait) · cash settlement of a debt
+// Card, mobile and credit sales never open it — no cash changes hands.
+//
+// WHY A SETTING AND NOT A PROMPT: the reasons you would not want it to open
+// (drawer already open, cash going to a drop safe, no drawer wired up) are
+// properties of the TILL, not of the transaction, so they belong in config.
+// Toast exposes exactly this as a per-device option ("Open Cash Drawer: open
+// the cash drawer when a cash payment is made?"); Lightspeed has a Cash Only
+// mode. None of them ask the cashier on every sale — that would cost a tap per
+// transaction and prompt fatigue would make it meaningless anyway.
+//
+// WHY EVERY OPEN IS LOGGED: an unexplained drawer open is a primary theft
+// signal, which is why Toast reports no-sale events in its Cash & Loss
+// Management exception reports. The log is pushed to the cloud and is
+// deliberately NOT viewable inside the EXE, because owners routinely give the
+// manager PIN to their cashiers.
+const DRAWER_CFG_KEY = 'servio-drawer-cfg-v1';
+const DRAWER_LOG_KEY = 'servio-drawer-log-v1';
+const DRAWER_DEFAULTS = { onCashSale:true, onCashMovement:true, onCreditPayment:true };
+let DRAWER_CFG = Object.assign({}, DRAWER_DEFAULTS);
+
+function loadDrawerCfg(){
+  try{
+    const raw = localStorage.getItem(DRAWER_CFG_KEY);
+    if(raw) DRAWER_CFG = Object.assign({}, DRAWER_DEFAULTS, JSON.parse(raw) || {});
+  }catch(e){ DRAWER_CFG = Object.assign({}, DRAWER_DEFAULTS); }
+}
+function saveDrawerCfg(){
+  try{ localStorage.setItem(DRAWER_CFG_KEY, JSON.stringify(DRAWER_CFG)); }catch(e){}
+}
+loadDrawerCfg();
+
+// Single choke point for EVERY drawer open, so nothing can open it unlogged.
+// reason: 'cash_sale' | 'pay_in' | 'pay_out' | 'credit_payment' | 'no_sale'
+function openDrawer(reason, amount, note){
+  const gate = { cash_sale:'onCashSale', pay_in:'onCashMovement',
+                 pay_out:'onCashMovement', credit_payment:'onCreditPayment' }[reason];
+  // 'no_sale' has no gate — a manual open is always honoured, and always logged.
+  if(gate && DRAWER_CFG[gate] === false){
+    logDrawerEvent(reason, amount, note, false);
+    return false;
+  }
+  // Debounce so a double-tap cannot fire the solenoid twice.
+  if(Date.now() - (window.__lastDrawerKickAt || 0) < 1200) return false;
+  window.__lastDrawerKickAt = Date.now();
+  try{ if(window.electronAPI && window.electronAPI.openCashDrawer) window.electronAPI.openCashDrawer(); }catch(e){}
+  logDrawerEvent(reason, amount, note, true);
+  return true;
+}
+
+// Manual open ("No Sale"). Manager-only, exactly like Toast's 1.7 Cash Drawer
+// Access permission, and always recorded.
+function openDrawerNoSale(){
+  if(!currentUser || !USERS[currentUser] || !USERS[currentUser].isManager){
+    flash('Accès réservé au Manager.');
+    return;
+  }
+  const note = (prompt('Motif d\'ouverture du tiroir :') || '').trim();
+  if(!note){ flash('Motif obligatoire'); return; }
+  window.__lastDrawerKickAt = 0;              // never debounce an explicit request
+  openDrawer('no_sale', null, note);
+  flash('🔓 Tiroir ouvert — ' + note);
+}
+
+function logDrawerEvent(reason, amount, note, opened){
+  const entry = {
+    uid: 'D' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    reason: reason,
+    amount: (typeof amount === 'number' && isFinite(amount)) ? amount : null,
+    note: String(note || '').slice(0,160),
+    opened: !!opened,
+    actor: (currentUser && USERS[currentUser] && USERS[currentUser].name) || '',
+    isManager: !!(currentUser && USERS[currentUser] && USERS[currentUser].isManager),
+    sessionId: (currentSession && currentSession.sid) || '',
+    ts: new Date().toISOString(),
+  };
+  try{
+    const log = JSON.parse(localStorage.getItem(DRAWER_LOG_KEY) || '[]');
+    log.push(entry);
+    while(log.length > 800) log.shift();       // keep storage bounded
+    localStorage.setItem(DRAWER_LOG_KEY, JSON.stringify(log));
+  }catch(e){}
+  pushDrawerLog();
+}
+
+// Ship the log to the cloud, offline-safe. Entries stay locally until the
+// server confirms, so a till that is offline all day still reports later.
+let _drawerPushTimer = null;
+function pushDrawerLog(){
+  if(!SYNC_ENABLED) return;
+  if(_drawerPushTimer) clearTimeout(_drawerPushTimer);
+  _drawerPushTimer = setTimeout(sendDrawerLog, 2500);
+}
+async function sendDrawerLog(){
+  if(!SYNC_ENABLED) return;
+  let log = [];
+  try{ log = JSON.parse(localStorage.getItem(DRAWER_LOG_KEY) || '[]'); }catch(e){ return; }
+  const pending = log.filter(e => !e.sent);
+  if(!pending.length) return;
+  try{
+    const res = await fetch(SYNC_API_URL.replace('/api/sync','/api/me/drawer-log'), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'X-Api-Key': SYNC_API_KEY },
+      body: JSON.stringify({ key: SYNC_API_KEY, events: pending }),
+    });
+    const data = await res.json();
+    if(data && data.ok){
+      const done = new Set(pending.map(e => e.uid));
+      for(const e of log) if(done.has(e.uid)) e.sent = true;
+      // Drop confirmed entries older than 7 days — the cloud is the record now.
+      const cutoff = Date.now() - 7*24*3600*1000;
+      const kept = log.filter(e => !e.sent || Date.parse(e.ts) > cutoff);
+      localStorage.setItem(DRAWER_LOG_KEY, JSON.stringify(kept));
+    }
+  }catch(e){ /* offline — retried on reconnect */ }
+}
+
+// ── Drawer settings UI (manager only, device-level like Toast) ──
+function showDrawerSettings(){
+  if(!currentUser || !USERS[currentUser] || !USERS[currentUser].isManager){
+    flash('Accès réservé au Manager.'); return;
+  }
+  const row = (k, label, hint) => `
+    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--div);cursor:pointer;text-align:left">
+      <input type="checkbox" id="drw-${k}" ${DRAWER_CFG[k] !== false ? 'checked' : ''} style="margin-top:3px">
+      <span>
+        <span style="font-size:13px;font-weight:600;display:block">${label}</span>
+        <span style="font-size:10px;color:var(--muted)">${hint}</span>
+      </span>
+    </label>`;
+  createSessionModal(`
+    <div class="session-icon">🔓</div>
+    <div class="session-title">Tiroir-caisse</div>
+    <div class="session-sub">Réglages de cette caisse. Le tiroir ne s'ouvre que si de l'argent liquide bouge réellement.</div>
+    ${row('onCashSale',      'Vente en espèces',        'Carte / mobile / crédit n\'ouvrent jamais le tiroir')}
+    ${row('onCashMovement',  'Ajout / retrait de fond', 'Mouvements de caisse (pay-in / pay-out)')}
+    ${row('onCreditPayment', 'Dette réglée en espèces', 'Si le client règle par carte, le tiroir reste fermé')}
+    <button class="btn-session-open" style="margin-top:14px" onclick="saveDrawerSettings()">✓ Enregistrer</button>
+    <button class="mcancel" style="margin-top:8px" onclick="openDrawerNoSale()">🔓 Ouvrir le tiroir maintenant</button>
+    <button class="mcancel" style="margin-top:8px" onclick="destroySessionModal()">Fermer</button>
+  `);
+}
+function saveDrawerSettings(){
+  for(const k of Object.keys(DRAWER_DEFAULTS)){
+    const el = document.getElementById('drw-' + k);
+    if(el) DRAWER_CFG[k] = !!el.checked;
+  }
+  saveDrawerCfg();
+  destroySessionModal();
+  flash('✓ Réglages tiroir enregistrés');
+}
+
+// ── Opening float: a historical fact, never mutated ──
+// Older builds mutated fondInitial on every cash movement. For a session opened
+// by such a build we recover the true opening float by undoing that mutation,
+// once, then persist it so this never runs again.
+function sessionOpeningFond(){
+  if(!currentSession) return 0;
+  if(typeof currentSession.fondOpening === 'number') return currentSession.fondOpening;
+  return +currentSession.fondInitial || 0;
+}
+function migrateSessionFond(s){
+  if(s && typeof s.fondOpening !== 'number'){
+    const movs = Array.isArray(s.cashMovements) ? s.cashMovements : [];
+    const inS  = movs.filter(m => m.type === 'in').reduce((a,m) => a + (+m.amount || 0), 0);
+    const outS = movs.filter(m => m.type === 'out').reduce((a,m) => a + (+m.amount || 0), 0);
+    const stored = +s.fondInitial || 0;
+    const candidate = stored - inS + outS;
+
+    // The old build clamped with Math.max(0, …). If a retrait ever exceeded the
+    // running float the excess was destroyed, and no arithmetic can recover the
+    // true opening float. Detect that by replaying the old clamped maths from
+    // the candidate: reproducing `stored` without hitting the clamp proves the
+    // recovery is exact.
+    let bal = candidate, clamped = false;
+    for(const m of movs){
+      const amt = +m.amount || 0;
+      if(m.type === 'in'){ bal += amt; }
+      else { const next = bal - amt; if(next < 0) clamped = true; bal = Math.max(0, next); }
+    }
+    s.fondOpening = candidate;
+    if(clamped || Math.abs(bal - stored) > 0.0005){
+      // Unrecoverable. Do NOT pretend: flag it so the clôture asks the manager
+      // to confirm the opening float rather than reporting a bogus écart.
+      s.fondOpeningUncertain = true;
+    }
+    s.fondInitial = s.fondOpening;   // fondInitial now means what its name says
+    try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){}
+  }
+  return s;
+}
+
 function saveSessionToStorage(){
   if(currentSession){
     localStorage.setItem(SESSION_KEY, JSON.stringify(currentSession));
@@ -940,7 +1152,7 @@ function loadSessionFromStorage(){
     const raw = localStorage.getItem(SESSION_KEY);
     if(!raw) return null;
     const s = JSON.parse(raw);
-    if(s && s.date === todayKey()) return s;
+    if(s && s.date === todayKey()) return migrateSessionFond(s);
     localStorage.removeItem(SESSION_KEY);
     return null;
   }catch(e){ return null; }
@@ -1032,10 +1244,15 @@ function confirmCashMovement(type){
   if(!currentSession.cashMovements) currentSession.cashMovements = [];
   const now = new Date();
   currentSession.cashMovements.push({ type, amount, reason, time: now.toLocaleTimeString('fr-TN'), by: USERS[currentUser]?.name || '' });
-  // Update fondInitial for théorique calculation
-  if(type==='in') currentSession.fondInitial = (currentSession.fondInitial||0) + amount;
-  else currentSession.fondInitial = Math.max(0, (currentSession.fondInitial||0) - amount);
+  // The opening float is a historical fact — never mutate it. The théorique is
+  // derived at clôture from fondOpening + cash sales + pay-ins − pay-outs.
+  // (The old code mutated it here AND subtracted the pay-outs again at clôture,
+  // so every retrait produced a fake surplus.) Math.max(0,…) also used to
+  // silently swallow a retrait larger than the float.
+  if(typeof currentSession.fondOpening !== 'number') currentSession.fondOpening = +currentSession.fondInitial || 0;
   saveSessionToStorage();
+  // Real cash moves in both directions, so the drawer opens for both.
+  openDrawer(type === 'in' ? 'pay_in' : 'pay_out', amount, reason);
   destroySessionModal();
   const label = type==='in' ? '➕ Ajout' : '➖ Retrait';
   flash(label + ' ' + f2(amount) + ' DT' + (reason?' ('+reason+')':''));
@@ -1098,7 +1315,7 @@ async function confirmOpenCaisse(){
   }
 
   const sid = 'S' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-  currentSession = { id: sessionId, sid, fondInitial: fondVal, openedAt: sessionData.openedAt, openedAtISO: new Date().toISOString(), cashier: caissierName, date: todayKey() };
+  currentSession = { id: sessionId, sid, fondInitial: fondVal, fondOpening: fondVal, openedAt: sessionData.openedAt, openedAtISO: new Date().toISOString(), cashier: caissierName, date: todayKey() };
   saveSessionToStorage();
   destroySessionModal();
 
@@ -2131,8 +2348,10 @@ function encaisser(){
 function autoPrintAll(od){
   // No printer configured for this client → skip everything
   if(MODULES.printEnabled === false) return;
-  // Open cash drawer first (XP-80T via RJ11)
-  if(window.electronAPI?.openCashDrawer) window.electronAPI.openCashDrawer();
+  // Open the drawer only for a CASH tender. A card or credit sale moves no
+  // cash, so popping the drawer would be wrong (and unlogged). Routed through
+  // openDrawer() so the event is recorded like every other drawer open.
+  try{ if(od && od.payMode === 'cash') openDrawer('cash_sale', od.g, ''); }catch(e){}
   // Respect the per-order "Imprimer ticket" checkbox
   const wantPrint = document.getElementById('print-ticket-check')?.checked !== false;
   if(!wantPrint) return;
@@ -2210,7 +2429,7 @@ function autoPrintKitchen(od){
 
 // ═══════════════ RECEIPT ═══════════════
 function showReceipt(od){
-  const pm={cash:'Espèces',card:'Carte bancaire',mob:'Mobile'};
+  const pm={cash:'Espèces',card:'Carte bancaire',mob:'Mobile',credit:'Crédit'};
   const tl={place:'🏠 Sur place',take:'🥡 Emporter',del:'🛵 Livraison'};
   const lines=od.items.map(it=>`
     <div class="rr"><span>${it.qty}x ${it.name}${it.variant?' ('+it.variant+')':''}</span><span>${f(it.p*it.qty)} DT</span></div>
@@ -2237,7 +2456,7 @@ function showReceipt(od){
     ${od.d>0?`<div class="rr" style="color:var(--red)"><span>Remise (${od.disc}%)</span><span>-${f(od.d)} DT</span></div>`:''}
     <div class="rr rtot"><span>TOTAL</span><span>${f(od.g)} DT</span></div>
     <div class="rdiv"></div>
-    <div class="rr"><span>Paiement</span><span>${pm[od.payMode]}</span></div>
+    <div class="rr"><span>Paiement</span><span>${pm[od.payMode]||od.payMode||'—'}</span></div>
     ${od.payMode==='cash'?`<div class="rr"><span>Reçu</span><span>${f(od.r)} DT</span></div><div class="rr"><span>Monnaie</span><span>${f(od.monnaie)} DT</span></div>`:''}
     <div class="rdiv"></div>
     <div class="rc" style="font-size:10px;color:var(--muted)">★ ★ ★ ★ ★<br>Merci pour votre visite !<br>Revenez bientôt chez ${CLIENT_CONFIG.name}</div>
@@ -2247,7 +2466,7 @@ function showReceipt(od){
 
 function doPrint(){
   if(!lastOrderData)return;
-  const pm={cash:'Espèces',card:'Carte',mob:'Mobile'};
+  const pm={cash:'Espèces',card:'Carte',mob:'Mobile',credit:'Crédit'};
   const tl={place:'Sur place',take:'Emporter',del:'Livraison'};
   const od=lastOrderData;
   const lines=od.items.map(it=>
@@ -2275,7 +2494,7 @@ function doPrint(){
   ${od.d>0?`<div class="r"><span>Remise (${od.disc}%)</span><span>-${f(od.d)} DT</span></div>`:''}
   <div class="r tot"><span>TOTAL</span><span>${f(od.g)} DT</span></div>
   <div class="d"></div>
-  <div class="r"><span>Paiement</span><span>${pm[od.payMode]}</span></div>
+  <div class="r"><span>Paiement</span><span>${pm[od.payMode]||od.payMode||'—'}</span></div>
   ${od.payMode==='cash'?`<div class="r"><span>Reçu</span><span>${f(od.r)} DT</span></div><div class="r"><span>Monnaie</span><span>${f(od.monnaie)} DT</span></div>`:''}
   <div class="d"></div>
   <div class="c sm">★ ★ ★ ★ ★<br>Merci pour votre visite !<br>Revenez bientôt chez ${CLIENT_CONFIG.name}</div>
@@ -2362,7 +2581,7 @@ function showDash(){
   if(!hist.length){
     tbl.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Aucune commande</td></tr>`;
   }else{
-    const pm={cash:'💵 Espèces',card:'💳 Carte',mob:'📱 Mobile'};
+    const pm={cash:'💵 Espèces',card:'💳 Carte',mob:'📱 Mobile',credit:'📒 Crédit'};
     tbl.innerHTML=[...hist].reverse().map((h,idx)=>`
       <tr onclick="showOrderDetail(${hist.length-1-idx})" style="cursor:pointer">
         <td>#${String(h.num).padStart(3,'0')}</td>
@@ -2370,7 +2589,7 @@ function showDash(){
         <td><span class="type-badge tb-${h.type}">${{place:'🏠 Place',take:'🥡 Emporter',del:'🛵 Livraison'}[h.type]}</span></td>
         <td>${h.items.length} art.</td>
         <td style="font-weight:700;color:var(--gold-l)">${f(h.g)} DT</td>
-        <td>${pm[h.payMode]}</td>
+        <td>${pm[h.payMode]||h.payMode||'—'}</td>
         <td style="font-size:10px;color:var(--muted)">${h.cashier||'—'}</td>
       </tr>`).join('');
   }
@@ -2389,6 +2608,22 @@ function setDrinkStock(id){
   showDash(); // refresh
 }
 
+// Manager-supplied correction for a legacy session whose opening float could not
+// be recovered (see migrateSessionFond). Persist it, drop the uncertainty flag,
+// then reopen the clôture so the théorique and the écart are rebuilt from it.
+function applyFondFix(){
+  const el = document.getElementById('fond-fix-inp');
+  if(!el || !currentSession) return;
+  const v = parseFloat(el.value);
+  if(isNaN(v) || v < 0){ flash('Montant invalide'); return; }
+  currentSession.fondOpening = v;
+  currentSession.fondInitial = v;
+  delete currentSession.fondOpeningUncertain;
+  saveSessionToStorage();
+  destroySessionModal();
+  flash('✓ Fond initial corrigé — ' + f2(v));
+  cloturerJournee();
+}
 function cloturerJournee(){
   if(!USERS[currentUser].isManager){alert('Accès réservé au Manager.');return;}
 
@@ -2402,11 +2637,17 @@ function cloturerJournee(){
   const cash  = sessionSales.filter(h=>h.payMode==='cash').reduce((a,h)=>a+h.g,0);
   const card  = sessionSales.filter(h=>h.payMode==='card').reduce((a,h)=>a+h.g,0);
   const mob   = sessionSales.filter(h=>h.payMode==='mob').reduce((a,h)=>a+h.g,0);
-  const fond  = currentSession?.fondInitial || 0;
+  const fond  = sessionOpeningFond();
   const movements = currentSession?.cashMovements || [];
   const totalCashIn = movements.filter(m=>m.type==='in').reduce((a,m)=>a+m.amount,0);
   const totalCashOut = movements.filter(m=>m.type==='out').reduce((a,m)=>a+m.amount,0);
-  const theorique = fond + cash - totalCashOut; // fond (includes cash-in) + espèces - retraits already subtracted from fond
+  // Standard cash-drawer reconciliation:
+  //   opening float + cash sales + pay-ins − pay-outs
+  // The previous formula subtracted the pay-outs a SECOND time, because
+  // confirmCashMovement had already removed them from fondInitial. Every retrait
+  // therefore produced a fake surplus of exactly its own value, which masked a
+  // real shortfall of the same size.
+  const theorique = fond + cash + totalCashIn - totalCashOut;
   const now   = new Date();
   const bizDate = todayKey();
 
@@ -2431,6 +2672,18 @@ function cloturerJournee(){
         <span>💼 Théorique tiroir</span><span style="color:var(--gold-l);font-weight:700">${f(theorique)} DT</span>
       </div>
     </div>
+    ${currentSession && currentSession.fondOpeningUncertain ? `
+    <div style="background:rgba(224,82,82,.1);border:1px solid rgba(224,82,82,.4);border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.5;color:var(--red);margin-bottom:12px;text-align:left">
+      ⚠ <strong>Fond initial à confirmer.</strong> Cette session a été ouverte par une version
+      précédente qui ne conservait pas le fond d'ouverture exact (un retrait avait dépassé le fond).
+      Corrigez-le avant de clôturer, sinon l'écart sera faux.
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input class="session-inp" type="number" id="fond-fix-inp" value="${f(fond)}"
+          step="0.5" inputmode="decimal" autocomplete="off" onfocus="this.select()"
+          style="flex:1;font-size:15px;padding:8px">
+        <button onclick="applyFondFix()" style="padding:8px 14px;background:var(--gold);border:none;border-radius:7px;color:#080604;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Corriger</button>
+      </div>
+    </div>` : ''}
     <div class="session-input-row">
       <label>Montant compté dans le tiroir (DT)</label>
       <input class="session-inp" type="number" id="compte-inp" placeholder="0.000"
@@ -2654,7 +2907,7 @@ function deleteUser(id){
 function showOrderDetail(idx){
   const od=hist[idx];
   if(!od)return;
-  const pm={cash:'💵 Espèces',card:'💳 Carte',credit:'📒 Crédit'};
+  const pm={cash:'💵 Espèces',card:'💳 Carte',mob:'📱 Mobile',credit:'📒 Crédit'};
   const tl={place:'🏠 Sur place',take:'🥡 Emporter',del:'🛵 Livraison'};
   const itemsHtml=od.items.map(it=>`
     <div style="display:flex;justify-content:space-between;padding:8px 10px;background:var(--card);border-radius:6px;margin-bottom:4px">
@@ -2709,7 +2962,7 @@ function showHistorique(){
     return;
   }
   const tl={place:'🏠 Place',take:'🥡 Emporter',del:'🛵 Livraison'};
-  const pm={cash:'💵',card:'💳'};
+  const pm={cash:'💵',card:'💳',mob:'📱',credit:'📒'};
   const total=sessionSales.reduce((a,h)=>a+h.g,0);
   const rows=[...sessionSales].reverse().map(h=>`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--div);font-size:12px;">
@@ -2791,9 +3044,23 @@ function deleteCreditClient(idx){
   flash('✓ Fiche "'+c.name+'" supprimée');
   showCreditManager();
 }
+// Selected settlement method for a debt repayment. Cash is the default because
+// that is how an ardoise is nearly always settled.
+window.__creditPayMethod = 'cash';
+function setCreditPayMethod(m){
+  window.__creditPayMethod = (m === 'card') ? 'card' : 'cash';
+  const on  = { border:'2px solid var(--gold)', background:'var(--gold-dim)', color:'var(--gold-l)' };
+  const off = { border:'2px solid var(--div)',  background:'var(--card)',     color:'var(--muted)' };
+  for(const k of ['cash','card']){
+    const el = document.getElementById('cpm-' + k);
+    if(!el) continue;
+    const st = (k === window.__creditPayMethod) ? on : off;
+    el.style.border = st.border; el.style.background = st.background; el.style.color = st.color;
+  }
+}
 function showCreditPay(idx){
   const credits=loadCredits();const c=credits[idx];if(!c)return;
-  createSessionModal(`<div class="session-icon">💰</div><div class="session-title">Paiement — ${c.name}</div><div class="session-sub">Dette: <strong style="color:var(--red)">${f(c.balance)} DT</strong></div><div class="session-input-row"><label>Montant à payer (DT)</label><input class="session-inp" type="number" id="credit-pay-amount" placeholder="${f(c.balance)}" step="0.5" inputmode="decimal" autocomplete="off" onfocus="this.select()" value="${c.balance}"></div><button class="btn-session-open" onclick="confirmCreditPayment(${idx})" style="margin-top:8px">✓ Encaisser</button><button class="mcancel" style="margin-top:8px" onclick="showCreditManager()">← Retour</button>`);
+  createSessionModal(`<div class="session-icon">💰</div><div class="session-title">Paiement — ${c.name}</div><div class="session-sub">Dette: <strong style="color:var(--red)">${f(c.balance)} DT</strong></div><div class="session-input-row"><label>Montant à payer (DT)</label><input class="session-inp" type="number" id="credit-pay-amount" placeholder="${f(c.balance)}" step="0.5" inputmode="decimal" autocomplete="off" onfocus="this.select()" value="${c.balance}"></div><div class="session-input-row"><label>Mode de règlement</label><div style="display:flex;gap:6px"><button type="button" id="cpm-cash" onclick="setCreditPayMethod('cash')" style="flex:1;padding:10px;border-radius:7px;border:2px solid var(--gold);background:var(--gold-dim);color:var(--gold-l);font-size:12px;font-weight:700;cursor:pointer">💵 Espèces</button><button type="button" id="cpm-card" onclick="setCreditPayMethod('card')" style="flex:1;padding:10px;border-radius:7px;border:2px solid var(--div);background:var(--card);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">💳 Carte</button></div><div style="font-size:10px;color:var(--muted);margin-top:4px">Un règlement par carte n'ouvre pas le tiroir et n'entre pas dans le fond de caisse.</div></div><button class="btn-session-open" onclick="confirmCreditPayment(${idx})" style="margin-top:8px">✓ Encaisser</button><button class="mcancel" style="margin-top:8px" onclick="showCreditManager()">← Retour</button>`);
   setTimeout(()=>{document.getElementById('credit-pay-amount')?.focus();},100);
 }
 function confirmCreditPayment(idx){
@@ -2804,12 +3071,19 @@ function confirmCreditPayment(idx){
   c.balance=Math.max(0,c.balance-amount);
   c.history.push({type:'payment',amount,date:new Date().toLocaleDateString('fr-TN'),time:new Date().toLocaleTimeString('fr-TN')});
   credits[idx]=c;saveCredits(credits);
-  if(currentSession){
+  // Only a CASH settlement puts money in the drawer. A card settlement still
+  // clears the debt, but must not inflate the expected cash total, otherwise
+  // the clôture would report a shortfall that does not exist.
+  const payMethod = window.__creditPayMethod === 'card' ? 'card' : 'cash';
+  if(currentSession && payMethod === 'cash'){
     if(!currentSession.cashMovements)currentSession.cashMovements=[];
-    currentSession.cashMovements.push({type:'in',amount,reason:'Crédit: '+c.name,time:new Date().toLocaleTimeString('fr-TN'),by:USERS[currentUser]?.name||''});
-    currentSession.fondInitial=(currentSession.fondInitial||0)+amount;
+    currentSession.cashMovements.push({type:'in',amount,reason:'Crédit: '+c.name,method:'cash',time:new Date().toLocaleTimeString('fr-TN'),by:USERS[currentUser]?.name||''});
+    // Never mutate the opening float — see confirmCashMovement.
+    if(typeof currentSession.fondOpening !== 'number') currentSession.fondOpening = +currentSession.fondInitial || 0;
     saveSessionToStorage();
   }
+  if(payMethod === 'cash') openDrawer('credit_payment', amount, 'Crédit: ' + c.name);
+  window.__creditPayMethod = 'cash';   // reset for the next repayment
   destroySessionModal();
   flash('✓ '+f(amount)+' DT reçu de '+c.name+(c.balance>0?' (reste: '+f(c.balance)+')':' — soldé ✅'));
   showCreditManager();

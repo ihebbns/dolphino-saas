@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import s from '../dashboard.module.css'
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://dolphino-saas.vercel.app'
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://servio.tn'
 const f   = (n: any) => Number(n || 0).toFixed(3)
 const fmt = (n: any) => Number(n || 0).toLocaleString('fr-TN', { minimumFractionDigits: 3 })
 const today = () => {
@@ -323,8 +323,8 @@ function TopProducts({ products, filter, onFilter }: { products: any[], filter: 
 // ════════════════ ORDER DETAIL MODAL ════════════════
 function OrderDetail({ order, onClose }: { order: any, onClose: ()=>void }) {
   const items: any[] = order.items || []
-  const typeMap: any = { place:'🏠 Sur place', take:'🥡 Emporter', del:'🛵 Livraison' }
-  const payMap:  any = { cash:'💵 Espèces', card:'💳 Carte', mob:'📱 Mobile' }
+  const typeMap: any = { place:'🏠 Sur place', take:'🥡 Emporter', del:'🛵 Livraison', table:'🍽️ Table' }
+  const payMap:  any = { cash:'💵 Espèces', card:'💳 Carte', mob:'📱 Mobile', credit:'📒 Crédit' }
   return (
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:'var(--panel)',border:'1px solid var(--div)',borderRadius:16,padding:28,width:'100%',maxWidth:480,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 24px 60px rgba(0,0,0,.5)'}}>
@@ -378,10 +378,13 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
     !search || r.cashier?.toLowerCase().includes(search.toLowerCase()) ||
     String(r.num).includes(search)
   )
-  const typeMap: any = { place:'🏠 Place', take:'🥡 Emporter', del:'🛵 Livraison' }
-  const payMap:  any = { cash:'💵 Espèces', card:'💳 Carte', mob:'📱 Mobile' }
-  const typeCls: any = { place:s.bPlace, take:s.bTake, del:s.bDel }
-  const payCls:  any = { cash:s.bCash, card:s.bCard, mob:s.bMob }
+  // 'table' is a real order_type in the universal build; 'credit' is a real
+  // pay_method once the credit module is on. Both must be labelled or the row
+  // falls back to showing the raw database value.
+  const typeMap: any = { place:'🏠 Place', take:'🥡 Emporter', del:'🛵 Livraison', table:'🍽️ Table' }
+  const payMap:  any = { cash:'💵 Espèces', card:'💳 Carte', mob:'📱 Mobile', credit:'📒 Crédit' }
+  const typeCls: any = { place:s.bPlace, take:s.bTake, del:s.bDel, table:s.bPlace }
+  const payCls:  any = { cash:s.bCash, card:s.bCard, mob:s.bMob, credit:s.bCredit }
 
   return (
     <>
