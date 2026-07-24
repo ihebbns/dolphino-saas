@@ -14,6 +14,14 @@ import { getApiKey } from '@/lib/auth'
 
 export const runtime = 'edge'
 
+// Default module set — mirrors the universal POS template's CLIENT_CONFIG.modules.
+// Existing clients (no `modules` in their stored config) get this baseline; their
+// old baked apps simply ignore it, so behavior is unchanged.
+const DEFAULT_MODULES = {
+  tables: false, barcode: false, credit: true, stockTracking: true,
+  poleDisplay: true, kitchenTickets: true, printEnabled: true, dashboard: true, menuManage: true,
+}
+
 const cors = (r: NextResponse) => {
   r.headers.set('Access-Control-Allow-Origin', '*')
   r.headers.set('Access-Control-Allow-Methods', 'GET,OPTIONS')
@@ -31,7 +39,8 @@ export async function GET(req: Request) {
 
   try {
     const rows = await sql`
-      SELECT plan, name, city, phone, config, menu_json, suspend_at
+      SELECT plan, name, city, phone, config, menu_json, suspend_at,
+             trial_ends_at, stripe_subscription_id
       FROM restaurants
       WHERE api_key = ${key}
       LIMIT 1
@@ -55,6 +64,23 @@ export async function GET(req: Request) {
       r.plan = suspendPlan
     }
 
+    // Free-trial expiry — only affects self-service 'trial' clients (never 'active' ones)
+    if (r.plan === 'trial') {
+      const expired = r.trial_ends_at && new Date(r.trial_ends_at) <= new Date()
+      const hasSub  = !!r.stripe_subscription_id
+      if (expired && !hasSub) {
+        await sql`UPDATE restaurants SET plan = 'trial_expired' WHERE api_key = ${key}`
+        r.plan = 'trial_expired'
+      }
+    }
+
+    if (r.plan === 'trial_expired') {
+      return cors(NextResponse.json({
+        ok: true, active: false,
+        message: `Votre essai gratuit est terminé.\n\nActivez votre abonnement pour continuer à utiliser l'application.`
+      }))
+    }
+
     if (r.plan === 'suspended' || r.plan === 'suspended_exe') {
       return cors(NextResponse.json({
         ok: true, active: false,
@@ -64,6 +90,7 @@ export async function GET(req: Request) {
 
     // Build config response — merge DB config with defaults
     const dbConfig = (r.config && typeof r.config === 'object') ? r.config : {}
+    const dbModules = (dbConfig.modules && typeof dbConfig.modules === 'object') ? dbConfig.modules : {}
     const config = {
       restaurantName: r.name,
       restaurantCity: r.city || 'Tunisie',
@@ -80,6 +107,9 @@ export async function GET(req: Request) {
       zone2Cats: ['Libanais', 'Sandwichs', 'Tacos', 'Plat', 'Brik', 'Panini'],
       boissonCats: ['Boisson'],
       ...dbConfig,
+      // Always send a complete module set (stored modules override the baseline).
+      // Old baked apps ignore this key; the universal POS applies it at runtime.
+      modules: { ...DEFAULT_MODULES, ...dbModules },
     }
 
     // Menu — return as-is from DB (empty object = POS uses its local default)

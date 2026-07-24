@@ -161,16 +161,6 @@ export async function GET(req: Request) {
     WHERE restaurant_id = ${rid}
     ORDER BY category ASC, item_name ASC`
 
-  // ═══ Credits ═══
-  let credits: any[] = []
-  try {
-    credits = await sql`
-      SELECT client_name, phone, balance, history, updated_at
-      FROM credits
-      WHERE restaurant_id = ${rid}
-      ORDER BY balance DESC, client_name ASC`
-  } catch(e) { /* table might not exist yet */ }
-
   // ═══ Peak hour identification ═══
   let peakHour = null
   let peakRevenue = 0
@@ -212,7 +202,6 @@ export async function GET(req: Request) {
     recent,
     sessions,
     stock,
-    credits,
     insights,
   }))
 }

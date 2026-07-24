@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import s from './dashboard.module.css'
+import s from '../dashboard.module.css'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://dolphino-saas.vercel.app'
 const f   = (n: any) => Number(n || 0).toFixed(3)
@@ -522,75 +522,6 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
   )
 }
 
-// ════════════════ CREDITS SECTION ════════════════
-function CreditsSection({ credits }: { credits: any[] }) {
-  const totalDebt = credits.reduce((s: number, c: any) => s + (+(c.balance || 0)), 0)
-  const activeClients = credits.filter((c: any) => +(c.balance || 0) > 0)
-  const [expanded, setExpanded] = useState<number|null>(null)
-
-  return (
-    <>
-      <div className={s.section}>
-        <div className={s.kpiGrid}>
-          <div className={`${s.kpiCard} ${s.kpiCardOrange}`}>
-            <div className={s.kpiIcon}>📒</div>
-            <div className={s.kpiVal}>{credits.length}</div>
-            <div className={s.kpiLbl}>Clients à crédit</div>
-          </div>
-          <div className={`${s.kpiCard} ${s.kpiCardOrange}`} style={{borderColor:'rgba(224,82,82,.3)'}}>
-            <div className={s.kpiIcon}>💰</div>
-            <div className={s.kpiVal} style={{color:'var(--red)'}}>{fmt(totalDebt)}<span> DT</span></div>
-            <div className={s.kpiLbl}>Dette totale</div>
-          </div>
-          <div className={`${s.kpiCard} ${s.kpiCardGreen}`}>
-            <div className={s.kpiIcon}>⚠️</div>
-            <div className={s.kpiVal}>{activeClients.length}</div>
-            <div className={s.kpiLbl}>Dettes actives</div>
-          </div>
-        </div>
-      </div>
-      <div className={s.section}>
-        <div className={s.sectionHdr}><div className={s.sectionTitle}><span>📒</span> Fiches Clients</div></div>
-        <div className={s.tableWrap}>
-          <div className={s.tableScroll}>
-            {credits.length === 0
-              ? <div className={s.empty}><div className={s.emptyIcon}>📒</div><div className={s.emptyText}>Aucun client à crédit</div></div>
-              : <table className={s.table}>
-                  <thead><tr><th>Client</th><th>Téléphone</th><th>Solde</th><th>Dernière MAJ</th></tr></thead>
-                  <tbody>
-                    {credits.map((c: any, i: number) => (
-                      <tr key={i} onClick={() => setExpanded(expanded === i ? null : i)} style={{cursor:'pointer'}}>
-                        <td style={{fontWeight:600}}>{c.client_name}</td>
-                        <td className={s.muted}>{c.phone || '—'}</td>
-                        <td style={{fontWeight:800, color: +(c.balance||0) > 0 ? 'var(--red)' : 'var(--green)'}}>{f(c.balance)} DT</td>
-                        <td className={s.muted} style={{fontSize:11}}>{c.updated_at ? new Date(c.updated_at).toLocaleDateString('fr-TN') : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-            }
-          </div>
-        </div>
-        {expanded !== null && credits[expanded]?.history && (
-          <div style={{marginTop:12, padding:16, background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'var(--radius,9px)'}}>
-            <div style={{fontSize:13, fontWeight:700, marginBottom:8}}>📋 Historique — {credits[expanded].client_name}</div>
-            <div style={{maxHeight:200, overflowY:'auto'}}>
-              {(credits[expanded].history || []).slice(-20).reverse().map((h: any, hi: number) => (
-                <div key={hi} style={{display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid var(--div)', fontSize:12}}>
-                  <span style={{color:'var(--muted)'}}>{h.date} {h.time}</span>
-                  <span style={{color: h.type === 'credit' ? 'var(--red)' : 'var(--green)', fontWeight:700}}>
-                    {h.type === 'credit' ? '+' : '-'}{f(h.amount)} DT
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  )
-}
-
 // ════════════════ STOCK SECTION (Retail) ════════════════
 function StockSection({ stock }: { stock: any[] }) {
   const [search, setSearch] = useState('')
@@ -821,7 +752,6 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
     { id:'orders',    label:'🧾 Commandes'         },
     { id:'sessions',  label:'🔒 Caisses'           },
     ...(data?.stock && data.stock.length > 0 && data.stock[0]?.category ? [{ id:'stock', label:'📦 Stock' }] : []),
-    ...(data?.credits && data.credits.length > 0 ? [{ id:'credits', label:'📒 Crédits' }] : []),
   ]
 
   const k = data?.kpis
@@ -1003,11 +933,6 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
           {/* ── STOCK (Retail) ── */}
           {activeTab === 'stock' && data.stock && <>
             <StockSection stock={data.stock} />
-          </>}
-
-          {/* ── CREDITS ── */}
-          {activeTab === 'credits' && data.credits && <>
-            <CreditsSection credits={data.credits} />
           </>}
         </>}
       </div>
