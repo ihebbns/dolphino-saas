@@ -21,9 +21,18 @@ export type MovementKind = 'sale' | 'receive' | 'waste' | 'adjust' | 'return' | 
 
 export const MOVEMENT_KINDS: MovementKind[] = ['sale', 'receive', 'waste', 'adjust', 'return', 'count']
 
-// Movements the POS is allowed to originate. 'receive' is deliberately absent:
-// recording a delivery is office work and belongs on the web.
-export const POS_KINDS: MovementKind[] = ['sale', 'waste', 'adjust', 'return', 'count']
+// Movements the POS is allowed to originate — which is all of them.
+//
+// 'receive' used to be excluded here on the grounds that recording a delivery is
+// office work. That was wrong for this product: many clients buy the POS on its
+// own and never open the back-office, so a till that cannot book a delivery
+// leaves them with no way to enter stock at all. It is also wrong operationally
+// — the supplier arrives at the counter, not at the owner's laptop.
+//
+// Allowing it costs nothing, because permission is not what makes a movement
+// trustworthy: every row carries actor, reason, source and an immutable
+// timestamp, and only a 'count' may reset the checkpoint.
+export const POS_KINDS: MovementKind[] = ['sale', 'receive', 'waste', 'adjust', 'return', 'count']
 
 export type MovementInput = {
   itemId: string

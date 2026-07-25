@@ -81,6 +81,10 @@ export async function POST(req: Request) {
     if (body.modules)                         nextConfig.modules = { ...(current.modules || {}), ...sanitizeModules(body.modules) }
     if (body.tableCount !== undefined)        nextConfig.tableCount = parseInt(body.tableCount) || 12
     if (Array.isArray(body.sections))         nextConfig.sections = body.sections.map((s: any) => String(s).slice(0, 40)).filter(Boolean)
+    // Lock stock editing at the till, making the POS view-only for quantities.
+    // Default (absent / false) leaves the POS free, because clients who buy the
+    // EXE alone never open this dashboard and must stay fully functional.
+    if (body.posStockLocked !== undefined)    nextConfig.posStockLocked = !!body.posStockLocked
 
     await sql`UPDATE restaurants SET config = ${JSON.stringify(nextConfig)}::jsonb WHERE api_key = ${key}`
 

@@ -61,6 +61,10 @@ export default function StockPage() {
   const [onlyLow, setOnlyLow] = useState(false)
   const [move, setMove] = useState<{ item: Variance; kind: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  // Stock editing at the till. Unlocked by default, because a client who bought
+  // only the EXE never opens this page and must stay fully operational.
+  const [posLocked, setPosLocked] = useState(false)
+  const [lockBusy, setLockBusy] = useState(false)
 
   useEffect(() => {
     if (key) load(key)
@@ -69,11 +73,14 @@ export default function StockPage() {
 
   async function load(k: string) {
     setLoading(true); setMsg('')
-    // The ledger gives levels + trail; the catalog gives the configured seuil.
-    const [log, cat] = await Promise.all([
+    // The ledger gives levels + trail; the catalog gives the configured seuil;
+    // the config carries whether the till is allowed to edit quantities.
+    const [log, cat, cfg] = await Promise.all([
       apiGet('/api/me/stock-log?limit=400', k),
       apiGet('/api/me/catalog', k),
+      apiGet('/api/me/config', k),
     ])
+    if (cfg.ok) setPosLocked(!!(cfg.config && cfg.config.posStockLocked))
     if (log.ok) {
       setReady(log.ready !== false)
       setRestName(log.name || '')
@@ -91,6 +98,23 @@ export default function StockPage() {
       setThresholds(t)
     }
     setLoading(false)
+  }
+
+  async function toggleLock() {
+    if (!key) return
+    const next = !posLocked
+    setLockBusy(true); setMsg('')
+    const d = await apiPost('/api/me/config', { key, posStockLocked: next })
+    setLockBusy(false)
+    if (d.ok) {
+      setPosLocked(next)
+      // The till picks this up on its next poll of /api/stock (a few seconds
+      // after start, then every 30 minutes) and caches it, so the rule survives
+      // the connection dropping.
+      setMsg(next
+        ? '🔒 Caisse en lecture seule — la prochaine synchro appliquera la règle'
+        : '🔓 La caisse peut à nouveau saisir livraisons, pertes et inventaires')
+    } else setMsg(d.error || 'Erreur')
   }
 
   async function submitMovement(payload: any) {
@@ -133,7 +157,21 @@ export default function StockPage() {
       subtitle="Niveaux, alertes de seuil et traçabilité complète"
       restName={restName}
       badges={{ '/stock': lowList.length }}
-      actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
+      actions={
+        <>
+          <button
+            className="btn"
+            onClick={toggleLock}
+            disabled={lockBusy}
+            title={posLocked
+              ? 'La caisse ne peut pas modifier les quantités'
+              : 'La caisse peut saisir livraisons, pertes et inventaires'}
+          >
+            {lockBusy ? '…' : posLocked ? '🔒 Caisse bloquée' : '🔓 Caisse autorisée'}
+          </button>
+          <button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>
+        </>
+      }
     >
       {!ready && <NotReady sql="migration-stock-movements.sql" />}
       {msg && (
@@ -142,13 +180,31 @@ export default function StockPage() {
         </div>
       )}
 
-      <div className="notice nInfo">
-        <span className="noticeIcon">🔒</span>
+      <div className={'notice ' + (posLocked ? 'nWarn' : 'nInfo')}>
+        <span className="noticeIcon">{posLocked ? '🔒' : '🔓'}</span>
         <div>
-          <div className="noticeTitle">Aucune quantité ne change sans trace</div>
-          Chaque mouvement enregistre <b>qui</b>, <b>quand</b>, <b>combien</b> et <b>pourquoi</b>.
-          La quantité est recalculée à partir du dernier inventaire plus les mouvements suivants —
-          personne ne peut écraser un chiffre en silence.
+          <div className="noticeTitle">
+            {posLocked
+              ? 'La caisse est en lecture seule'
+              : 'La caisse peut gérer le stock'}
+          </div>
+          {posLocked ? (
+            <>
+              Les caissiers <b>voient</b> les quantités mais ne peuvent plus saisir de livraison,
+              de perte ni d&apos;inventaire — tout passe par cette page. Le refus est appliqué par
+              le serveur, pas seulement masqué sur la caisse.
+              Les ventes continuent de décrémenter normalement, et « Rupture » reste disponible
+              pour bloquer la vente d&apos;un article épuisé.
+            </>
+          ) : (
+            <>
+              Livraisons, pertes et inventaires peuvent être saisis à la caisse — c&apos;est là que
+              le fournisseur livre et que la bouteille se casse. Chaque mouvement enregistre
+              <b> qui</b>, <b>quand</b>, <b>combien</b> et <b>pourquoi</b>, et la quantité est
+              recalculée depuis le dernier inventaire : personne ne peut écraser un chiffre en
+              silence. Bloquez la caisse si vous préférez tout centraliser ici.
+            </>
+          )}
         </div>
       </div>
 
