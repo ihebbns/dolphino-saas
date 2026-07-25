@@ -134,9 +134,57 @@ export default function AccountPage() {
         <button style={{ ...S.btn, opacity: saving ? 0.6 : 1 }} disabled={saving} onClick={save}>
           {saving ? 'Enregistrement…' : 'Enregistrer les modifications'}
         </button>
-        <p style={{ fontSize: 11, color: '#7A6E5F', textAlign: 'center', marginTop: 10 }}>
-          Clé de licence : <span style={{ fontFamily: 'monospace', color: '#E8A84C' }}>{apiKey}</span>
-        </p>
+        {/* The licence key is a credential: it grants full access to this
+            restaurant's sales, costs and catalogue. It was previously printed in
+            plain text on every visit, which invites screenshots and shoulder
+            surfing, and means nothing to an operator who never needs to read it.
+            Masked by default, revealed only on demand, with an explanation of
+            what it is actually for. */}
+        <LicenceKey value={apiKey} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Masked licence key with an explicit reveal, the way payment platforms present
+ * a secret key. Shows only the last 4 characters so the owner can confirm WHICH
+ * key it is without exposing the whole credential.
+ */
+function LicenceKey({ value }: { value: string | null }) {
+  const [shown, setShown] = useState(false)
+  const [copied, setCopied] = useState(false)
+  if (!value) return null
+  const tail = value.slice(-4)
+  return (
+    <div style={{
+      marginTop: 16, padding: '12px 14px', borderRadius: 10,
+      border: '1px solid #231C12', background: '#161210',
+    }}>
+      <div style={{ fontSize: 11, color: '#7A6E5F', marginBottom: 6, lineHeight: 1.6 }}>
+        <strong style={{ color: '#E8C99A' }}>Clé de licence</strong> — sert uniquement à activer
+        une nouvelle caisse. Ne la partagez pas : elle donne accès à vos ventes et à vos coûts.
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <code style={{
+          fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 13, color: '#E8A84C',
+          background: '#0F0C08', border: '1px solid #231C12', borderRadius: 6,
+          padding: '6px 10px', flex: 1, minWidth: 160,
+        }}>
+          {shown ? value : '••••••••••••' + tail}
+        </code>
+        <button
+          onClick={() => setShown(s => !s)}
+          style={{ padding: '6px 10px', border: '1px solid #231C12', borderRadius: 6, background: '#0F0C08', color: '#7A6E5F', fontSize: 12, cursor: 'pointer' }}
+        >{shown ? 'Masquer' : 'Afficher'}</button>
+        <button
+          onClick={() => {
+            navigator.clipboard?.writeText(value)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1800)
+          }}
+          style={{ padding: '6px 10px', border: '1px solid #231C12', borderRadius: 6, background: '#0F0C08', color: copied ? '#3DB87A' : '#7A6E5F', fontSize: 12, cursor: 'pointer' }}
+        >{copied ? '✓ Copiée' : 'Copier'}</button>
       </div>
     </div>
   )

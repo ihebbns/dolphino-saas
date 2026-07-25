@@ -1,0 +1,480 @@
+'use client'
+// ═══════════════════════════════════════════════════════════════════
+// /stock — stock levels, low-stock alerts, and the movement trail.
+//
+// Nothing here overwrites a quantity. Every change is a MOVEMENT with a type, a
+// reason and an author, appended to a ledger:
+//   sale     sold at the till          (negative)
+//   receive  livraison                  (positive)
+//   waste    casse / perte / offert     (negative)
+//   adjust   correction, reason forced  (signed)
+//   count    inventaire physique        (absolute, resets the checkpoint)
+//
+// Quantity is derived as "latest count + deltas recorded since". That is what
+// makes an écart provable and stops two tills clobbering each other.
+// ═══════════════════════════════════════════════════════════════════
+import { useEffect, useMemo, useState } from 'react'
+import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, dt, num } from '../ui/Shell'
+
+type Variance = {
+  item_id: string; item_name: string; item_emoji: string; category: string
+  cost: number; theorique: number
+  dernier_compte: number; last_count_at: string | null
+  vendu_depuis: number; recu_depuis: number; perte_depuis: number; ajuste_depuis: number
+}
+type Movement = {
+  id: number; item_id: string; item_name: string; item_emoji: string
+  kind: string; delta: number | null; count_value: number | null
+  expected_value: number | null; reason: string; actor: string; source: string
+  terminal_id: string; sale_num: number | null; client_ts: string
+}
+type Ecart = {
+  item_id: string; item_name: string; item_emoji: string
+  compte: number; theorique: number; ecart: number; ecart_valeur: number
+  reason: string; actor: string; source: string; client_ts: string
+}
+
+const KIND = {
+  sale:    { label: 'Vente',      cls: 'bNeutral', icon: '🛒' },
+  receive: { label: 'Livraison',  cls: 'bOk',      icon: '📥' },
+  waste:   { label: 'Perte',      cls: 'bDanger',  icon: '🗑️' },
+  adjust:  { label: 'Correction', cls: 'bWarn',    icon: '✏️' },
+  count:   { label: 'Inventaire', cls: 'bInfo',    icon: '📋' },
+  return:  { label: 'Retour',     cls: 'bOk',      icon: '↩️' },
+} as const
+
+export default function StockPage() {
+  const { key, checked } = useApiKey()
+  const [loading, setLoading] = useState(true)
+  const [ready, setReady] = useState(true)
+  const [msg, setMsg] = useState('')
+  const [restName, setRestName] = useState('')
+  const [tab, setTab] = useState<'levels' | 'moves' | 'ecarts'>('levels')
+
+  const [variance, setVariance] = useState<Variance[]>([])
+  const [movements, setMovements] = useState<Movement[]>([])
+  const [ecarts, setEcarts] = useState<Ecart[]>([])
+  const [totals, setTotals] = useState<any>(null)
+  const [thresholds, setThresholds] = useState<Record<string, { low: number; tracked: boolean }>>({})
+
+  const [search, setSearch] = useState('')
+  const [onlyLow, setOnlyLow] = useState(false)
+  const [move, setMove] = useState<{ item: Variance; kind: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (key) load(key)
+    else if (checked) setLoading(false)
+  }, [key, checked])
+
+  async function load(k: string) {
+    setLoading(true); setMsg('')
+    // The ledger gives levels + trail; the catalog gives the configured seuil.
+    const [log, cat] = await Promise.all([
+      apiGet('/api/me/stock-log?limit=400', k),
+      apiGet('/api/me/catalog', k),
+    ])
+    if (log.ok) {
+      setReady(log.ready !== false)
+      setRestName(log.name || '')
+      setVariance(log.variance || [])
+      setMovements(log.movements || [])
+      setEcarts(log.ecarts || [])
+      setTotals(log.totals || null)
+    } else setMsg(log.error || 'Erreur de chargement')
+
+    if (cat.ok) {
+      const t: Record<string, { low: number; tracked: boolean }> = {}
+      for (const p of cat.products || []) {
+        t[p.item_id] = { low: parseInt(String(p.low_threshold)) || 0, tracked: p.tracked !== false }
+      }
+      setThresholds(t)
+    }
+    setLoading(false)
+  }
+
+  async function submitMovement(payload: any) {
+    if (!key) return
+    setSaving(true); setMsg('')
+    const d = await apiPost('/api/me/stock-log', { key, ...payload })
+    setSaving(false)
+    if (d.ok) { setMove(null); await load(key); setMsg('✓ Mouvement enregistré') }
+    else setMsg(d.error || 'Erreur')
+  }
+
+  const isLow = (v: Variance) => {
+    const t = thresholds[v.item_id]
+    if (!t || !t.tracked) return false
+    return v.theorique <= t.low
+  }
+
+  const filtered = useMemo(() => {
+    let out = variance
+    if (onlyLow) out = out.filter(isLow)
+    if (search) {
+      const q = search.toLowerCase()
+      out = out.filter(v => (v.item_name || '').toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q))
+    }
+    return out
+  }, [variance, search, onlyLow, thresholds])
+
+  const lowList = variance.filter(isLow)
+  const stockValue = variance.reduce((a, v) => a + v.theorique * num(v.cost), 0)
+
+  if (!checked || loading) {
+    return <Shell active="/stock" title="Stock" restName={restName}><Loading /></Shell>
+  }
+  if (!key) return <LoginGate />
+
+  return (
+    <Shell
+      active="/stock"
+      title="Stock"
+      subtitle="Niveaux, alertes de seuil et traçabilité complète"
+      restName={restName}
+      badges={{ '/stock': lowList.length }}
+      actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
+    >
+      {!ready && <NotReady sql="migration-stock-movements.sql" />}
+      {msg && (
+        <div className={'notice ' + (msg.startsWith('✓') ? 'nOk' : 'nDanger')}>
+          <span className="noticeIcon">{msg.startsWith('✓') ? '✓' : '✕'}</span><div>{msg}</div>
+        </div>
+      )}
+
+      <div className="notice nInfo">
+        <span className="noticeIcon">🔒</span>
+        <div>
+          <div className="noticeTitle">Aucune quantité ne change sans trace</div>
+          Chaque mouvement enregistre <b>qui</b>, <b>quand</b>, <b>combien</b> et <b>pourquoi</b>.
+          La quantité est recalculée à partir du dernier inventaire plus les mouvements suivants —
+          personne ne peut écraser un chiffre en silence.
+        </div>
+      </div>
+
+      <div className="statGrid mb20">
+        <div className="stat">
+          <div className="statLabel">Valeur du stock</div>
+          <div className="statValue num">{f3(stockValue)} DT</div>
+          <div className="statHint">quantité × coût d&apos;achat</div>
+        </div>
+        <div className="stat">
+          <div className="statLabel">Stock bas</div>
+          <div className="statValue num" style={{ color: lowList.length ? 'var(--danger)' : 'var(--ok)' }}>{lowList.length}</div>
+          <div className="statHint">au niveau du seuil ou en dessous</div>
+        </div>
+        <div className="stat">
+          <div className="statLabel">Valeur des pertes</div>
+          <div className="statValue num" style={{ color: num(totals?.valeur_pertes) ? 'var(--warn)' : undefined }}>
+            {f3(totals?.valeur_pertes)} DT
+          </div>
+          <div className="statHint">{f3(totals?.unites_pertes)} unités déclarées</div>
+        </div>
+        <div className="stat">
+          <div className="statLabel">Corrections manuelles</div>
+          <div className="statValue num">{totals?.nb_ajustements ?? 0}</div>
+          <div className="statHint">par {totals?.nb_intervenants ?? 0} personne(s)</div>
+        </div>
+        <div className="stat">
+          <div className="statLabel">Écarts constatés</div>
+          <div className="statValue num" style={{ color: ecarts.length ? 'var(--danger)' : 'var(--ok)' }}>{ecarts.length}</div>
+          <div className="statHint">inventaires ≠ théorique</div>
+        </div>
+      </div>
+
+      {lowList.length > 0 && (
+        <div className="notice nWarn">
+          <span className="noticeIcon">📦</span>
+          <div>
+            <div className="noticeTitle">{lowList.length} produit(s) à réapprovisionner</div>
+            {lowList.slice(0, 8).map(v => (
+              <div key={v.item_id}>
+                • {v.item_emoji} {v.item_name} — <b>{f3(v.theorique)}</b> restant
+                {thresholds[v.item_id] ? ` (seuil ${thresholds[v.item_id].low})` : ''}
+              </div>
+            ))}
+            {lowList.length > 8 && <div className="cMuted">…et {lowList.length - 8} autre(s)</div>}
+          </div>
+        </div>
+      )}
+
+      <div className="toolbar">
+        <button className="chip" data-on={tab === 'levels'} onClick={() => setTab('levels')}>📦 Niveaux</button>
+        <button className="chip" data-on={tab === 'moves'} onClick={() => setTab('moves')}>🧾 Mouvements</button>
+        <button className="chip" data-on={tab === 'ecarts'} onClick={() => setTab('ecarts')}>
+          ⚠ Écarts{ecarts.length ? ` (${ecarts.length})` : ''}
+        </button>
+        <input
+          className="input" style={{ maxWidth: 250, marginLeft: 8 }}
+          placeholder="🔍 Rechercher…" value={search} onChange={e => setSearch(e.target.value)}
+        />
+        {tab === 'levels' && (
+          <button className="chip spacer" data-on={onlyLow} onClick={() => setOnlyLow(!onlyLow)}>Stock bas seulement</button>
+        )}
+      </div>
+
+      {/* ── Levels ── */}
+      {tab === 'levels' && (
+        <div className="card">
+          <div className="tableWrap">
+            <table className="t">
+              <thead>
+                <tr>
+                  <th>Produit</th>
+                  <th className="tr">En stock</th>
+                  <th className="tr">Seuil</th>
+                  <th className="tr">Valeur</th>
+                  <th>Depuis le dernier inventaire</th>
+                  <th>Dernier inventaire</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={7}><Empty icon="📦" text="Aucun produit suivi. Définissez une quantité depuis la caisse ou faites un inventaire." /></td></tr>
+                ) : filtered.map(v => {
+                  const t = thresholds[v.item_id]
+                  const low = isLow(v)
+                  return (
+                    <tr key={v.item_id}>
+                      <td>
+                        <div className="row">
+                          <span style={{ fontSize: 17 }}>{v.item_emoji || '📦'}</span>
+                          <div>
+                            <div className="strong">{v.item_name || v.item_id}</div>
+                            <div className="t11 cFaint">{v.category || '—'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="tr num nowrap">
+                        <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{f3(v.theorique)}</span>
+                        {low && <div><span className="badge bDanger">stock bas</span></div>}
+                      </td>
+                      <td className="tr num t13 cMuted">{t?.tracked ? t.low : '—'}</td>
+                      <td className="tr num nowrap">{f3(v.theorique * num(v.cost))} DT</td>
+                      <td className="t12 cMuted nowrap">
+                        {v.vendu_depuis > 0 && <span>🛒 −{f3(v.vendu_depuis)} </span>}
+                        {v.recu_depuis > 0 && <span className="cOk">📥 +{f3(v.recu_depuis)} </span>}
+                        {v.perte_depuis > 0 && <span className="cDanger">🗑️ −{f3(v.perte_depuis)} </span>}
+                        {v.ajuste_depuis !== 0 && <span className="cWarn">✏️ {v.ajuste_depuis > 0 ? '+' : ''}{f3(v.ajuste_depuis)}</span>}
+                        {!v.vendu_depuis && !v.recu_depuis && !v.perte_depuis && !v.ajuste_depuis && '—'}
+                      </td>
+                      <td className="t12 cMuted nowrap">
+                        {v.last_count_at ? <>{f3(v.dernier_compte)} le {dt(v.last_count_at)}</> : <span className="cFaint">jamais</span>}
+                      </td>
+                      <td className="tr nowrap">
+                        <button className="btn btnSm" onClick={() => setMove({ item: v, kind: 'receive' })}>📥</button>
+                        <button className="btn btnSm" style={{ marginLeft: 4 }} onClick={() => setMove({ item: v, kind: 'waste' })}>🗑️</button>
+                        <button className="btn btnSm btnPrimary" style={{ marginLeft: 4 }} onClick={() => setMove({ item: v, kind: 'count' })}>Inventaire</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Movement trail ── */}
+      {tab === 'moves' && (
+        <div className="card">
+          <div className="tableWrap">
+            <table className="t">
+              <thead>
+                <tr>
+                  <th>Quand</th><th>Produit</th><th>Type</th>
+                  <th className="tr">Variation</th><th>Motif</th><th>Par</th><th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movements.length === 0 ? (
+                  <tr><td colSpan={7}><Empty icon="🧾" text="Aucun mouvement enregistré." /></td></tr>
+                ) : movements
+                  .filter(m => !search || (m.item_name || '').toLowerCase().includes(search.toLowerCase()))
+                  .map(m => {
+                    const k = (KIND as any)[m.kind] || { label: m.kind, cls: 'bNeutral', icon: '•' }
+                    const isCount = m.kind === 'count'
+                    const ec = isCount && m.expected_value !== null ? num(m.count_value) - num(m.expected_value) : null
+                    return (
+                      <tr key={m.id}>
+                        <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
+                        <td className="nowrap">{m.item_emoji || '📦'} {m.item_name || m.item_id}</td>
+                        <td><span className={'badge ' + k.cls}>{k.icon} {k.label}</span></td>
+                        <td className="tr num nowrap">
+                          {isCount ? (
+                            <>
+                              <span className="bold">= {f3(m.count_value)}</span>
+                              {ec !== null && Math.abs(ec) > 0.0005 && (
+                                <div className="t11" style={{ color: ec < 0 ? 'var(--danger)' : 'var(--warn)' }}>
+                                  écart {ec > 0 ? '+' : ''}{f3(ec)}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ color: num(m.delta) < 0 ? 'var(--danger)' : 'var(--ok)', fontWeight: 650 }}>
+                              {num(m.delta) > 0 ? '+' : ''}{f3(m.delta)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="t12 cMuted">
+                          {m.reason || (m.sale_num ? '#' + String(m.sale_num).padStart(3, '0') : '—')}
+                        </td>
+                        <td className="t12 nowrap">{m.actor || <span className="cFaint">—</span>}</td>
+                        <td>
+                          <span className={'badge ' + (m.source === 'web' ? 'bInfo' : 'bNeutral')}>
+                            {m.source === 'web' ? '💻 web' : '🖥️ caisse'}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Écarts ── */}
+      {tab === 'ecarts' && (
+        <div className="card">
+          <div className="tableWrap">
+            <table className="t">
+              <thead>
+                <tr>
+                  <th>Quand</th><th>Produit</th>
+                  <th className="tr">Théorique</th><th className="tr">Compté</th>
+                  <th className="tr">Écart</th><th className="tr">Valeur</th>
+                  <th>Motif</th><th>Par</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ecarts.length === 0 ? (
+                  <tr><td colSpan={8}><Empty icon="✓" text="Aucun écart : chaque inventaire correspondait au théorique." /></td></tr>
+                ) : ecarts.map((e, i) => (
+                  <tr key={i}>
+                    <td className="t12 cMuted nowrap">{dt(e.client_ts)}</td>
+                    <td className="nowrap">{e.item_emoji || '📦'} {e.item_name || e.item_id}</td>
+                    <td className="tr num">{f3(e.theorique)}</td>
+                    <td className="tr num">{f3(e.compte)}</td>
+                    <td className="tr num bold" style={{ color: e.ecart < 0 ? 'var(--danger)' : 'var(--warn)' }}>
+                      {e.ecart > 0 ? '+' : ''}{f3(e.ecart)}
+                    </td>
+                    <td className="tr num nowrap" style={{ color: e.ecart_valeur < 0 ? 'var(--danger)' : undefined }}>
+                      {f3(e.ecart_valeur)} DT
+                    </td>
+                    <td className="t12 cMuted">{e.reason || '—'}</td>
+                    <td className="t12 nowrap">{e.actor || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {move && (
+        <MovementModal
+          item={move.item} kind={move.kind} saving={saving}
+          onClose={() => setMove(null)}
+          onSubmit={submitMovement}
+        />
+      )}
+    </Shell>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+function MovementModal({ item, kind: initialKind, saving, onClose, onSubmit }: any) {
+  const [kind, setKind] = useState(initialKind)
+  const [qty, setQty] = useState<any>('')
+  const [reason, setReason] = useState('')
+
+  const isCount = kind === 'count'
+  const k = (KIND as any)[kind] || KIND.adjust
+  // A correction with no stated reason is exactly what the ledger exists to prevent.
+  const reasonRequired = kind === 'adjust' || kind === 'waste'
+  const valid = num(qty) > 0 && (!reasonRequired || reason.trim().length > 0)
+  const after = isCount ? num(qty)
+    : kind === 'receive' ? num(item.theorique) + num(qty)
+    : num(item.theorique) - num(qty)
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modalHead">
+          <div>
+            <div className="modalTitle">{item.item_emoji || '📦'} {item.item_name}</div>
+            <div className="t12 cMuted">En stock : <b>{f3(item.theorique)}</b></div>
+          </div>
+          <button className="btn btnGhost btnSm spacer" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="modalBody col" style={{ gap: 16 }}>
+          <div className="row wrap" style={{ gap: 6 }}>
+            {['receive', 'waste', 'adjust', 'count'].map(x => (
+              <button key={x} className="chip" data-on={kind === x} onClick={() => setKind(x)}>
+                {(KIND as any)[x].icon} {(KIND as any)[x].label}
+              </button>
+            ))}
+          </div>
+
+          <div className="field">
+            <label className="label">{isCount ? 'Quantité comptée' : 'Quantité'}</label>
+            <input
+              className="input inputNum" style={{ maxWidth: 170, fontSize: 17 }}
+              type="number" step="0.001" min="0" autoFocus
+              value={qty} onChange={e => setQty(e.target.value)}
+            />
+            <span className="help">
+              {isCount
+                ? 'Le stock repart de ce chiffre. L\u2019écart avec le théorique est figé et conservé.'
+                : `Stock après : ${f3(after)}`}
+            </span>
+          </div>
+
+          <div className="field">
+            <label className="label">Motif {reasonRequired && <span className="cDanger">*</span>}</label>
+            <input
+              className="input" value={reason} onChange={e => setReason(e.target.value)}
+              placeholder={kind === 'receive' ? 'Livraison fournisseur' : kind === 'waste' ? 'Casse, périmé, offert' : kind === 'count' ? 'Inventaire du soir' : 'Correction'}
+            />
+            {reasonRequired && <span className="help">Obligatoire : une perte ou une correction sans motif n&apos;est pas traçable.</span>}
+          </div>
+
+          {isCount && (
+            <div className="notice nInfo" style={{ margin: 0 }}>
+              <span className="noticeIcon">ℹ</span>
+              <div>
+                Théorique actuel <b>{f3(item.theorique)}</b>.
+                {num(qty) > 0 && Math.abs(num(qty) - num(item.theorique)) > 0.0005 && (
+                  <> Écart constaté : <b style={{ color: num(qty) < num(item.theorique) ? 'var(--danger)' : 'var(--warn)' }}>
+                    {num(qty) - num(item.theorique) > 0 ? '+' : ''}{f3(num(qty) - num(item.theorique))}
+                  </b></>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="modalFoot">
+          <button className="btn" onClick={onClose}>Annuler</button>
+          <button
+            className="btn btnPrimary" disabled={!valid || saving}
+            onClick={() => onSubmit({
+              item_id: item.item_id,
+              kind,
+              ...(isCount
+                ? { count_value: num(qty) }
+                : { delta: kind === 'receive' ? num(qty) : -num(qty) }),
+              reason: reason.trim() || (KIND as any)[kind].label,
+              actor: 'web',
+              ts: new Date().toISOString(),
+              uid: 'W' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+            })}
+          >{saving ? '…' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
