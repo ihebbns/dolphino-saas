@@ -100,6 +100,15 @@ export async function POST(req: Request) {
   const actor = String(body.actor ?? '').slice(0, 80)
   const useLedger = mode === 'count' ? await ledgerReady() : false
 
+  // A count is a claim about physical reality, so it must say who counted and
+  // why. Refuse an anonymous one rather than record an untraceable change.
+  if (mode === 'count' && !actor) {
+    return cors(NextResponse.json(
+      { ok: false, error: "Un inventaire doit être attribué : 'actor' est obligatoire." },
+      { status: 400 },
+    ))
+  }
+
   for (const it of batch) {
     const id         = String(it.item_id).slice(0, 64)
     const name       = String(it.item_name).slice(0, 100)
@@ -112,16 +121,20 @@ export async function POST(req: Request) {
 
     // Strict field ownership:
     //   • cost / sell_price / category are WEB-OWNED — never overwritten by a POS sync.
-    //   • quantity / item_name / item_emoji / barcode flow POS → web.
-    // For brand-new rows we insert whatever the POS provided (cost defaults to 0);
-    // for existing rows we update ONLY the POS-owned fields so a web-entered cost
-    // can never be clobbered.
+    //   • item_name / item_emoji / barcode flow POS → web.
+    //
+    // QUANTITY IS DELIBERATELY NOT UPDATED HERE unless this request is an
+    // attributed physical count (mode='count'). A quantity that changes with no
+    // movement behind it is untraceable, which is exactly how a shortage gets
+    // hidden. Sales arrive as signed deltas on PATCH; a count arrives here with
+    // a reason and an actor. For a brand-new row 0 is the right starting point —
+    // the first count establishes the real figure.
     await sql`
       INSERT INTO stock (restaurant_id, item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at)
-      VALUES (${rid}, ${id}, ${name}, ${emoji}, ${qty}, ${barcode}, ${cost}, ${category}, ${sellPrice}, NOW())
+      VALUES (${rid}, ${id}, ${name}, ${emoji}, ${mode === 'count' ? qty : 0}, ${barcode}, ${cost}, ${category}, ${sellPrice}, NOW())
       ON CONFLICT (restaurant_id, item_id)
       DO UPDATE SET
-        quantity   = ${qty},
+        quantity   = CASE WHEN ${mode === 'count'} THEN ${qty} ELSE stock.quantity END,
         item_name  = ${name},
         item_emoji = ${emoji},
         barcode    = ${barcode},

@@ -2553,7 +2553,6 @@ function showDash(){
     <div class="kpi"><div class="kpi-val">${f(avg)} DT</div><div class="kpi-lbl">Ticket moyen</div></div>
     <div class="kpi"><div class="kpi-val">${f(cash)} DT</div><div class="kpi-lbl">Espèces</div></div>
     <div class="kpi"><div class="kpi-val">${f(total-cash)} DT</div><div class="kpi-lbl">Carte / Mobile</div></div>
-    <div class="kpi"><div class="kpi-val" style="color:var(--green)">${f(hist.reduce((a,h)=>a+(h.margin||0),0))} DT</div><div class="kpi-lbl">📈 Bénéfice brut</div></div>
     <div class="kpi"><div class="kpi-val" style="font-size:${topItem&&topItem[0].length>15?'14px':'24px'}">${topItem?topItem[0]:'—'}</div><div class="kpi-lbl">Article le plus vendu</div>${topItem?`<div style="font-size:12px;color:var(--gold);margin-top:3px;font-weight:600">vendu ${topItem[1]} fois</div>`:''}</div>`;
 
   // ── STOCK (all tracked items — drinks OR retail products) ──
@@ -2941,8 +2940,7 @@ function showOrderDetail(idx){
       ${od.d>0?`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--red);margin-bottom:4px"><span>Remise (${od.disc}%)</span><span>-${f(od.d)} DT</span></div>`:''}
       <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800;padding-top:6px;border-top:1px solid var(--div)"><span>TOTAL</span><span style="color:var(--gold-l)">${f(od.g)} DT</span></div>
       ${od.payMode==='cash'?`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px"><span>Reçu</span><span>${f(od.r)} DT</span></div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--green)"><span>Monnaie</span><span>${f(od.monnaie)} DT</span></div>`:''}
-      ${od.margin?`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--green);margin-top:6px"><span>📈 Marge</span><span>${f(od.margin)} DT</span></div>`:''}
-    </div>
+      </div>
     <button class="mcancel" style="margin-top:14px" onclick="destroySessionModal()">Fermer</button>
   `);
 }

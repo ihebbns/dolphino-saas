@@ -12,8 +12,14 @@
 //
 // POST /api/me/catalog { key, item_id, ... }
 //   → upsert ONE product into `stock` by (restaurant_id, item_id).
-//     Editable: cost, quantity, category, tracked, low_threshold,
-//     barcode, item_name, item_emoji. Numbers are clamped/validated.
+//     Editable here: cost, category, tracked, low_threshold, barcode,
+//     item_name, item_emoji. Numbers are clamped/validated.
+//
+//   NOT editable here: `quantity`. A quantity may only change through a traced
+//   movement — a sale delta or an attributed physical count — so that no stock
+//   figure can ever move without a record of who did it and why. Use
+//   POST /api/me/stock-log { kind:'count' | 'adjust', reason, actor }.
+//   Accepting it on this route was a silent second door into the same field.
 //
 // ── FIELD OWNERSHIP (single owner per field, no split brain) ──────────
 //   • PRICE (prix de vente) → owned by the POS/EXE. Managers edit it in
@@ -231,7 +237,17 @@ export async function POST(req: Request) {
     const sellPrice  = (menuPrice !== undefined)
       ? menuPrice
       : Math.max(0, parseFloat(body.sell_price) || 0)
-    const quantity   = Math.max(0, parseInt(String(body.quantity)) || 0)
+    // Quantity is NOT accepted from this route — see the header note. A stock
+    // figure may only move via a traced movement, so an upsert here must never
+    // silently overwrite it. We read the current value and write it back
+    // unchanged, which keeps the INSERT ... ON CONFLICT statement below intact
+    // for brand-new rows (where 0 is the correct starting point) without giving
+    // the web an untraced way to edit an existing count.
+    const existingQty = await sql`
+      SELECT quantity FROM stock WHERE restaurant_id = ${rid} AND item_id = ${itemId} LIMIT 1`
+    const quantity = existingQty.length
+      ? (parseInt(String(existingQty[0].quantity)) || 0)
+      : 0
     const category   = String(body.category ?? '').slice(0, 80)
     const barcode    = String(body.barcode ?? '').slice(0, 64)
     const tracked    = (body.tracked === undefined || body.tracked === null) ? true : !!body.tracked
