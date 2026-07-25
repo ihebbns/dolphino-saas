@@ -137,7 +137,7 @@ export default function IngredientsPage() {
       {!ready && <NotReady sql="migration-ingredients.sql" />}
       {msg && <div className="notice nDanger"><span className="noticeIcon">✕</span><div>{msg}</div></div>}
 
-      <div className="notice nInfo">
+      <div className="notice nInfo" hidden>
         <span className="noticeIcon">💡</span>
         <div>
           <div className="noticeTitle">Les recettes sont facultatives</div>

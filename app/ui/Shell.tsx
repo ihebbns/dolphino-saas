@@ -1,46 +1,63 @@
 'use client'
 // ═══════════════════════════════════════════════════════════════════
-// App shell: sidebar navigation, auth guard, and the shared fetch helper.
+// App shell — phone first.
 //
-// Information architecture — one page, one job. The old layout crammed
-// products, costs, stock quantities and categories onto a single screen,
-// which is why editing felt arbitrary and unsafe.
+// The owner checks this from a phone, standing up, usually at closing
+// time. So the phone is the design target and the desktop sidebar is the
+// wide variant, not the other way round.
 //
-//   /dashboard    sales, profit, sessions
-//   /catalog      products & purchase cost           (cost is web-owned)
-//   /stock        levels, low-stock alerts, movements (read + count)
-//   /ingredients  ingredients & recipes, optional     (web-owned)
-//   /credits      ardoises and archived debts         (read-only)
-//   /audit        cash drawer trail                   (read-only)
-//   /account      restaurant profile & modules
+// Under 700px: a fixed bottom tab bar. Five destinations is the practical
+// ceiling for thumbs, so the seven old pages collapse into five, with
+// tabs inside the ones that carried more than one job:
+//
+//   Aujourd'hui   what did I take today
+//   Produits      Stock · Coûts · Recettes
+//   Caisse        what happened at the till
+//   Créances      who owes me money
+//   Compte        my establishment
+//
+// The destination list is DATA. Splitting Produits back out, or reordering
+// the bar, is an edit to one array — not a refactor. That matters because
+// this structure was reasoned from thumb reach rather than measured
+// against Square and Toast, so it is the most likely thing to change.
+//
+// Routes are unchanged: tabs are ordinary links, so nothing had to move
+// and no redirects were needed.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useState } from 'react'
 import './theme.css'
+import { Icon, IconName } from './Icon'
 
 export const API = process.env.NEXT_PUBLIC_API_URL || 'https://servio.tn'
 
-export const NAV = [
+export type Dest = {
+  href: string
+  name: string
+  icon: IconName
+  /** Views inside this destination, rendered as a segmented control. */
+  tabs?: { href: string; name: string }[]
+}
+
+export const DESTS: Dest[] = [
+  { href: '/dashboard', name: "Aujourd'hui", icon: 'home' },
   {
-    label: 'Pilotage',
-    items: [
-      { href: '/dashboard', icon: '📊', name: 'Tableau de bord' },
-      { href: '/credits', icon: '📒', name: 'Créances' },
-      { href: '/audit', icon: '🔓', name: 'Tiroir-caisse' },
+    href: '/stock', name: 'Produits', icon: 'box',
+    tabs: [
+      { href: '/stock', name: 'Stock' },
+      { href: '/catalog', name: 'Coûts' },
+      { href: '/ingredients', name: 'Recettes' },
     ],
   },
-  {
-    label: 'Produits',
-    items: [
-      { href: '/catalog', icon: '🏷️', name: 'Produits & coûts' },
-      { href: '/stock', icon: '📦', name: 'Stock' },
-      { href: '/ingredients', icon: '🥣', name: 'Ingrédients & recettes' },
-    ],
-  },
-  {
-    label: 'Réglages',
-    items: [{ href: '/account', icon: '⚙️', name: 'Mon établissement' }],
-  },
+  { href: '/audit', name: 'Caisse', icon: 'drawer' },
+  { href: '/credits', name: 'Créances', icon: 'receipt' },
+  { href: '/account', name: 'Compte', icon: 'settings' },
 ]
+
+/** Kept for anything still importing the old grouped nav. */
+export const NAV = DESTS
+
+const destOf = (active: string) =>
+  DESTS.find(d => d.href === active || d.tabs?.some(t => t.href === active))
 
 export function useApiKey() {
   const [key, setKey] = useState<string | null>(null)
@@ -76,11 +93,15 @@ export async function apiPost(path: string, body: any) {
   }
 }
 
+// ── Formatting ────────────────────────────────────────────────────
+// Re-exported so pages have one import. fmt.ts is the single source.
+export { money, money0, qty, qtyOrUncounted, variance, varianceMoney, when, atTime, onDay, since, num, CURRENCY } from './fmt'
+export { Icon } from './Icon'
+export type { IconName } from './Icon'
+
+// Legacy names still used by pages not yet migrated.
 export const f3 = (n: any) => Number(n || 0).toFixed(3)
 export const f0 = (n: any) => String(Math.round(Number(n) || 0))
-export const num = (v: any) =>
-  v === '' || v === null || v === undefined ? 0 : Math.max(0, parseFloat(String(v)) || 0)
-
 export const dt = (s: string | null | undefined) => {
   if (!s) return '—'
   const d = new Date(s)
@@ -88,7 +109,6 @@ export const dt = (s: string | null | undefined) => {
     ? '—'
     : d.toLocaleString('fr-TN', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
-
 export const daysSince = (s: string | null | undefined) => {
   if (!s) return null
   const t = new Date(s).getTime()
@@ -112,41 +132,48 @@ export function Shell({
   restName?: string
   badges?: Record<string, number>
 }) {
+  const dest = destOf(active)
+  const tabs = dest?.tabs
+
+  const signOut = () => {
+    localStorage.removeItem('d_api_key')
+    location.href = '/dashboard'
+  }
+
   return (
     <div className="app">
-      <nav className="nav">
+      {/* Desktop sidebar. Hidden on phones, where the bottom bar takes over. */}
+      <nav className="nav" aria-label="Navigation principale">
         <div className="navBrand">
           <div className="navMark">S</div>
           <div style={{ minWidth: 0 }}>
             <div className="navName">Servio</div>
-            <div className="navSub" title={restName || ''}>
-              {restName || 'Back-office'}
-            </div>
+            <div className="navSub" title={restName || ''}>{restName || 'Back-office'}</div>
           </div>
         </div>
 
-        {NAV.map(group => (
-          <div className="navGroup" key={group.label}>
-            <div className="navLabel">{group.label}</div>
-            {group.items.map(it => (
-              <a key={it.href} href={it.href} className="navItem" data-active={active === it.href}>
-                <span className="navIcon">{it.icon}</span>
-                <span>{it.name}</span>
-                {badges?.[it.href] ? <span className="navBadge">{badges[it.href]}</span> : null}
+        <div className="navGroup">
+          {DESTS.map(d => {
+            const on = dest?.href === d.href
+            const badge = badges?.[d.href] ?? d.tabs?.reduce((a, t) => a + (badges?.[t.href] ?? 0), 0)
+            return (
+              <a
+                key={d.href}
+                href={d.href}
+                className="navItem"
+                data-active={on}
+                aria-current={on ? 'page' : undefined}
+              >
+                <span className="navIcon"><Icon name={d.icon} size={18} /></span>
+                <span>{d.name}</span>
+                {badge ? <span className="navBadge">{badge}</span> : null}
               </a>
-            ))}
-          </div>
-        ))}
+            )
+          })}
+        </div>
 
         <div className="navFoot">
-          <button
-            className="btn btnGhost btnSm"
-            style={{ width: '100%' }}
-            onClick={() => {
-              localStorage.removeItem('d_api_key')
-              location.href = '/dashboard'
-            }}
-          >
+          <button className="btn btnGhost btnSm" style={{ width: '100%' }} onClick={signOut}>
             Se déconnecter
           </button>
         </div>
@@ -154,14 +181,56 @@ export function Shell({
 
       <div className="main">
         <header className="topbar">
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div className="topTitle">{title}</div>
             {subtitle && <div className="topSub">{subtitle}</div>}
           </div>
           <div className="topRight">{actions}</div>
         </header>
+
+        {tabs && tabs.length > 1 && (
+          <div className="segWrap" role="tablist" aria-label={dest?.name}>
+            {tabs.map(t => (
+              <a
+                key={t.href}
+                href={t.href}
+                className="seg"
+                data-active={active === t.href}
+                role="tab"
+                aria-selected={active === t.href}
+              >
+                {t.name}
+                {badges?.[t.href] ? <span className="segBadge">{badges[t.href]}</span> : null}
+              </a>
+            ))}
+          </div>
+        )}
+
         <div className="page">{children}</div>
       </div>
+
+      {/* Phone navigation. Fixed, thumb-height, safe-area aware. */}
+      <nav className="tabbar" aria-label="Navigation principale">
+        {DESTS.map(d => {
+          const on = dest?.href === d.href
+          const badge = badges?.[d.href] ?? d.tabs?.reduce((a, t) => a + (badges?.[t.href] ?? 0), 0)
+          return (
+            <a
+              key={d.href}
+              href={d.href}
+              className="tab"
+              data-active={on}
+              aria-current={on ? 'page' : undefined}
+            >
+              <span className="tabIcon">
+                <Icon name={d.icon} size={20} />
+                {badge ? <span className="tabDot" aria-hidden="true" /> : null}
+              </span>
+              <span className="tabLabel">{d.name}</span>
+            </a>
+          )
+        })}
+      </nav>
     </div>
   )
 }
@@ -169,17 +238,13 @@ export function Shell({
 /** Shown when there is no stored API key. */
 export function LoginGate() {
   const [k, setK] = useState('')
+  const go = () => {
+    if (!k.trim()) return
+    localStorage.setItem('d_api_key', k.trim())
+    location.reload()
+  }
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-        background: 'var(--bg)',
-      }}
-    >
+    <div className="gate">
       <div className="card" style={{ maxWidth: 400, width: '100%' }}>
         <div className="cardPad">
           <div className="row mb14">
@@ -190,30 +255,19 @@ export function LoginGate() {
             </div>
           </div>
           <div className="field mb14">
-            <label className="label">Clé de licence</label>
+            <label className="label" htmlFor="lic">Clé de licence</label>
             <input
+              id="lic"
               className="input"
               value={k}
               onChange={e => setK(e.target.value)}
               placeholder="SRVO-XXXX-0000"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && k.trim()) {
-                  localStorage.setItem('d_api_key', k.trim())
-                  location.reload()
-                }
-              }}
+              autoComplete="off"
+              onKeyDown={e => { if (e.key === 'Enter') go() }}
             />
             <span className="help">La même clé que celle utilisée par la caisse.</span>
           </div>
-          <button
-            className="btn btnPrimary"
-            style={{ width: '100%' }}
-            disabled={!k.trim()}
-            onClick={() => {
-              localStorage.setItem('d_api_key', k.trim())
-              location.reload()
-            }}
-          >
+          <button className="btn btnPrimary" style={{ width: '100%' }} disabled={!k.trim()} onClick={go}>
             Ouvrir le back-office
           </button>
         </div>
@@ -222,34 +276,121 @@ export function LoginGate() {
   )
 }
 
-/** Rendered when an endpoint reports its migration has not been run. */
+/**
+ * Rendered when an endpoint reports its migration has not been run.
+ * Two sentences: what is missing, and that nothing is lost.
+ */
 export function NotReady({ sql }: { sql: string }) {
   return (
     <div className="notice nWarn">
-      <span className="noticeIcon">⚠</span>
+      <span className="noticeIcon"><Icon name="alert" size={16} /></span>
       <div>
         <div className="noticeTitle">Base de données non initialisée</div>
-        Exécutez <code className="k">{sql}</code> dans Neon. En attendant, les caisses
-        conservent leurs données en local — rien n&apos;est perdu, mais rien n&apos;apparaît ici.
+        Exécutez <code className="k">{sql}</code> dans Neon. Les caisses gardent tout en local
+        en attendant : rien n&apos;est perdu.
       </div>
     </div>
   )
 }
 
+/** Skeleton shaped like the content that follows, so nothing shifts. */
 export function Loading() {
   return (
     <div className="col" style={{ gap: 12 }}>
-      <div className="skel" style={{ height: 76 }} />
-      <div className="skel" style={{ height: 260 }} />
+      <div className="statGrid">
+        <div className="skel" style={{ height: 72 }} />
+        <div className="skel" style={{ height: 72 }} />
+        <div className="skel" style={{ height: 72 }} />
+        <div className="skel" style={{ height: 72 }} />
+      </div>
+      <div className="skel" style={{ height: 56 }} />
+      <div className="skel" style={{ height: 56 }} />
+      <div className="skel" style={{ height: 56 }} />
     </div>
   )
 }
 
-export function Empty({ icon, text }: { icon: string; text: string }) {
+/**
+ * The ONE place teaching copy belongs. A view with data shows data; a view
+ * with nothing explains itself, briefly, and offers the way forward.
+ */
+export function Empty({
+  icon,
+  text,
+  action,
+}: {
+  icon?: IconName | string
+  text: string
+  action?: React.ReactNode
+}) {
+  const known = typeof icon === 'string' && icon in ICONS_BY_NAME
   return (
     <div className="empty">
-      <div className="emptyIcon">{icon}</div>
-      {text}
+      {icon ? (
+        <div className="emptyIcon">
+          {known ? <Icon name={icon as IconName} size={26} /> : null}
+        </div>
+      ) : null}
+      <div className="emptyText">{text}</div>
+      {action ? <div className="emptyAction">{action}</div> : null}
     </div>
+  )
+}
+
+// Cheap membership test so `Empty` stays backwards compatible with the old
+// emoji strings while new callers pass an icon name.
+const ICONS_BY_NAME: Record<string, true> = {
+  home: true, box: true, drawer: true, receipt: true, settings: true,
+  lock: true, unlock: true, alert: true, check: true, close: true,
+  chevronRight: true, plus: true, minus: true, clipboard: true,
+  search: true, refresh: true, print: true, trash: true, edit: true,
+  arrowUp: true, arrowDown: true, store: true, flask: true, tag: true,
+}
+
+/** A headline figure. Two per row on a phone, four on a desktop. */
+export function Stat({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string
+  value: React.ReactNode
+  hint?: React.ReactNode
+  tone?: 'ok' | 'warn' | 'danger'
+}) {
+  return (
+    <div className="stat">
+      <div className="statLabel">{label}</div>
+      <div className={'statValue num' + (tone ? ' t-' + tone : '')}>{value}</div>
+      {hint ? <div className="statHint">{hint}</div> : null}
+    </div>
+  )
+}
+
+/** Status as icon + word, never colour alone. */
+export function StatusPill({
+  tone,
+  children,
+  icon,
+}: {
+  tone: 'ok' | 'warn' | 'danger' | 'flat'
+  children: React.ReactNode
+  icon?: IconName
+}) {
+  return (
+    <span className={'pill p-' + tone}>
+      {icon ? <Icon name={icon} size={13} /> : null}
+      {children}
+    </span>
+  )
+}
+
+/** Marks a field the POS owns. One glyph instead of a paragraph. */
+export function OwnerMark({ what = 'caisse' }: { what?: string }) {
+  return (
+    <span className="ownerMark" title={'Géré depuis la ' + what}>
+      <Icon name="lock" size={12} label={'Géré depuis la ' + what} />
+    </span>
   )
 }

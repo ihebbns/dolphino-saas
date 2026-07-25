@@ -14,7 +14,7 @@
 // makes an écart provable and stops two tills clobbering each other.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
-import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, dt, num } from '../ui/Shell'
+import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, dt, num, Icon } from '../ui/Shell'
 
 type Variance = {
   item_id: string; item_name: string; item_emoji: string; category: string
@@ -167,7 +167,12 @@ export default function StockPage() {
               ? 'La caisse ne peut pas modifier les quantités'
               : 'La caisse peut saisir livraisons, pertes et inventaires'}
           >
-            {lockBusy ? '…' : posLocked ? '🔒 Caisse bloquée' : '🔓 Caisse autorisée'}
+            {lockBusy
+              ? '…'
+              : <>
+                  <Icon name={posLocked ? 'lock' : 'unlock'} size={15} />
+                  {posLocked ? 'Caisse bloquée' : 'Caisse autorisée'}
+                </>}
           </button>
           <button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>
         </>
@@ -180,33 +185,16 @@ export default function StockPage() {
         </div>
       )}
 
-      <div className={'notice ' + (posLocked ? 'nWarn' : 'nInfo')}>
-        <span className="noticeIcon">{posLocked ? '🔒' : '🔓'}</span>
-        <div>
-          <div className="noticeTitle">
-            {posLocked
-              ? 'La caisse est en lecture seule'
-              : 'La caisse peut gérer le stock'}
-          </div>
-          {posLocked ? (
-            <>
-              Les caissiers <b>voient</b> les quantités mais ne peuvent plus saisir de livraison,
-              de perte ni d&apos;inventaire — tout passe par cette page. Le refus est appliqué par
-              le serveur, pas seulement masqué sur la caisse.
-              Les ventes continuent de décrémenter normalement, et « Rupture » reste disponible
-              pour bloquer la vente d&apos;un article épuisé.
-            </>
-          ) : (
-            <>
-              Livraisons, pertes et inventaires peuvent être saisis à la caisse — c&apos;est là que
-              le fournisseur livre et que la bouteille se casse. Chaque mouvement enregistre
-              <b> qui</b>, <b>quand</b>, <b>combien</b> et <b>pourquoi</b>, et la quantité est
-              recalculée depuis le dernier inventaire : personne ne peut écraser un chiffre en
-              silence. Bloquez la caisse si vous préférez tout centraliser ici.
-            </>
-          )}
+{/* Was a five-line paragraph explaining the lock. It is a state, not a
+          lesson, so it is now a pill: the fact, and nothing else. */}
+      {posLocked && (
+        <div className="mb14">
+          <span className="pill p-warn">
+            <Icon name="lock" size={13} />
+            Caisse en lecture seule — le stock se gère ici
+          </span>
         </div>
-      </div>
+      )}
 
       <div className="statGrid mb20">
         <div className="stat">

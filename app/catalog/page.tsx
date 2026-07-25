@@ -144,7 +144,7 @@ export default function CatalogPage() {
         </>
       }
     >
-      <div className="notice nInfo">
+      <div className="notice nInfo" hidden>
         <span className="noticeIcon">💡</span>
         <div>
           <div className="noticeTitle">Ce que vous gérez ici : le coût d&apos;achat</div>

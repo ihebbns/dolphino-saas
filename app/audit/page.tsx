@@ -94,7 +94,7 @@ export default function AuditPage() {
       {!ready && <NotReady sql="migration-drawer-log.sql" />}
       {msg && <div className="notice nDanger"><span className="noticeIcon">✕</span><div>{msg}</div></div>}
 
-      <div className="notice nInfo">
+      <div className="notice nInfo" hidden>
         <span className="noticeIcon">🔒</span>
         <div>
           <div className="noticeTitle">Visible uniquement ici</div>
