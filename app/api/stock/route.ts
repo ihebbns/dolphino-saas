@@ -63,12 +63,33 @@ export async function GET(req: Request) {
   // The POS already polls this route for costs, so the lock rides along on a
   // call it makes anyway — no extra request, and it caches the answer so the
   // till still knows the rule while offline.
-  return cors(NextResponse.json({ ok: true, stock, posStockLocked: isStockLocked(rows[0].config) }))
+  return cors(NextResponse.json({
+    ok: true,
+    stock,
+    posStockLocked: isStockLocked(rows[0].config),
+    stockTracking: isStockTracking(rows[0].config),
+  }))
 }
 
 /** Owner has locked stock editing at the till. Absent/false ⇒ POS is free. */
 function isStockLocked(config: any): boolean {
   return !!(config && typeof config === 'object' && config.posStockLocked)
+}
+
+/**
+ * Whether this establishment uses stock at all.
+ *
+ * Many cafés do not want it: they sell coffee and reorder when the shelf looks
+ * empty, and a half-maintained count is worse than none — it produces alarming
+ * figures nobody trusts. Off means off everywhere in the POS.
+ *
+ * Defaults to ON so no existing client changes behaviour, and so a POS-only
+ * client that never opens this dashboard keeps what it was built with.
+ */
+function isStockTracking(config: any): boolean {
+  const m = config && typeof config === 'object' ? config.modules : null
+  if (m && typeof m === 'object' && 'stockTracking' in m) return !!m.stockTracking
+  return true
 }
 
 /** Shared 403 for a till that tried to change stock while locked. */

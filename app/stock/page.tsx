@@ -65,6 +65,10 @@ export default function StockPage() {
   // only the EXE never opens this page and must stay fully operational.
   const [posLocked, setPosLocked] = useState(false)
   const [lockBusy, setLockBusy] = useState(false)
+  // Whether this establishment uses stock at all. Off hides it everywhere in
+  // the POS — no panel, no deductions, no movements.
+  const [stockOn, setStockOn] = useState(true)
+  const [modBusy, setModBusy] = useState(false)
 
   useEffect(() => {
     if (key) load(key)
@@ -80,7 +84,11 @@ export default function StockPage() {
       apiGet('/api/me/catalog', k),
       apiGet('/api/me/config', k),
     ])
-    if (cfg.ok) setPosLocked(!!(cfg.config && cfg.config.posStockLocked))
+    if (cfg.ok) {
+      setPosLocked(!!(cfg.config && cfg.config.posStockLocked))
+      const m = cfg.modules || (cfg.config && cfg.config.modules) || {}
+      setStockOn(!('stockTracking' in m) || !!m.stockTracking)
+    }
     if (log.ok) {
       setReady(log.ready !== false)
       setRestName(log.name || '')
@@ -98,6 +106,21 @@ export default function StockPage() {
       setThresholds(t)
     }
     setLoading(false)
+  }
+
+  /** The one switch that makes an establishment work without stock at all. */
+  async function toggleStockModule() {
+    if (!key) return
+    const next = !stockOn
+    setModBusy(true); setMsg('')
+    const d = await apiPost('/api/me/config', { key, modules: { stockTracking: next } })
+    setModBusy(false)
+    if (d.ok) {
+      setStockOn(next)
+      setMsg(next
+        ? '✓ Stock activé — la caisse reprend le suivi à la prochaine synchro'
+        : '✓ Stock désactivé — la caisse ne suivra plus aucune quantité')
+    } else setMsg(d.error || 'Erreur')
   }
 
   async function toggleLock() {
@@ -161,8 +184,18 @@ export default function StockPage() {
         <>
           <button
             className="btn"
+            onClick={toggleStockModule}
+            disabled={modBusy}
+            title={stockOn
+              ? 'Désactiver complètement la gestion du stock'
+              : 'Activer la gestion du stock'}
+          >
+            {modBusy ? '…' : <><Icon name={stockOn ? 'check' : 'close'} size={15} />{stockOn ? 'Stock activé' : 'Stock désactivé'}</>}
+          </button>
+          <button
+            className="btn"
             onClick={toggleLock}
-            disabled={lockBusy}
+            disabled={lockBusy || !stockOn}
             title={posLocked
               ? 'La caisse ne peut pas modifier les quantités'
               : 'La caisse peut saisir livraisons, pertes et inventaires'}
