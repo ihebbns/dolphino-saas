@@ -180,7 +180,7 @@ export default function StockPage() {
       // Recipes are optional; a café that switched them off should not see the tab.
       hideTabs={mods.on('ingredients') ? [] : ['/ingredients']}
       title="Stock"
-      subtitle="Niveaux, alertes de seuil et traçabilité complète"
+      subtitle=""
       restName={restName}
       badges={{ '/stock': lowList.length }}
       actions={

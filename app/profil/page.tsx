@@ -154,34 +154,7 @@ export default function ProfilPage() {
             </div>
           </div>
 
-          {/* ── Utilisateurs ──────────────────────────────────────── */}
-          <div className="card">
-            <div className="cardPad">
-              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="strong">Utilisateurs</div>
-                <span className="pill p-flat">Bientôt</span>
-              </div>
-
-              <div className="recList" style={{ marginTop: 12 }}>
-                <div className="recCard" style={{ cursor: 'default' }}>
-                  <div className="recMain">
-                    <div className="recTitle">{restName || 'Propriétaire'}</div>
-                    <div className="recMeta"><span>Accès complet · web + caisse</span></div>
-                  </div>
-                  <span className="pill p-ok">Vous</span>
-                </div>
-              </div>
-
-              <button className="btn" style={{ marginTop: 12 }} disabled>
-                <Icon name="plus" size={15} /> Ajouter un utilisateur
-              </button>
-              <span className="help">
-                Les PIN de la caisse se gèrent dans la caisse. Un PIN par personne rendrait la
-                traçabilité nominative : aujourd&apos;hui un mouvement est signé par un rôle
-                (« Manager »), pas par un individu.
-              </span>
-            </div>
-          </div>
+          {/* ── Utilisateurs — feature not built yet, removed to avoid confusion ── */}
         </>
       )}
     </Shell>
