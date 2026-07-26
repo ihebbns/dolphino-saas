@@ -371,6 +371,12 @@ export async function recipeCosts(rid: number): Promise<Map<string, RecipeCost>>
 /**
  * Cache the computed cost on the recipe so the override always has the current
  * calculation sitting next to it, including when the mode is manual.
+ *
+ * AND — the key bit the user asked for — when cost_mode='auto', push the
+ * computed figure into stock.cost so the POS picks it up on its next sync and
+ * freezes the correct number onto every sale. This is what makes "a product
+ * with a recipe gets its cost from its ingredients, automatically" real instead
+ * of just displayed.
  */
 export async function cacheComputedCosts(rid: number, costs: Map<string, RecipeCost>): Promise<void> {
   for (const c of costs.values()) {
@@ -378,6 +384,24 @@ export async function cacheComputedCosts(rid: number, costs: Map<string, RecipeC
       await sql`
         UPDATE recipes SET cost_computed = ${c.computed}, cost_computed_at = NOW()
         WHERE restaurant_id = ${rid} AND item_id = ${c.itemId}`
+
+      // Auto mode: the recipe IS the cost. Write it through to stock.cost so the
+      // POS (which only reads stock.cost) always has the current figure without
+      // anyone having to type it twice. Manual mode: leave stock.cost alone, the
+      // owner typed their own value on purpose.
+      if (c.mode === 'auto' && c.computed > 0) {
+        await sql`
+          UPDATE stock SET cost = ${c.computed}, updated_at = NOW()
+          WHERE restaurant_id = ${rid} AND item_id = ${c.itemId}`
+      } else if (c.mode === 'manual' && c.override != null && c.override > 0) {
+        // Manual override: the owner typed a specific cost, which is their
+        // decision — but it STILL needs to reach stock.cost so the POS
+        // freezes the right number onto the next sale. The calculated figure
+        // stays on the recipe row for comparison ("calculé 4,200 · utilisé 5,000").
+        await sql`
+          UPDATE stock SET cost = ${c.override}, updated_at = NOW()
+          WHERE restaurant_id = ${rid} AND item_id = ${c.itemId}`
+      }
     } catch { return }   // column missing → migration not run; stop trying
   }
 }

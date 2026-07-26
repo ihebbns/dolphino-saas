@@ -270,6 +270,14 @@ export async function POST(req: Request) {
             ON CONFLICT (restaurant_id, item_id, ing_key) DO UPDATE SET qty = EXCLUDED.qty`
         }
       }
+      // After saving the lines, recompute the cost and push it through:
+      // - Always cache the computed figure on the recipe row.
+      // - When mode='auto', write it into stock.cost so the POS picks it up
+      //   next sync without anyone retyping it. That's the "cost from ingredients
+      //   becomes the product's cost, automatically" the owner asked for.
+      const rollup = await recipeCosts(rid)
+      await cacheComputedCosts(rid, rollup)
+
       return cors(NextResponse.json({ ok: true, item_id: itemId }))
     }
 
