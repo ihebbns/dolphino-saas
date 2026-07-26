@@ -215,6 +215,16 @@ export function Shell({
       </nav>
 
       <div className="main">
+        {/* Print header — only visible on paper. The screen shows the title in the
+            topbar; the printed page needs it self-contained since the topbar hides. */}
+        <div className="printOnly printHead">
+          <div className="printTitle">{restName || 'Servio'} — {title}</div>
+          <div className="printSub">
+            {subtitle ? subtitle + ' · ' : ''}
+            Imprimé le {new Date().toLocaleDateString('fr-TN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        </div>
+
         <header className="topbar">
           <div style={{ minWidth: 0 }}>
             <div className="topTitle">{title}</div>
@@ -222,6 +232,14 @@ export function Shell({
           </div>
           <div className="topRight">
             {actions}
+            <button
+              className="btn btnGhost btnSm"
+              onClick={() => window.print()}
+              title="Imprimer / enregistrer en PDF"
+              aria-label="Imprimer"
+            >
+              <Icon name="print" size={15} />
+            </button>
             <ThemeToggle />
           </div>
         </header>

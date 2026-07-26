@@ -700,17 +700,38 @@ code.k {
 /* The owner prints a day for their accountant, so navigation, buttons and
    alerts are noise — and cards waste half a page where a table fits. */
 @media print {
-  .nav, .tabbar, .topRight, .segWrap, .notice, .btn, .sheetBack { display: none !important; }
+  .nav, .tabbar, .topbar, .segWrap, .notice, .sheetBack, .overlay { display: none !important; }
   .app, .main { display: block; }
   .page { padding: 0; max-width: none; }
   .recList { display: none !important; }
   .recTable { display: table !important; width: 100%; }
   .card, .stat { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
-  body { background: #fff; font-size: 11px; }
+  body { background: #fff; font-size: 11px; color: #000; }
   .printOnly { display: block !important; }
   .select { display: none !important; }
-  thead { display: table-header-group; }   /* repeat headers across pages */
-  tr { break-inside: avoid; }
+  /* Toolbars, chips and action buttons don't print — they are interactive, not data. */
+  .toolbar, .chip, .actionCell, .btn { display: none !important; }
+  /* Tables revert to their desktop shape on paper regardless of viewport. */
+  table.t { display: table !important; }
+  table.t thead { display: table-header-group !important; }
+  table.t tbody { display: table-row-group !important; }
+  table.t tr { display: table-row !important; border: 0 !important; padding: 0 !important; margin: 0 !important; background: none !important; }
+  table.t td { display: table-cell !important; padding: 6px 8px !important; border-bottom: 1px solid #ddd !important; }
+  table.t td::before { content: none !important; }
+  /* Stat grid: dense row on paper. */
+  .statGrid { grid-template-columns: repeat(4, 1fr) !important; gap: 8px !important; }
+  .stat { padding: 8px !important; }
+  .statValue { font-size: 14px !important; }
+  /* Bars and meters keep their fill colour. */
+  .meter, .meterFill, .barItemTrack, .barItemFill {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Page breaks: never split a card or a stat grid row. */
+  .card { break-inside: avoid; margin-bottom: 12px; }
+  .statGrid { break-inside: avoid; }
+  /* Two-column grid stacks on paper to avoid truncation. */
+  .grid2 { grid-template-columns: 1fr !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════

@@ -1,4 +1,5 @@
 'use client'
+'use client'
 import { useState } from 'react'
 
 export default function DemoFormPage() {
@@ -91,18 +92,28 @@ export default function DemoFormPage() {
 
   return (
     <div style={styles.page}>
-      <form onSubmit={handleSubmit} style={styles.formWrap}>
+      {/* Phone fix: the inline grid columns don't stack because inline styles
+          can't contain media queries. This scoped block does the override. */}
+      <style>{`
+        @media (max-width: 600px) {
+          .demoGrid2 { grid-template-columns: 1fr !important; }
+          .demoFormWrap { padding: 24px 16px !important; }
+          .demoTitle { font-size: 22px !important; }
+          .demoFeatures { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+      `}</style>
+      <form onSubmit={handleSubmit} style={styles.formWrap} className="demoFormWrap">
         {/* Header */}
         <div style={styles.header}>
           <div style={{ fontSize: '36px' }}>⚡</div>
-          <h1 style={styles.title}>Demande de Demo</h1>
+          <h1 style={styles.title} className="demoTitle">Demande de Demo</h1>
           <p style={styles.subtitle}>Remplissez ce formulaire et nous preparons votre systeme de caisse personnalise en 24h</p>
         </div>
 
         {/* Section 1: Business Info */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>1. Votre commerce</h2>
-          <div style={styles.grid2}>
+          <div style={styles.grid2} className="demoGrid2">
             <div style={styles.field}>
               <label style={styles.label}>Nom du commerce *</label>
               <input style={styles.input} value={form.businessName} onChange={e => update('businessName', e.target.value)} placeholder="Ex: Cafe Milano" required />
@@ -124,7 +135,7 @@ export default function DemoFormPage() {
               </select>
             </div>
           </div>
-          <div style={styles.grid2}>
+          <div style={styles.grid2} className="demoGrid2">
             <div style={styles.field}>
               <label style={styles.label}>Ville *</label>
               <input style={styles.input} value={form.city} onChange={e => update('city', e.target.value)} placeholder="Ex: Tunis, Sousse, Kelibia..." />
@@ -139,7 +150,7 @@ export default function DemoFormPage() {
         {/* Section 2: Contact */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>2. Contact</h2>
-          <div style={styles.grid2}>
+          <div style={styles.grid2} className="demoGrid2">
             <div style={styles.field}>
               <label style={styles.label}>Nom du gerant</label>
               <input style={styles.input} value={form.ownerName} onChange={e => update('ownerName', e.target.value)} placeholder="Prenom et nom" />
@@ -158,7 +169,7 @@ export default function DemoFormPage() {
         {/* Section 3: Details */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>3. Details du commerce</h2>
-          <div style={styles.grid2}>
+          <div style={styles.grid2} className="demoGrid2">
             <div style={styles.field}>
               <label style={styles.label}>Nombre de tables (si applicable)</label>
               <input style={styles.input} type="number" value={form.tableCount} onChange={e => update('tableCount', e.target.value)} placeholder="12" />
@@ -181,7 +192,7 @@ export default function DemoFormPage() {
         {/* Section 3b: Hardware */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>3b. Materiel disponible</h2>
-          <div style={styles.grid2}>
+          <div style={styles.grid2} className="demoGrid2">
             <div style={styles.field}>
               <label style={styles.label}>Avez-vous un ordinateur / tablette ?</label>
               <select style={styles.input} value={form.hasComputer} onChange={e => update('hasComputer', e.target.value)}>
@@ -203,7 +214,7 @@ export default function DemoFormPage() {
               </select>
             </div>
           </div>
-          <div style={styles.grid2}>
+          <div style={styles.grid2} className="demoGrid2">
             <div style={styles.field}>
               <label style={styles.label}>Tiroir-caisse ?</label>
               <select style={styles.input} value={form.hasCashDrawer} onChange={e => update('hasCashDrawer', e.target.value)}>
@@ -245,7 +256,7 @@ export default function DemoFormPage() {
         {/* Section 5: Features needed */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>5. Fonctionnalites souhaitees</h2>
-          <div style={styles.featuresGrid}>
+          <div style={styles.featuresGrid} className="demoFeatures">
             {featureOptions.map(f => (
               <button key={f.id} type="button" onClick={() => toggleFeature(f.id)}
                 style={{ ...styles.featureBtn, ...(form.features.includes(f.id) ? styles.featureBtnActive : {}) }}>
