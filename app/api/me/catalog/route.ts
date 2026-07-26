@@ -42,6 +42,7 @@ import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import { serverError } from '@/lib/apiError'
+import { isTrackMode, type TrackMode } from '@/lib/stock'
 
 export const runtime = 'edge'
 
@@ -119,6 +120,14 @@ type CatalogItem = {
 // Read all stock rows, tolerating a DB where tracked/low_threshold haven't been
 // migrated yet (same defensive fallback pattern used elsewhere).
 async function loadStock(rid: number): Promise<any[]> {
+  // Widest select first, narrowing on each failure. track_mode is the newest
+  // column, so it is dropped before tracked/low_threshold.
+  try {
+    return await sql`
+      SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price,
+             tracked, low_threshold, track_mode
+      FROM stock WHERE restaurant_id = ${rid}`
+  } catch { /* fall through */ }
   try {
     return await sql`
       SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, tracked, low_threshold
@@ -174,6 +183,9 @@ export async function GET(req: Request) {
       const tracked    = (row.tracked === undefined || row.tracked === null) ? true : !!row.tracked
       const lowThresh  = (row.low_threshold === undefined || row.low_threshold === null) ? 5 : (parseInt(String(row.low_threshold)) || 0)
       const barcode    = String(row.barcode ?? '')
+      // Absent on a DB without migration-product-tracking.sql, in which case the
+      // mode is inferred further down rather than defaulted here.
+      const rowMode = isTrackMode(row.track_mode) ? row.track_mode : undefined
       const existing = catalog.get(id)
       if (existing) {
         existing.cost = cost
@@ -182,6 +194,7 @@ export async function GET(req: Request) {
         existing.tracked = tracked
         existing.low_threshold = lowThresh
         existing.barcode = barcode
+        if (rowMode) (existing as any).track_mode = rowMode
         if (!existing.name)     existing.name = String(row.item_name ?? '').slice(0, 100)
         if (!existing.category) existing.category = String(row.category ?? '').slice(0, 80)
       } else {
@@ -193,11 +206,35 @@ export async function GET(req: Request) {
           category: String(row.category ?? '').slice(0, 80),
           cost, sell_price: sellPrice, quantity,
           tracked, low_threshold: lowThresh, barcode,
-        })
+          ...(rowMode ? { track_mode: rowMode } : {}),
+        } as CatalogItem)
       }
     }
 
+    // 3) Which products have a recipe.
+    //
+    // Needed for two reasons: to infer the mode for a product with no stock row
+    // (a citronnade nobody ever counted), and so the UI can warn when 'recipe' is
+    // selected with no recipe behind it — that combination deducts nothing at
+    // all, and silence there looks exactly like working stock.
+    const withRecipe = new Set<string>()
+    try {
+      for (const r of await sql`
+        SELECT item_id FROM recipes WHERE restaurant_id = ${rid} AND enabled`) {
+        withRecipe.add(String(r.item_id))
+      }
+    } catch { /* recipes not migrated — no product has one */ }
+
     const products = Array.from(catalog.values())
+      .map(p => ({
+        ...p,
+        has_recipe: withRecipe.has(p.item_id),
+        // Explicit column wins; otherwise infer exactly as the server does when
+        // deciding what a sale consumes, so the UI cannot show one thing while
+        // the sale path does another.
+        track_mode: (p as any).track_mode
+          ?? (withRecipe.has(p.item_id) ? 'recipe' : 'stock'),
+      }))
       .sort((a, b) => (a.category || '').localeCompare(b.category || '') || (a.name || '').localeCompare(b.name || ''))
 
     return cors(NextResponse.json({ ok: true, name: rows[0].name, count: products.length, products }))
@@ -238,6 +275,10 @@ export async function POST(req: Request) {
     const sellPrice  = (menuPrice !== undefined)
       ? menuPrice
       : Math.max(0, parseFloat(body.sell_price) || 0)
+    // Set only when the caller asks; left alone otherwise so an unrelated edit
+    // cannot silently reset how a product is inventoried.
+    let trackMode: TrackMode | null = null
+
     // Quantity is NOT accepted from this route — see the header note. A stock
     // figure may only move via a traced movement, so an upsert here must never
     // silently overwrite it. We read the current value and write it back
@@ -253,6 +294,21 @@ export async function POST(req: Request) {
     const barcode    = String(body.barcode ?? '').slice(0, 64)
     const tracked    = (body.tracked === undefined || body.tracked === null) ? true : !!body.tracked
     const lowThresh  = Math.max(0, parseInt(String(body.low_threshold)) || 0)
+
+    // ── Tracking mode ────────────────────────────────────────────────
+    // How this product is inventoried, and it is one OR the other:
+    //   'stock'  counted by the unit  (a Coca)
+    //   'recipe' consumes ingredients (a citronnade: 200 ml of a 1 L bottle)
+    //   'none'   not tracked
+    // Written separately from the upsert above so a DB without the column still
+    // accepts every other edit on this form.
+    if (body.track_mode !== undefined && body.track_mode !== null) {
+      const wanted = String(body.track_mode)
+      if (!isTrackMode(wanted)) {
+        return cors(NextResponse.json({ ok: false, error: 'Mode de suivi invalide' }, { status: 400 }))
+      }
+      trackMode = wanted
+    }
 
     try {
       // Fully-migrated DB (has tracked + low_threshold)
@@ -286,9 +342,26 @@ export async function POST(req: Request) {
           updated_at = NOW()`
     }
 
+    // Applied after the upsert so the row is guaranteed to exist, and reported
+    // back honestly: if the migration has not run, say the mode was not saved
+    // rather than letting the UI show a choice that never took effect.
+    let trackModeSaved = false
+    if (trackMode) {
+      try {
+        await sql`
+          UPDATE stock SET track_mode = ${trackMode}, updated_at = NOW()
+          WHERE restaurant_id = ${rid} AND item_id = ${itemId}`
+        trackModeSaved = true
+      } catch { trackModeSaved = false }
+    }
+
     return cors(NextResponse.json({
       ok: true,
-      item: { item_id: itemId, item_name: name, item_emoji: emoji, cost, sell_price: sellPrice, quantity, category, barcode, tracked, low_threshold: lowThresh },
+      item: { item_id: itemId, item_name: name, item_emoji: emoji, cost, sell_price: sellPrice, quantity, category, barcode, tracked, low_threshold: lowThresh, track_mode: trackMode },
+      trackModeSaved,
+      ...(trackMode && !trackModeSaved
+        ? { warning: 'Mode de suivi non enregistré — exécutez migration-product-tracking.sql' }
+        : {}),
     }))
   } catch (e: any) {
     return cors(NextResponse.json(serverError('me/catalog', e), { status: 500 }))

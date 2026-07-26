@@ -59,6 +59,8 @@ export default function StockPage() {
   const [ecarts, setEcarts] = useState<Ecart[]>([])
   const [totals, setTotals] = useState<any>(null)
   const [thresholds, setThresholds] = useState<Record<string, { low: number; tracked: boolean }>>({})
+  /** Products counted by the unit. Recipe-built ones are managed on /ingredients. */
+  const [unitTracked, setUnitTracked] = useState<Set<string>>(new Set())
 
   const [search, setSearch] = useState('')
   const [onlyLow, setOnlyLow] = useState(false)
@@ -104,10 +106,17 @@ export default function StockPage() {
 
     if (cat.ok) {
       const t: Record<string, { low: number; tracked: boolean }> = {}
+      // Products counted by the unit. Anything built from a recipe belongs on
+      // /ingredients — the server refuses counts and deliveries on it, so
+      // offering those actions here would be a button that returns an error.
+      const unit = new Set<string>()
       for (const p of cat.products || []) {
         t[p.item_id] = { low: parseInt(String(p.low_threshold)) || 0, tracked: p.tracked !== false }
+        const mode = String(p.track_mode || 'stock')
+        if (mode === 'stock') unit.add(String(p.item_id))
       }
       setThresholds(t)
+      setUnitTracked(unit)
     }
     setLoading(false)
   }
@@ -159,18 +168,35 @@ export default function StockPage() {
     return v.theorique <= t.low
   }
 
+  /**
+   * This page is about products counted BY THE UNIT.
+   *
+   * A recipe-built product has no unit count to show: the server refuses counts
+   * and deliveries on it, so listing it here would offer buttons that return an
+   * error. It may still appear in `variance` because the ledger holds its
+   * historical rows from before the mode existed — those stay in the trail, they
+   * just stop being presented as a live stock level.
+   *
+   * The set is only applied once the catalog has loaded; before that, filtering
+   * would briefly empty the table.
+   */
+  const isUnit = (id: string) => unitTracked.size === 0 || unitTracked.has(id)
+
   const filtered = useMemo(() => {
-    let out = variance
+    let out = variance.filter(v => isUnit(v.item_id))
     if (onlyLow) out = out.filter(isLow)
     if (search) {
       const q = search.toLowerCase()
       out = out.filter(v => (v.item_name || '').toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q))
     }
     return out
-  }, [variance, search, onlyLow, thresholds])
+  }, [variance, search, onlyLow, thresholds, unitTracked])
 
-  const lowList = variance.filter(isLow)
-  const stockValue = variance.reduce((a, v) => a + v.theorique * num(v.cost), 0)
+  const unitVariance = useMemo(() => variance.filter(v => isUnit(v.item_id)), [variance, unitTracked])
+  const lowList = unitVariance.filter(isLow)
+  const stockValue = unitVariance.reduce((a, v) => a + v.theorique * num(v.cost), 0)
+  /** Products excluded because they are built from ingredients. */
+  const recipeCount = variance.length - unitVariance.length
 
   if (!checked || loading) {
     return <Shell active="/stock" title="Stock" restName={restName}><Loading /></Shell>
@@ -295,6 +321,21 @@ export default function StockPage() {
           <button className="chip spacer" data-on={onlyLow} onClick={() => setOnlyLow(!onlyLow)}>Stock bas seulement</button>
         )}
       </div>
+
+      {/* Products are counted by the unit OR built from ingredients, never both.
+          Say where the missing ones went, otherwise this page just looks like it
+          lost rows. */}
+      {tab === 'levels' && recipeCount > 0 && (
+        <div className="notice nInfo mb20">
+          <span className="noticeIcon">i</span>
+          <div>
+            {recipeCount} produit{recipeCount > 1 ? 's' : ''} fabriqué{recipeCount > 1 ? 's' : ''} à
+            partir d&apos;ingrédients {recipeCount > 1 ? 'ne sont pas comptés' : 'n’est pas compté'} à
+            l&apos;unité ici.{' '}
+            <a href="/ingredients">Voir combien on peut encore en faire →</a>
+          </div>
+        </div>
+      )}
 
       {/* ── Levels ── */}
       {tab === 'levels' && (

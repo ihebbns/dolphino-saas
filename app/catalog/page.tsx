@@ -19,13 +19,34 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Shell, LoginGate, Loading, Empty, useApiKey, apiGet, apiPost, f3, num } from '../ui/Shell'
 
+type TrackMode = 'stock' | 'recipe' | 'none'
+
 type Product = {
   item_id: string; name: string; emoji: string
   price: number; category: string
   cost: number; sell_price: number
   quantity: number; tracked: boolean; low_threshold: number
   barcode: string
+  /** How this product is inventoried. Exactly one way — see MODES below. */
+  track_mode: TrackMode
+  /** Whether a recipe exists, so the UI can warn when 'recipe' is chosen
+   *  without one (nothing would be deducted at all). */
+  has_recipe?: boolean
 }
+
+/**
+ * The choice, in the owner's words rather than the schema's.
+ *
+ * It is one OR the other on purpose. A product used to be able to carry both a
+ * counted quantity AND a recipe, and a single sale deducted both — so /stock said
+ * "20 en stock" while /ingredients said "encore possible 5" for the same item,
+ * and nothing on screen said which to believe.
+ */
+const MODES: { id: TrackMode; label: string; hint: string }[] = [
+  { id: 'stock',  label: 'À l’unité',    hint: 'Compté par pièce : un Coca, une bouteille d’eau. La vente retire 1 du stock.' },
+  { id: 'recipe', label: 'Par recette',  hint: 'Fabriqué : une citronnade prend 200 ml d’une bouteille d’1 L. La vente retire les ingrédients.' },
+  { id: 'none',   label: 'Non suivi',    hint: 'Rien n’est décompté. Pour un café, un service.' },
+]
 
 // A product present in the caisse menu has a caisse-owned price.
 const isMenuOwned = (p: Product) => num(p.price) > 0
@@ -59,6 +80,12 @@ export default function CatalogPage() {
         quantity: parseInt(String(p.quantity)) || 0,
         low_threshold: parseInt(String(p.low_threshold)) || 0,
         tracked: p.tracked !== false,
+        // A product with no stock row and no explicit mode is inferred the same
+        // way the server infers it: a recipe is a deliberate statement of intent.
+        track_mode: (['stock', 'recipe', 'none'].includes(String(p.track_mode))
+          ? p.track_mode
+          : (p.has_recipe ? 'recipe' : 'stock')) as TrackMode,
+        has_recipe: !!p.has_recipe,
       })))
       setDirty({})
     } else setMsg(d.error || 'Erreur de chargement')
@@ -84,13 +111,20 @@ export default function CatalogPage() {
       ...(isMenuOwned(p) ? {} : { sell_price: num(p.sell_price) }),
       category: p.category,
       barcode: p.barcode,
-      tracked: !!p.tracked,
+      // Derived from the mode, never set independently. `tracked` and the mode
+      // were two switches that could contradict each other — recipes on while
+      // nothing counts them. One choice now drives both.
+      tracked: p.track_mode === 'stock',
       low_threshold: parseInt(String(p.low_threshold)) || 0,
+      track_mode: p.track_mode,
     })
     setSavingId(null)
     if (d.ok) {
       setDirty(dd => { const n = { ...dd }; delete n[p.item_id]; return n })
-      setMsg(`✓ "${p.name}" enregistré. Les nouveaux coûts s'appliquent aux ventes futures.`)
+      // Report the migration gap rather than letting the mode look saved when the
+      // column does not exist yet.
+      if (d.warning) setMsg(`⚠ ${d.warning}`)
+      else setMsg(`✓ "${p.name}" enregistré. Les nouveaux coûts s'appliquent aux ventes futures.`)
     } else setMsg(d.error || 'Erreur')
   }
 
@@ -235,8 +269,8 @@ export default function CatalogPage() {
                 <th className="tr">Prix de vente</th>
                 <th className="tr" style={{ width: 130 }}>Coût d&apos;achat</th>
                 <th className="tr">Marge</th>
-                <th className="tr">Stock</th>
-                <th className="tc">Suivi</th>
+                <th style={{ width: 210 }}>Suivi du stock</th>
+                <th className="tr">Reste</th>
                 <th className="tr" style={{ width: 90 }}>Seuil</th>
                 <th />
               </tr>
@@ -293,23 +327,61 @@ export default function CatalogPage() {
                         </span>
                       ) : <span className="cFaint">—</span>}
                     </td>
-                    <td data-label="Stock" className="tr num nowrap">
-                      <a href="/stock" title="Les quantités se gèrent sur Stock, avec traçabilité"
-                         style={{ color: p.tracked && p.quantity <= p.low_threshold ? 'var(--danger)' : 'var(--text-2)', textDecoration: 'none' }}>
-                        {p.quantity}
-                        <span className="owned">stock</span>
-                      </a>
+                    {/* The single choice. Three chips rather than a dropdown so
+                        the alternatives — and the fact that they are exclusive —
+                        are visible without opening anything. */}
+                    <td data-label="Suivi du stock">
+                      <div className="row wrap" style={{ gap: 4 }}>
+                        {MODES.map(m => (
+                          <button
+                            key={m.id}
+                            className="chip chipSm"
+                            data-on={p.track_mode === m.id}
+                            title={m.hint}
+                            onClick={() => edit(p.item_id, 'track_mode', m.id)}
+                          >{m.label}</button>
+                        ))}
+                      </div>
+                      {/* Choosing "par recette" without a recipe deducts nothing
+                          at all. Silence here would look like working stock. */}
+                      {p.track_mode === 'recipe' && !p.has_recipe && (
+                        <div className="t11 cWarn" style={{ marginTop: 4 }}>
+                          Aucune recette : rien ne sera décompté.{' '}
+                          <a href="/ingredients" style={{ color: 'inherit', textDecoration: 'underline' }}>
+                            Créer la recette
+                          </a>
+                        </div>
+                      )}
                     </td>
-                    <td data-label="Suivi" className="tc">
-                      <button className="switch" data-on={p.tracked} onClick={() => edit(p.item_id, 'tracked', !p.tracked)} />
+                    {/* Only one of these figures can be true for a given product,
+                        so only one is shown. Printing a unit count next to a
+                        recipe product is what made the two pages disagree. */}
+                    <td data-label="Reste" className="tr num nowrap">
+                      {p.track_mode === 'stock' ? (
+                        <a href="/stock" title="Les quantités se gèrent sur Stock, avec traçabilité"
+                           style={{ color: p.quantity <= p.low_threshold ? 'var(--danger)' : 'var(--text-2)', textDecoration: 'none' }}>
+                          {p.quantity}
+                          <span className="owned">stock</span>
+                        </a>
+                      ) : p.track_mode === 'recipe' ? (
+                        <a href="/ingredients" title="Calculé depuis les ingrédients disponibles"
+                           style={{ color: 'var(--text-2)', textDecoration: 'none' }}>
+                          voir ingrédients
+                        </a>
+                      ) : (
+                        <span className="cFaint">—</span>
+                      )}
                     </td>
                     <td data-label="Seuil" className="tr">
-                      <input
-                        className="input inputNum inputSm" style={{ width: 74 }}
-                        type="number" step="1" min="0" value={p.low_threshold}
-                        disabled={!p.tracked}
-                        onChange={e => edit(p.item_id, 'low_threshold', e.target.value)}
-                      />
+                      {p.track_mode === 'stock' ? (
+                        <input
+                          className="input inputNum inputSm" style={{ width: 74 }}
+                          type="number" step="1" min="0" value={p.low_threshold}
+                          onChange={e => edit(p.item_id, 'low_threshold', e.target.value)}
+                        />
+                      ) : (
+                        <span className="cFaint t12">—</span>
+                      )}
                     </td>
                     <td className="tr">
                       <button

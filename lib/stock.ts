@@ -34,6 +34,85 @@ export const MOVEMENT_KINDS: MovementKind[] = ['sale', 'receive', 'waste', 'adju
 // timestamp, and only a 'count' may reset the checkpoint.
 export const POS_KINDS: MovementKind[] = ['sale', 'receive', 'waste', 'adjust', 'return', 'count']
 
+// ── Tracking mode ─────────────────────────────────────────────────────
+//
+// Every product is tracked exactly ONE way. Before this, a product could carry
+// both a counted quantity and a recipe, and a single sale deducted both — so
+// /stock and /ingredients gave two different answers for the same item and there
+// was no way to tell which one to trust.
+//
+//   'stock'   counted by the unit (a Coca is a bottle in, a bottle out)
+//   'recipe'  built from ingredients (a citronnade takes 200 ml of a 1 L bottle)
+//   'none'    not tracked
+//
+// The mode decides what a SALE CONSUMES. It does not affect costing: a recipe
+// still prices a product whatever the mode.
+export type TrackMode = 'stock' | 'recipe' | 'none'
+
+export const TRACK_MODES: TrackMode[] = ['stock', 'recipe', 'none']
+
+export function isTrackMode(v: any): v is TrackMode {
+  return TRACK_MODES.includes(v as TrackMode)
+}
+
+/**
+ * Resolve the mode for each of `itemIds`.
+ *
+ * Two fallbacks matter here:
+ *   • A recipe-built product often has NO `stock` row at all — nobody ever
+ *     counted a citronnade — so an absent row must not silently mean "count it
+ *     by the unit". If a recipe exists, the answer is 'recipe'.
+ *   • Before migration-product-tracking.sql the column does not exist. Rather
+ *     than fail the sale, fall back to the same recipe-or-stock inference, which
+ *     reproduces the intended behaviour without the column.
+ */
+export async function resolveTrackModes(
+  rid: number,
+  itemIds: string[],
+): Promise<Map<string, TrackMode>> {
+  const out = new Map<string, TrackMode>()
+  const ids = [...new Set(itemIds.filter(Boolean))]
+  if (!ids.length) return out
+
+  // Which of these products has a recipe? Used both as the fallback and to
+  // decide the mode for products with no stock row.
+  const withRecipe = new Set<string>()
+  try {
+    const rows = await sql`
+      SELECT item_id FROM recipes
+      WHERE restaurant_id = ${rid} AND item_id = ANY(${ids}) AND enabled`
+    for (const r of rows) withRecipe.add(String(r.item_id))
+  } catch { /* recipes not migrated — leave the set empty */ }
+
+  let haveColumn = true
+  try {
+    const rows = await sql`
+      SELECT item_id, track_mode FROM stock
+      WHERE restaurant_id = ${rid} AND item_id = ANY(${ids})`
+    for (const r of rows) {
+      const m = String(r.track_mode || '')
+      if (isTrackMode(m)) out.set(String(r.item_id), m)
+    }
+  } catch {
+    haveColumn = false
+  }
+
+  for (const id of ids) {
+    if (out.has(id)) continue
+    // No stock row, or no column yet: a recipe is the deliberate statement of
+    // intent, so it wins. Otherwise count units.
+    out.set(id, withRecipe.has(id) ? 'recipe' : 'stock')
+  }
+
+  // Column missing entirely: ignore whatever we managed to read and infer for
+  // everything, so behaviour is consistent rather than half-and-half.
+  if (!haveColumn) {
+    for (const id of ids) out.set(id, withRecipe.has(id) ? 'recipe' : 'stock')
+  }
+
+  return out
+}
+
 export type MovementInput = {
   itemId: string
   kind: MovementKind

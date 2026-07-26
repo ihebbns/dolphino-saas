@@ -838,3 +838,16 @@ code.k {
 @media (max-width: 999px) {
   .clamp1 { max-width: none; white-space: normal; overflow: visible; text-overflow: clip; }
 }
+
+/* A denser chip, for a group of them sitting inside a table cell. */
+.chipSm {
+  padding: 4px 9px;
+  font-size: 11.5px;
+  min-height: 0;
+  border-radius: var(--r-sm);
+}
+@media (max-width: 999px) {
+  /* The 44px touch minimum applies to controls you hunt for, not to a group of
+     three adjacent chips that form one choice. */
+  .chipSm { min-height: 32px; }
+}

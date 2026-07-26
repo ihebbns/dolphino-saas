@@ -30,7 +30,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
-import { recordMovement, ledgerReady, POS_KINDS } from '@/lib/stock'
+import { recordMovement, ledgerReady, POS_KINDS, resolveTrackModes, isTrackMode } from '@/lib/stock'
 import { consumeForSale } from '@/lib/ingredients'
 
 export const runtime = 'edge'
@@ -55,12 +55,24 @@ export async function GET(req: Request) {
   if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Invalid key' }, { status: 403 }))
   const rid = rows[0].id
 
-  const stock = await sql`
-    SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at
-    FROM stock
-    WHERE restaurant_id = ${rid}
-    ORDER BY category ASC, item_name ASC
-  `
+  // track_mode rides along so the till knows which products it may count at all.
+  // Tolerant of the column being absent so this deploy does not have to wait for
+  // migration-product-tracking.sql.
+  let stock: any[]
+  try {
+    stock = await sql`
+      SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price,
+             track_mode, updated_at
+      FROM stock
+      WHERE restaurant_id = ${rid}
+      ORDER BY category ASC, item_name ASC`
+  } catch {
+    stock = await sql`
+      SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at
+      FROM stock
+      WHERE restaurant_id = ${rid}
+      ORDER BY category ASC, item_name ASC`
+  }
   // The POS already polls this route for costs, so the lock rides along on a
   // call it makes anyway — no extra request, and it caches the answer so the
   // till still knows the rule while offline.
@@ -141,9 +153,18 @@ async function handleMovements(rid: number, body: any, locked: boolean) {
     ))
   }
 
-  const SIGN: Record<string, number> = { receive: +1, return: +1, waste: -1, adjust: +1 }
+  // 'adjust' is signed: a correction has to be able to go DOWN. The others take
+  // their sign from their meaning, so a client cannot post a loss as a delivery.
+  const SIGN: Record<string, number> = { receive: +1, return: +1, waste: -1 }
+
+  // A delivery of a recipe-built product is a category error: you receive syrup,
+  // not citronnade. Booking it would create a unit count the sale path never
+  // touches, which then drifts forever.
+  const trackModes = await resolveTrackModes(rid, list.map(m => String(m?.item_id ?? '')))
+
   let applied = 0
   const rejected: string[] = []
+  const wrongMode: string[] = []
 
   for (const mv of list.slice(0, 500)) {
     const id = String(mv.item_id ?? '').slice(0, 64)
@@ -152,6 +173,11 @@ async function handleMovements(rid: number, body: any, locked: boolean) {
 
     if (!id || !POS_KINDS.includes(kind as any) || kind === 'sale' || kind === 'count' || !qty) {
       rejected.push(id || '?')
+      continue
+    }
+
+    if ((trackModes.get(id) ?? 'stock') !== 'stock') {
+      wrongMode.push(id)
       continue
     }
 
@@ -164,10 +190,15 @@ async function handleMovements(rid: number, body: any, locked: boolean) {
               ${String(mv.item_emoji ?? '📦').slice(0, 10)}, 0, NOW())
       ON CONFLICT (restaurant_id, item_id) DO NOTHING`
 
+    // A correction keeps the sign the operator typed; everything else is derived.
+    const signed = kind === 'adjust'
+      ? (parseFloat(String(mv.qty)) || 0)
+      : SIGN[kind] * qty
+
     const q = await recordMovement(rid, {
       itemId: id,
       kind: kind as any,
-      delta: SIGN[kind] * qty,
+      delta: signed,
       reason: String(mv.reason ?? '').slice(0, 200),
       actor,
       source: 'pos',
@@ -182,7 +213,11 @@ async function handleMovements(rid: number, body: any, locked: boolean) {
     if (q !== null) applied++
   }
 
-  return cors(NextResponse.json({ ok: true, applied, rejected, ledger: true }))
+  return cors(NextResponse.json({
+    ok: true, applied, rejected, ledger: true,
+    // Refused because the product is tracked by its recipe, not by the unit.
+    wrongMode,
+  }))
 }
 
 // ── POST — full catalog sync (retail POS sends entire product list with current quantities) ──
@@ -254,6 +289,12 @@ export async function POST(req: Request) {
     ))
   }
 
+  // Counting a recipe-built product is meaningless — nobody counts citronnades,
+  // they count the syrup — and recording it would plant a checkpoint that makes
+  // every later écart on that product nonsense. Resolved once for the batch.
+  const trackModes = await resolveTrackModes(rid, batch.map(b => String(b.item_id ?? '')))
+  let skippedCounts = 0
+
   for (const it of batch) {
     const id         = String(it.item_id).slice(0, 64)
     const name       = String(it.item_name).slice(0, 100)
@@ -274,12 +315,16 @@ export async function POST(req: Request) {
     // hidden. Sales arrive as signed deltas on PATCH; a count arrives here with
     // a reason and an actor. For a brand-new row 0 is the right starting point —
     // the first count establishes the real figure.
+    // A count only applies to products counted by the unit.
+    const counts = mode === 'count' && (trackModes.get(id) ?? 'stock') === 'stock'
+    if (mode === 'count' && !counts) skippedCounts++
+
     await sql`
       INSERT INTO stock (restaurant_id, item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at)
-      VALUES (${rid}, ${id}, ${name}, ${emoji}, ${mode === 'count' ? qty : 0}, ${barcode}, ${cost}, ${category}, ${sellPrice}, NOW())
+      VALUES (${rid}, ${id}, ${name}, ${emoji}, ${counts ? qty : 0}, ${barcode}, ${cost}, ${category}, ${sellPrice}, NOW())
       ON CONFLICT (restaurant_id, item_id)
       DO UPDATE SET
-        quantity   = CASE WHEN ${mode === 'count'} THEN ${qty} ELSE stock.quantity END,
+        quantity   = CASE WHEN ${counts} THEN ${qty} ELSE stock.quantity END,
         item_name  = ${name},
         item_emoji = ${emoji},
         barcode    = ${barcode},
@@ -289,7 +334,7 @@ export async function POST(req: Request) {
     // Physical count → record a checkpoint so the écart is captured and the
     // running total restarts from the counted value. Runs AFTER the upsert so
     // the stock row is guaranteed to exist for brand-new products.
-    if (useLedger) {
+    if (useLedger && counts) {
       await recordMovement(rid, {
         itemId: id,
         kind: 'count',
@@ -305,7 +350,11 @@ export async function POST(req: Request) {
     }
   }
 
-  return cors(NextResponse.json({ ok: true, updated: batch.length, mode, ledger: useLedger }))
+  return cors(NextResponse.json({
+    ok: true, updated: batch.length, mode, ledger: useLedger,
+    // Counts ignored because the product is recipe-built or untracked.
+    skippedCounts,
+  }))
 }
 
 // ── PATCH — decrease stock after a sale (called by EXE sync) ──
@@ -330,13 +379,28 @@ export async function PATCH(req: Request) {
 
   const useLedger = await ledgerReady()
 
+  // ── One product, one inventory ──────────────────────────────────────
+  // A product is tracked by the UNIT or by its INGREDIENTS, never both. Until
+  // this split, selling a citronnade deducted the citronnade AND the lemon
+  // syrup, so /stock and /ingredients reported two different truths about the
+  // same sale. The mode decides which ledger the sale lands in.
+  const modes = await resolveTrackModes(rid, sold.map(s => String(s.item_id ?? '')))
+
   let updated = 0
   let duplicates = 0
+  let skippedRecipeMode = 0
+  let skippedUntracked = 0
 
   for (const it of sold) {
     const id  = String(it.item_id).slice(0, 64)
     if (!id) continue
     const qty = Math.max(1, parseInt(String(it.qty)) || 1)
+
+    const mode = modes.get(id) ?? 'stock'
+    // Recipe-built and untracked products have no unit count to reduce. Counting
+    // them here is what produced the double deduction.
+    if (mode === 'recipe') { skippedRecipeMode++; continue }
+    if (mode === 'none')   { skippedUntracked++;  continue }
 
     if (useLedger) {
       // Append a negative 'sale' movement. `uid` makes an offline replay safe;
@@ -380,19 +444,24 @@ export async function PATCH(req: Request) {
   //
   // Deliberately after the product movements and wrapped: an ingredient problem
   // must never cost us the sale itself.
+  //
+  // Restricted to recipe-mode products. A product counted by the unit may still
+  // HAVE a recipe — that recipe prices it — but exploding it into ingredients
+  // would deduct the same sale twice.
   let ingredients = 0
   try {
-    ingredients = await consumeForSale(
-      rid,
-      sold.map(it => ({
+    const recipeLines = sold
+      .filter(it => (modes.get(String(it.item_id ?? '').slice(0, 64)) ?? 'stock') === 'recipe')
+      .map(it => ({
         item_id: String(it.item_id ?? '').slice(0, 64),
         qty: Math.max(1, parseInt(String(it.qty)) || 1),
         uid: it.uid,
         ts: it.ts ?? null,
         sale_num: saleNum,
-      })),
-      { actor, source: 'pos', saleNum },
-    )
+      }))
+    if (recipeLines.length) {
+      ingredients = await consumeForSale(rid, recipeLines, { actor, source: 'pos', saleNum })
+    }
   } catch { /* never block a sale on its ingredient explosion */ }
 
   return cors(NextResponse.json({
@@ -402,7 +471,11 @@ export async function PATCH(req: Request) {
     duplicates,
     ledger: useLedger,
     // How many ingredient movements the recipes produced. 0 simply means no
-    // sold product had an enabled recipe with tracked ingredients.
+    // sold product was in recipe mode with tracked ingredients.
     ingredients,
+    // Products deliberately not unit-deducted, so a support call can tell
+    // "nothing happened" apart from "it was configured that way".
+    recipeMode: skippedRecipeMode,
+    untracked: skippedUntracked,
   }))
 }
