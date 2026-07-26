@@ -461,6 +461,98 @@ function OrderRow({ sale }: { sale: any }) {
   )
 }
 
+// ════════════════ SESSIONS TABLE ════════════════
+function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[] }) {
+  const [expanded, setExpanded] = useState<number|null>(null)
+
+  if (!sessions || sessions.length === 0) return (
+    <div className={s.empty}><div className={s.emptyIcon}>🔒</div><div className={s.emptyText}>Aucune clôture enregistrée</div></div>
+  )
+
+  function getSessionOrders(session: any) {
+    if (!recent || !recent.length) return []
+
+    // Professional approach: filter by session_id (direct link, exact match)
+    const sid = session.session_id || ''
+    if (sid) {
+      // A session_id is authoritative — return exactly its orders (may be empty)
+      return recent.filter((sale: any) => (sale.session_id || '') === sid)
+    }
+
+    // Fallback for old data without session_id: filter by cashier + limit to orders_count
+    const cashier = session.cashier || ''
+    const count = session.orders_count || 0
+    let filtered = cashier ? recent.filter((sale: any) => sale.cashier === cashier) : recent
+
+    if (count > 0 && count < filtered.length) {
+      return filtered.slice(0, count)
+    }
+
+    return filtered
+  }
+
+  return (
+    <div className={s.sessionGrid}>
+      {sessions.map((r:any, i:number) => {
+        const ecart    = r.ecart != null ? parseFloat(r.ecart) : null
+        const ecartOk  = ecart === null || ecart >= 0
+        const cardCls  = ecart === null ? s.sessionCardNeutral : ecartOk ? s.sessionCardOk : s.sessionCardWarn
+        const isExpanded = expanded === i
+        const orders = isExpanded ? getSessionOrders(r) : []
+        return (
+          <div key={i} className={`${s.sessionCard} ${cardCls}`} onClick={() => setExpanded(isExpanded ? null : i)} style={{ cursor:'pointer' }}>
+            <div className={s.sessionCashier}>👤 {r.cashier || 'Caissier'}</div>
+            <div className={s.sessionDate}>{r.day} · Ouverture: {r.opened_at ? new Date(r.opened_at).toLocaleTimeString('fr-TN') : '—'} · Clôture: {r.closed_at ? new Date(r.closed_at).toLocaleTimeString('fr-TN') : '—'}</div>
+            <div className={s.sessionRow}><span>💰 Fond initial</span><span>{f(r.fond_initial)} DT</span></div>
+            <div className={s.sessionRow}><span>🧾 Ventes totales</span><span className={s.bold}>{f(r.total_sales)} DT</span></div>
+            <div className={s.sessionRow}><span>💵 Espèces</span><span>{f(r.cash_sales)} DT</span></div>
+            <div className={s.sessionRow}><span>💳 Carte/Mobile</span><span>{f(+r.card_sales + +r.mobile_sales)} DT</span></div>
+            <div className={s.sessionRow}><span>📊 Commandes</span><span>{r.orders_count}</span></div>
+            {/* Cash movements (ajouts/retraits) */}
+            {r.cash_movements && Array.isArray(r.cash_movements) && r.cash_movements.length > 0 && (
+              <div style={{ margin:'8px 0', padding:'8px', background:'var(--card)', borderRadius:'8px', border:'1px solid var(--div)' }}>
+                <div style={{ fontSize:'10px', color:'var(--muted)', fontWeight:'600', marginBottom:'6px', textTransform:'uppercase', letterSpacing:'1px' }}>Mouvements de caisse</div>
+                {r.cash_movements.map((m: any, mi: number) => (
+                  <div key={mi} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', borderBottom: mi < r.cash_movements.length-1 ? '1px solid var(--div)' : 'none', fontSize:'12px' }}>
+                    <span style={{ color: m.type==='out' ? 'var(--red)' : 'var(--green)', fontWeight: m.type==='out' ? 800 : 600 }}>
+                      {m.type==='in' ? '➕' : '➖'} {m.type==='in' ? 'Ajout' : 'Retrait'} {m.reason ? `(${m.reason})` : ''}
+                    </span>
+                    <span style={{ fontWeight:700, color: m.type==='out' ? 'var(--red)' : 'var(--green)' }}>
+                      {m.type==='in' ? '+' : '−'}{f(m.amount)} DT
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {r.theorique != null && <div className={s.sessionRow}><span>💼 Théorique</span><span style={{color:'var(--gold-l)',fontWeight:700}}>{f(r.theorique)} DT</span></div>}
+            {r.montant_compte != null && <div className={s.sessionRow}><span>🧮 Compté</span><span>{f(r.montant_compte)} DT</span></div>}
+            {ecart !== null && (
+              <div className={`${s.ecartBig} ${ecartOk ? s.ecartBigOk : s.ecartBigWarn}`}>
+                Écart {ecartOk ? '+' : ''}{f(ecart)} DT {ecart===0?'✅':ecartOk?'⬆':'⚠'}
+              </div>
+            )}
+            <div style={{ fontSize:'11px', color:'var(--muted)', textAlign:'center', marginTop:'8px' }}>{isExpanded ? '▲ Fermer détails' : '▼ Voir les commandes'}</div>
+            {isExpanded && (
+              <div style={{ marginTop:'12px', borderTop:'1px solid var(--div)', paddingTop:'12px' }} onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize:'12px', fontWeight:'700', marginBottom:'8px', color:'var(--gold-l)' }}>📋 Commandes de cette session ({orders.length})</div>
+                {orders.length === 0 ? (
+                  <div style={{ fontSize:'12px', color:'var(--muted)', textAlign:'center', padding:'10px' }}>Aucune commande trouvée pour cette session</div>
+                ) : (
+                  <div style={{ maxHeight:'300px', overflowY:'auto' }}>
+                    {orders.map((sale: any, j: number) => (
+                      <OrderRow key={j} sale={sale} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ════════════════ STOCK SECTION (Retail) ════════════════
 function StockSection({ stock }: { stock: any[] }) {
   const [search, setSearch] = useState('')
@@ -852,9 +944,7 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
     { id:'profit',    label:'💵 Rentabilité'      },
     { id:'products',  label:'🏆 Produits'         },
     { id:'orders',    label:'🧾 Commandes'         },
-    // 'sessions' moved out to /caisse, its own destination in the bottom bar.
-    // It was the fifth tab in a strip that scrolled sideways on a phone, so the
-    // daily cash check was the hardest thing on the site to reach.
+    { id:'sessions',  label:'🔒 Caisses'           },
     ...(data?.stock && data.stock.length > 0 && data.stock[0]?.category ? [{ id:'stock', label:'📦 Stock' }] : []),
   ]
 
@@ -998,6 +1088,43 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
                 </div>
               </div>
               <OrdersTable orders={data.recent} search={orderSearch} onSearch={setOrderSearch}/>
+            </div>
+          </>}
+
+          {/* ── SESSIONS ── */}
+          {activeTab === 'sessions' && <>
+            {/* Cashier performance */}
+            {data.byCashier && data.byCashier.length > 0 && (
+              <div className={s.section}>
+                <div className={s.sectionHdr}><div className={s.sectionTitle}><span>👤</span> Performance par serveur/caissier</div></div>
+                <div className={s.chartBox}>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0' }}>
+                    {data.byCashier.map((c: any, i: number) => {
+                      const maxRev = data.byCashier[0]?.revenue || 1
+                      const pct = Math.round((c.revenue / maxRev) * 100)
+                      return (
+                        <div key={i} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'12px 0', borderBottom:'1px solid var(--div)' }}>
+                          <div style={{ width:'28px', height:'28px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:'700', background: i===0?'linear-gradient(135deg,#FFD700,#FFA500)':i===1?'linear-gradient(135deg,#C0C0C0,#A0A0A0)':i===2?'linear-gradient(135deg,#CD7F32,#A0522D)':'var(--card)', color: i<3?'#000':'var(--muted)', border: i>=3?'1px solid var(--div)':'none' }}>
+                            {i < 3 ? ['🥇','🥈','🥉'][i] : i+1}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontWeight:'600', fontSize:'13px' }}>{c.cashier}</div>
+                            <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'2px' }}>{c.orders} commandes · Ticket moy: {Number(c.avg_ticket||0).toFixed(3)} DT</div>
+                          </div>
+                          <div style={{ width:'120px', height:'6px', background:'var(--div)', borderRadius:'3px', overflow:'hidden', flexShrink:0 }}>
+                            <div style={{ height:'100%', width:`${pct}%`, background:'linear-gradient(90deg,var(--gold),var(--gold-l))', borderRadius:'3px', transition:'width .5s' }}/>
+                          </div>
+                          <div style={{ fontWeight:'700', fontSize:'14px', color:'var(--gold-l)', minWidth:'80px', textAlign:'right' }}>{Number(c.revenue||0).toFixed(3)} DT</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className={s.section}>
+              <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🔒</span> Historique des clôtures de caisse</div></div>
+              <SessionsSection sessions={data.sessions} recent={data.recent}/>
             </div>
           </>}
 

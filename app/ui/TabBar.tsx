@@ -37,11 +37,15 @@ export const DESTINATIONS: Destination[] = [
       { href: '/ingredients', name: 'Recettes' },
     ],
   },
-  // Caisse = the shift closures (fond, compté, écart). That view used to be a top
-  // tab on the dashboard, behind a sideways scroll, while this slot pointed at
-  // /audit — the raw drawer-opening trail. The closure is what an owner checks
-  // daily, so it takes the destination outright. /audit is not in the navigation.
-  { href: '/caisse', name: 'Caisse', short: 'Caisse', icon: 'drawer' },
+  // No Caisse destination, and no Tiroir either. The clôtures live as a tab INSIDE
+  // the dashboard, next to the day's sales, because that is where the owner
+  // already is at closing time and switching tabs there costs no reload. A
+  // separate destination duplicated the same view one tap further away, and
+  // duplicated views drift apart.
+  //
+  // Four destinations, not five. An empty slot is better than a filled one nobody
+  // taps: /audit is the raw drawer-opening trail, which is an investigation tool,
+  // not a daily errand.
   // "Crédit" not "Créances": the word on the till, and the word the owner uses.
   { href: '/credits', name: 'Crédit', short: 'Crédit', icon: 'receipt' },
   // Établissement is deliberately absent: its settings move under Profil, so the
