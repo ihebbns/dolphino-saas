@@ -263,10 +263,52 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
            ${clientTs}, '')`
     }
-  } catch (e) {
-    // Table missing (migration not run) or any write failure: do not break the
-    // caller. Legacy behaviour continues to work without the audit trail.
-    return null
+  } catch (e: any) {
+    // If the failure is specifically about the supplier columns not existing yet
+    // (migration-suppliers.sql not run), retry WITHOUT those columns so stock
+    // movements still work — the supplier feature is additive, not blocking.
+    const code = String(e?.code || '')
+    const msg = String(e?.message || '')
+    const isSupplierCol = (code === '42703' || /does not exist|undefined_column/i.test(msg))
+      && /supplier_id|payment_method/i.test(msg)
+
+    if (isSupplierCol) {
+      try {
+        if (clientUid) {
+          const ins = await sql`
+            INSERT INTO stock_movements
+              (restaurant_id, item_id, kind, delta, count_value, expected_value,
+               unit_cost, reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
+            VALUES
+              (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
+               ${unitCost},
+               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
+               ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
+               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
+               ${clientTs}, ${clientUid})
+            ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
+            RETURNING id`
+          if (!ins.length) return null
+        } else {
+          await sql`
+            INSERT INTO stock_movements
+              (restaurant_id, item_id, kind, delta, count_value, expected_value,
+               unit_cost, reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
+            VALUES
+              (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
+               ${unitCost},
+               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
+               ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
+               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
+               ${clientTs}, '')`
+        }
+      } catch {
+        return null
+      }
+    } else {
+      // Table missing or other write failure — do not break the caller.
+      return null
+    }
   }
 
   try { return await refreshStockCache(rid, itemId) } catch { return null }

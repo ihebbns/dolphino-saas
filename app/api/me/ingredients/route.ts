@@ -296,7 +296,11 @@ export async function GET(req: Request) {
       return cors(NextResponse.json(notReadyPayload(sqlFile, { ingredients: [], recipes: [], products: [], totals: null }, missing.length ? missing : undefined)))
     }
     return cors(NextResponse.json(serverError('me/ingredients', e), { status: 500 }))
-  } {
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+export async function POST(req: Request) {
   let body: any
   try { body = await req.json() } catch { return cors(NextResponse.json({ ok: false, error: 'Bad JSON' }, { status: 400 })) }
 

@@ -161,10 +161,48 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
            ${safeTs(m.clientTs)}, '')`
     }
-  } catch {
+  } catch (e: any) {
     // Not migrated, or a write failure. Never break the caller: a sale must be
     // recorded even if its ingredient explosion cannot be.
-    return null
+    // Special case: if supplier_id/payment_method columns don't exist yet
+    // (migration-suppliers.sql not run), retry without them.
+    const code = String(e?.code || '')
+    const msg = String(e?.message || '')
+    const isSupplierCol = (code === '42703' || /does not exist|undefined_column/i.test(msg))
+      && /supplier_id|payment_method/i.test(msg)
+
+    if (isSupplierCol) {
+      try {
+        if (clientUid) {
+          const ins = await sql`
+            INSERT INTO ingredient_movements
+              (restaurant_id, ing_key, kind, delta, count_value, expected_value, unit_cost,
+               reason, actor, source, item_id, sale_uid, sale_num, client_ts, client_uid)
+            VALUES
+              (${rid}, ${ingKey}, ${m.kind}, ${delta}, ${countValue}, ${expected}, ${unitCost},
+               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source ?? 'web'},
+               ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
+               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
+               ${safeTs(m.clientTs)}, ${clientUid})
+            ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
+            RETURNING id`
+          if (!ins.length) return null
+        } else {
+          await sql`
+            INSERT INTO ingredient_movements
+              (restaurant_id, ing_key, kind, delta, count_value, expected_value, unit_cost,
+               reason, actor, source, item_id, sale_uid, sale_num, client_ts, client_uid)
+            VALUES
+              (${rid}, ${ingKey}, ${m.kind}, ${delta}, ${countValue}, ${expected}, ${unitCost},
+               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source ?? 'web'},
+               ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
+               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
+               ${safeTs(m.clientTs)}, '')`
+        }
+      } catch { return null }
+    } else {
+      return null
+    }
   }
 
   try { return await refreshIngredientCache(rid, ingKey) } catch { return null }
