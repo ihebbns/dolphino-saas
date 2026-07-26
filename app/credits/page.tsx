@@ -46,6 +46,10 @@ export default function CreditsPage() {
   // one client's own history.
   const [ficheRows, setFicheRows] = useState<Movement[] | null>(null)
   const [ficheBusy, setFicheBusy] = useState(false)
+  /** What the server found missing, and which database it looked in. */
+  const [diag, setDiag] = useState<{ missing: string[]; db: { database: string; schema: string } | null }>(
+    { missing: [], db: null }
+  )
 
   useEffect(() => {
     if (key) load(key)
@@ -75,6 +79,7 @@ export default function CreditsPage() {
     const d = await apiGet('/api/me/credits', k)
     if (d.ok) {
       setReady(d.ready !== false)
+      setDiag({ missing: d.missing || [], db: d.db || null })
       setRestName(d.name || '')
       setClients(d.clients || [])
       setMovements(d.movements || [])
@@ -113,7 +118,7 @@ export default function CreditsPage() {
         restName={restName}
         actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
       >
-        <NotReady sql="migration-credits.sql" />
+        <NotReady sql="migration-credits.sql" missing={diag.missing} db={diag.db} />
       </Shell>
     )
   }

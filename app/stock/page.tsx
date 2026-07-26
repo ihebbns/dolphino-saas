@@ -14,7 +14,10 @@
 // makes an écart provable and stops two tills clobbering each other.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
-import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, dt, num, Icon, useModules } from '../ui/Shell'
+import {
+  Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost,
+  f3, qtyTrim, qtyDelta, dt, num, Icon, useModules,
+} from '../ui/Shell'
 
 type Variance = {
   item_id: string; item_name: string; item_emoji: string; category: string
@@ -248,7 +251,7 @@ export default function StockPage() {
           <div className="statValue num" style={{ color: num(totals?.valeur_pertes) ? 'var(--warn)' : undefined }}>
             {f3(totals?.valeur_pertes)} DT
           </div>
-          <div className="statHint">{f3(totals?.unites_pertes)} unités déclarées</div>
+          <div className="statHint">{qtyTrim(totals?.unites_pertes)} unités déclarées</div>
         </div>
         <div className="stat">
           <div className="statLabel">Corrections manuelles</div>
@@ -269,7 +272,7 @@ export default function StockPage() {
             <div className="noticeTitle">{lowList.length} produit(s) à réapprovisionner</div>
             {lowList.slice(0, 8).map(v => (
               <div key={v.item_id}>
-                • {v.item_emoji} {v.item_name} — <b>{f3(v.theorique)}</b> restant
+                • {v.item_emoji} {v.item_name} — <b>{qtyTrim(v.theorique)}</b> restant
                 {thresholds[v.item_id] ? ` (seuil ${thresholds[v.item_id].low})` : ''}
               </div>
             ))}
@@ -322,20 +325,20 @@ export default function StockPage() {
                         <div className="t11 cFaint">{v.category || '—'}</div>
                       </td>
                       <td data-label="En stock" className="tr num nowrap">
-                        <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{f3(v.theorique)}</span>
+                        <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{qtyTrim(v.theorique)}</span>
                         {low && <span className="badge bDanger" style={{ marginLeft: 6 }}>stock bas</span>}
                       </td>
                       <td data-label="Seuil" className="tr num t13 cMuted">{t?.tracked ? t.low : '—'}</td>
                       <td data-label="Valeur" className="tr num nowrap">{f3(v.theorique * num(v.cost))} DT</td>
                       <td data-label="Depuis l'inventaire" className="t12 cMuted nowrap">
-                        {v.vendu_depuis > 0 && <span>vendu −{f3(v.vendu_depuis)} </span>}
-                        {v.recu_depuis > 0 && <span className="cOk">reçu +{f3(v.recu_depuis)} </span>}
-                        {v.perte_depuis > 0 && <span className="cDanger">perte −{f3(v.perte_depuis)} </span>}
-                        {v.ajuste_depuis !== 0 && <span className="cWarn">corrigé {v.ajuste_depuis > 0 ? '+' : ''}{f3(v.ajuste_depuis)}</span>}
+                        {v.vendu_depuis > 0 && <span>vendu −{qtyTrim(v.vendu_depuis)} </span>}
+                        {v.recu_depuis > 0 && <span className="cOk">reçu +{qtyTrim(v.recu_depuis)} </span>}
+                        {v.perte_depuis > 0 && <span className="cDanger">perte −{qtyTrim(v.perte_depuis)} </span>}
+                        {v.ajuste_depuis !== 0 && <span className="cWarn">corrigé {qtyDelta(v.ajuste_depuis)}</span>}
                         {!v.vendu_depuis && !v.recu_depuis && !v.perte_depuis && !v.ajuste_depuis && '—'}
                       </td>
                       <td data-label="Dernier inventaire" className="t12 cMuted nowrap">
-                        {v.last_count_at ? <>{f3(v.dernier_compte)} le {dt(v.last_count_at)}</> : <span className="cFaint">jamais</span>}
+                        {v.last_count_at ? <>{qtyTrim(v.dernier_compte)} le {dt(v.last_count_at)}</> : <span className="cFaint">jamais</span>}
                       </td>
                       <td className="tr nowrap actionCell">
                         <button className="btn btnSm" title="Livraison reçue" onClick={() => setMove({ item: v, kind: 'receive' })}>
@@ -385,16 +388,16 @@ export default function StockPage() {
                         <td data-label="Variation" className="tr num nowrap">
                           {isCount ? (
                             <>
-                              <span className="bold">= {f3(m.count_value)}</span>
+                              <span className="bold">= {qtyTrim(m.count_value)}</span>
                               {ec !== null && Math.abs(ec) > 0.0005 && (
                                 <div className="t11" style={{ color: ec < 0 ? 'var(--danger)' : 'var(--warn)' }}>
-                                  écart {ec > 0 ? '+' : ''}{f3(ec)}
+                                  écart {qtyDelta(ec)}
                                 </div>
                               )}
                             </>
                           ) : (
                             <span style={{ color: num(m.delta) < 0 ? 'var(--danger)' : 'var(--ok)', fontWeight: 650 }}>
-                              {num(m.delta) > 0 ? '+' : ''}{f3(m.delta)}
+                              {qtyDelta(m.delta)}
                             </span>
                           )}
                         </td>
@@ -436,10 +439,10 @@ export default function StockPage() {
                   <tr key={i}>
                     <td className="t12 cMuted nowrap">{dt(e.client_ts)}</td>
                     <td data-label="Produit" className="nowrap">{e.item_emoji || '📦'} {e.item_name || e.item_id}</td>
-                    <td data-label="Théorique" className="tr num">{f3(e.theorique)}</td>
-                    <td data-label="Compté" className="tr num">{f3(e.compte)}</td>
+                    <td data-label="Théorique" className="tr num">{qtyTrim(e.theorique)}</td>
+                    <td data-label="Compté" className="tr num">{qtyTrim(e.compte)}</td>
                     <td data-label="Écart" className="tr num bold" style={{ color: e.ecart < 0 ? 'var(--danger)' : 'var(--warn)' }}>
-                      {e.ecart > 0 ? '+' : ''}{f3(e.ecart)}
+                      {qtyDelta(e.ecart)}
                     </td>
                     <td data-label="Valeur" className="tr num nowrap" style={{ color: e.ecart_valeur < 0 ? 'var(--danger)' : undefined }}>
                       {f3(e.ecart_valeur)} DT
@@ -486,7 +489,7 @@ function MovementModal({ item, kind: initialKind, saving, onClose, onSubmit }: a
         <div className="modalHead">
           <div>
             <div className="modalTitle">{item.item_emoji || '📦'} {item.item_name}</div>
-            <div className="t12 cMuted">En stock : <b>{f3(item.theorique)}</b></div>
+            <div className="t12 cMuted">En stock : <b>{qtyTrim(item.theorique)}</b></div>
           </div>
           <button className="btn btnGhost btnSm spacer" onClick={onClose}>✕</button>
         </div>
@@ -510,7 +513,7 @@ function MovementModal({ item, kind: initialKind, saving, onClose, onSubmit }: a
             <span className="help">
               {isCount
                 ? 'Le stock repart de ce chiffre. L\u2019écart avec le théorique est figé et conservé.'
-                : `Stock après : ${f3(after)}`}
+                : `Stock après : ${qtyTrim(after)}`}
             </span>
           </div>
 
@@ -527,10 +530,10 @@ function MovementModal({ item, kind: initialKind, saving, onClose, onSubmit }: a
             <div className="notice nInfo" style={{ margin: 0 }}>
               <span className="noticeIcon">ℹ</span>
               <div>
-                Théorique actuel <b>{f3(item.theorique)}</b>.
+                Théorique actuel <b>{qtyTrim(item.theorique)}</b>.
                 {num(qty) > 0 && Math.abs(num(qty) - num(item.theorique)) > 0.0005 && (
                   <> Écart constaté : <b style={{ color: num(qty) < num(item.theorique) ? 'var(--danger)' : 'var(--warn)' }}>
-                    {num(qty) - num(item.theorique) > 0 ? '+' : ''}{f3(num(qty) - num(item.theorique))}
+                    {qtyDelta(num(qty) - num(item.theorique))}
                   </b></>
                 )}
               </div>

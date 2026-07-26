@@ -37,6 +37,36 @@ export function qty(v: any, unit?: string): string {
 }
 
 /**
+ * A quantity with the noise removed: `7.000` becomes `7`, `7.500` becomes `7.5`.
+ *
+ * Quantities were being printed with the MONEY formatter, so a shelf holding
+ * seven bottles read "7.000" — which looks like a price, or like a precision
+ * nobody has. Three decimals are right for dinars (millimes are real) and wrong
+ * for things you count.
+ *
+ * Unlike `qty()` this never rounds a genuine fraction away. Half a kilo is half a
+ * kilo; showing it as "1" to satisfy a preference for whole numbers would be a
+ * lie about stock. So: trailing zeros go, real decimals stay.
+ */
+export function qtyTrim(v: any, unit?: string): string {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  const r = Math.round(n * 1000) / 1000
+  // toFixed then strip, rather than String(r), so 1e-7 cannot surface as
+  // exponent notation in the middle of a table.
+  let s = r.toFixed(3).replace(/\.?0+$/, '')
+  if (s === '' || s === '-') s = '0'
+  return unit ? s + ' ' + unit : s
+}
+
+/** Signed quantity, same trimming, with the direction always explicit. */
+export function qtyDelta(v: any, unit?: string): string {
+  const n = Number(v) || 0
+  const sign = n > 0 ? '+' : n < 0 ? '−' : ''
+  return sign + qtyTrim(Math.abs(n), unit)
+}
+
+/**
  * Stock level for display. A negative or missing level does not mean
  * "minus four" — it means deltas were recorded before anyone counted.
  * Saying so is honest and stops the page looking broken.

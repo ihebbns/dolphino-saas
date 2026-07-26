@@ -26,7 +26,9 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
-import { isMissingSchema, serverError, notReadyPayload } from '@/lib/apiError'
+import {
+  isMissingSchema, serverError, notReadyPayload, missingRelations, dbIdentity,
+} from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -64,19 +66,35 @@ function slugKey(name: string): string {
   return ('c_' + (base || 'sans-nom')).slice(0, 64)
 }
 
-/** Both tables are needed, not just `credits` — checking one and then querying
- *  the other is how a raw `relation does not exist` reaches the UI. */
-async function tablesReady(): Promise<boolean> {
-  try {
-    await sql`SELECT 1 FROM credits LIMIT 1`
-    await sql`SELECT 1 FROM credit_movements LIMIT 1`
-    return true
-  } catch { return false }
+/** The relations this endpoint reads. Both tables are needed, not just `credits`
+ *  — checking one and then querying the other is how a raw `relation does not
+ *  exist` reached the UI in the first place. */
+const NEEDS = ['credits', 'credit_movements']
+
+/**
+ * Which relations are missing, or [] when everything is present.
+ *
+ * Asks the catalog instead of running `SELECT 1 FROM credits`. The old probe
+ * treated ANY failure as "not migrated", so a permission problem or a connection
+ * hiccup produced "exécutez migration-credits.sql" — advice that is wrong and
+ * unfalsifiable. The catalog answers the actual question.
+ */
+async function missingTables(): Promise<string[]> {
+  return missingRelations(sql, NEEDS)
 }
 
-const notReady = () => cors(NextResponse.json(
-  notReadyPayload('migration-credits.sql', { clients: [], movements: [], totals: null })
-))
+/** Not-ready response that says WHICH relation is absent and WHICH database was
+ *  inspected, so "I already ran the migration" is diagnosable in one look. */
+async function notReady(missing: string[]) {
+  const id = await dbIdentity(sql)
+  return cors(NextResponse.json(
+    notReadyPayload(
+      'migration-credits.sql',
+      { clients: [], movements: [], totals: null, db: id },
+      missing,
+    )
+  ))
+}
 
 async function resolveRestaurant(key: string) {
   const rows = await sql`
@@ -112,11 +130,11 @@ export async function POST(req: Request) {
     const rid = rest.id
 
     // Acknowledge so the till stops retrying forever, but report not-ready.
-    if (!(await tablesReady())) {
-      return cors(NextResponse.json({
-        ok: true, ready: false, clients: 0, movements: 0,
-        note: 'Tables crédit non initialisées — exécutez migration-credits.sql',
-      }))
+    const gapsPost = await missingTables()
+    if (gapsPost.length) {
+      return cors(NextResponse.json(
+        notReadyPayload('migration-credits.sql', { clients: 0, movements: 0 }, gapsPost)
+      ))
     }
 
     // ── Balances ──────────────────────────────────────────────────────
@@ -202,12 +220,8 @@ export async function GET(req: Request) {
     if (!rest) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 403 }))
     const rid = rest.id
 
-    if (!(await tablesReady())) {
-      return cors(NextResponse.json({
-        ok: true, ready: false, clients: [], movements: [], totals: null,
-        note: 'Tables crédit non initialisées — exécutez migration-credits.sql',
-      }))
-    }
+    const gaps = await missingTables()
+    if (gaps.length) return notReady(gaps)
 
     const url = new URL(req.url)
     const client = clip(url.searchParams.get('client'), 64)
@@ -282,7 +296,10 @@ export async function GET(req: Request) {
       clients, movements, totals,
     }))
   } catch (err: any) {
-    if (isMissingSchema(err)) return notReady()
+    // The catalog said the tables were there, yet a query still hit a missing
+    // relation — so report exactly which one rather than repeating the generic
+    // advice. This is the path the credit_reconciliation view fell down.
+    if (isMissingSchema(err)) return notReady(await missingTables())
     return cors(NextResponse.json(serverError('credits GET', err), { status: 500 }))
   }
 }

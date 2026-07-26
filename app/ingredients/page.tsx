@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, num,
-  LevelMeter, BarList, DaysCover, dt,
+  qtyTrim, qtyDelta, LevelMeter, BarList, DaysCover, dt,
 } from '../ui/Shell'
 
 type Ing = {
@@ -62,6 +62,13 @@ type Recipe = {
   cost_computed: number; cost_effective: number
   nb_lines: number; lines_missing_cost: number
   lines: { ing_key: string; qty: number }[]
+  /** Portions still producible from current ingredient stock. Null when no
+   *  tracked ingredient constrains the product. */
+  buildable: number | null
+  /** The ingredient that runs out first — what to buy to unblock this product. */
+  limited_by: { ing_key: string; name: string; available: number; need: number; unit: string } | null
+  /** A recipe line points at a missing ingredient, so the figure is incomplete. */
+  buildable_unknown: boolean
 }
 
 const BLANK: Partial<Ing> = {
@@ -191,17 +198,43 @@ export default function IngredientsPage() {
    *                                 threshold was never set or set too low
    * Sorted by urgency: whatever runs out first is at the top.
    */
+  /**
+   * Which products a given ingredient currently caps.
+   *
+   * Declared before `toBuy` because the buy list uses it, and as a hook it must
+   * sit above every early return in this component.
+   */
+  const blockedByIng = useMemo(() => {
+    const m: Record<string, { name: string; buildable: number }[]> = {}
+    for (const r of recipes) {
+      if (!r.enabled || !r.limited_by || r.buildable == null) continue
+      ;(m[r.limited_by.ing_key] ||= []).push({ name: r.item_name, buildable: r.buildable })
+    }
+    for (const k of Object.keys(m)) m[k].sort((a, b) => a.buildable - b.buildable)
+    return m
+  }, [recipes])
+
   const toBuy = useMemo(() => {
-    const rows = views.filter(i =>
-      !i.archived && i.tracked &&
-      (i.is_low || (i.daysLeft != null && i.daysLeft <= 7))
-    )
+    const rows = views.filter(i => {
+      if (i.archived || !i.tracked) return false
+      // A third reason, and the strongest one: this ingredient is what stops a
+      // dish being made. That can be true while the quantity is still above its
+      // threshold — a recipe needing 2 kg per portion is blocked at 1.9 kg — so
+      // the threshold alone would miss it.
+      const caps = blockedByIng[i.ing_key] || []
+      const blocksSomething = caps.some(c => c.buildable <= 5)
+      return i.is_low || (i.daysLeft != null && i.daysLeft <= 7) || blocksSomething
+    })
     return rows.sort((a, b) => {
+      // Anything blocking a dish outright goes first: it is already costing sales.
+      const ba = (blockedByIng[a.ing_key] || []).some(c => c.buildable === 0) ? -1 : 0
+      const bb = (blockedByIng[b.ing_key] || []).some(c => c.buildable === 0) ? -1 : 0
+      if (ba !== bb) return ba - bb
       const da = a.daysLeft ?? (a.is_low ? 0.5 : 999)
       const db = b.daysLeft ?? (b.is_low ? 0.5 : 999)
       return da - db
     })
-  }, [views])
+  }, [views, blockedByIng])
 
   const recByItem = useMemo(() => {
     const m: Record<string, Recipe> = {}
@@ -226,6 +259,12 @@ export default function IngredientsPage() {
   const wasted30 = views.reduce(
     (a, i) => a + ((i.usage?.wasted_30d || 0) * (i.cost_per_stock_unit || 0)), 0
   )
+
+  // Products that can no longer be made, and those nearly there. This is the
+  // consequence of a shortage, which is more actionable than the shortage itself:
+  // "cheese is low" matters because "you cannot make pizza".
+  const blocked = recipes.filter(r => r.enabled && r.buildable === 0)
+  const nearlyBlocked = recipes.filter(r => r.enabled && r.buildable != null && r.buildable > 0 && r.buildable <= 5)
 
   return (
     <Shell
@@ -314,6 +353,21 @@ export default function IngredientsPage() {
             </div>
             <div className="statHint">fausse le coût des recettes</div>
           </div>
+          {/* The consequence, stated as a consequence. An owner acts on "two
+              dishes cannot be made" faster than on "an ingredient is low". */}
+          <div className="stat">
+            <div className="statLabel">Plats bloqués</div>
+            <div className="statValue num" style={{ color: blocked.length ? 'var(--danger)' : 'var(--ok)' }}>
+              {blocked.length}
+            </div>
+            <div className="statHint">
+              {blocked.length
+                ? blocked.slice(0, 2).map(r => r.item_name).join(', ') + (blocked.length > 2 ? '…' : '')
+                : nearlyBlocked.length
+                  ? `${nearlyBlocked.length} bientôt à court`
+                  : 'tout est produisible'}
+            </div>
+          </div>
           <div className="stat">
             <div className="statLabel">Recettes</div>
             <div className="statValue num">{recipes.length}<span className="t13 cFaint"> / {products.length}</span></div>
@@ -386,6 +440,25 @@ export default function IngredientsPage() {
                               {i.category || '—'}
                               {i.usage?.last_receive_at ? ` · dernière livraison ${dt(i.usage.last_receive_at)}` : ''}
                             </div>
+                            {/* Why this one matters: the dishes it is holding up.
+                                A shortage with a consequence attached gets bought;
+                                a number on a list gets ignored. */}
+                            {(blockedByIng[i.ing_key] || []).length > 0 && (
+                              <div className="t11" style={{ marginTop: 4 }}>
+                                {blockedByIng[i.ing_key].slice(0, 3).map(b => (
+                                  <span
+                                    key={b.name}
+                                    className={'badge ' + (b.buildable === 0 ? 'bDanger' : 'bWarn')}
+                                    style={{ marginRight: 4 }}
+                                  >
+                                    {b.name} : {b.buildable === 0 ? 'épuisé' : b.buildable}
+                                  </span>
+                                ))}
+                                {blockedByIng[i.ing_key].length > 3 && (
+                                  <span className="cFaint">+{blockedByIng[i.ing_key].length - 3}</span>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td data-label="Niveau" style={{ minWidth: 130 }}>
                             <LevelMeter value={i.quantity} threshold={i.low_threshold} unit={i.stock_unit} />
@@ -394,10 +467,10 @@ export default function IngredientsPage() {
                             <DaysCover days={i.daysLeft} />
                           </td>
                           <td data-label="Par jour" className="tr num nowrap t12 cMuted">
-                            {i.rate ? `${f3(i.rate)} ${i.stock_unit}` : '—'}
+                            {i.rate ? `${qtyTrim(i.rate)} ${i.stock_unit}` : '—'}
                           </td>
                           <td data-label="À commander" className="tr num nowrap strong">
-                            {suggest > 0 ? `${f3(suggest)} ${i.stock_unit}` : '—'}
+                            {suggest > 0 ? `${qtyTrim(suggest)} ${i.stock_unit}` : '—'}
                             {i.cost_per_stock_unit > 0 && suggest > 0 && (
                               <div className="t11 cFaint">≈ {f3(suggest * i.cost_per_stock_unit)} DT</div>
                             )}
@@ -433,8 +506,8 @@ export default function IngredientsPage() {
                         return {
                           label: i.name,
                           value: u.consumed_30d,
-                          display: `${f3(u.consumed_30d)} ${i.stock_unit}`,
-                          sub: u.wasted_30d > 0 ? `dont ${f3(u.wasted_30d)} ${i.stock_unit} de perte` : undefined,
+                          display: `${qtyTrim(u.consumed_30d)} ${i.stock_unit}`,
+                          sub: u.wasted_30d > 0 ? `dont ${qtyTrim(u.wasted_30d)} ${i.stock_unit} de perte` : undefined,
                           tone: 'info' as const,
                         }
                       })}
@@ -457,7 +530,7 @@ export default function IngredientsPage() {
                           label: i.name,
                           value: u.spent_30d,
                           display: `${f3(u.spent_30d)} DT`,
-                          sub: `${f3(u.received_30d)} ${i.stock_unit} reçus`,
+                          sub: `${qtyTrim(u.received_30d)} ${i.stock_unit} reçus`,
                           tone: 'ok' as const,
                         }
                       })}
@@ -507,9 +580,9 @@ export default function IngredientsPage() {
                     </td>
                     <td data-label="Quantité" className="tr num nowrap">
                       {m.kind === 'count'
-                        ? <>= {f3(m.count_value)} <span className="t11 cFaint">{m.stock_unit}</span></>
+                        ? <>= {qtyTrim(m.count_value)} <span className="t11 cFaint">{m.stock_unit}</span></>
                         : <span className={(m.delta ?? 0) < 0 ? 'cDanger' : 'cOk'}>
-                            {(m.delta ?? 0) > 0 ? '+' : ''}{f3(m.delta)} <span className="t11 cFaint">{m.stock_unit}</span>
+                            {qtyDelta(m.delta)} <span className="t11 cFaint">{m.stock_unit}</span>
                           </span>}
                     </td>
                     <td data-label="Détail" className="t12 cMuted">
@@ -569,11 +642,11 @@ export default function IngredientsPage() {
                     <td data-label="Niveau" style={{ minWidth: 130 }}>
                       {i.tracked
                         ? <LevelMeter value={i.quantity} threshold={i.low_threshold} unit={i.stock_unit} />
-                        : <span className="t12 cFaint">non suivi · {f3(i.quantity)} {i.stock_unit}</span>}
+                        : <span className="t12 cFaint">non suivi · {qtyTrim(i.quantity)} {i.stock_unit}</span>}
                     </td>
                     <td data-label="Il reste" className="tr nowrap">
                       <DaysCover days={i.daysLeft} />
-                      {i.rate ? <div className="t11 cFaint num">{f3(i.rate)} {i.stock_unit}/j</div> : null}
+                      {i.rate ? <div className="t11 cFaint num">{qtyTrim(i.rate)} {i.stock_unit}/j</div> : null}
                     </td>
                     <td data-label="Valeur" className="tr num nowrap">{f3(i.stock_value)} DT</td>
                     <td data-label="Recettes" className="tc">
@@ -618,12 +691,13 @@ export default function IngredientsPage() {
                   <th className="tr">Prix de vente</th>
                   <th className="tr">Coût</th>
                   <th className="tr">Marge</th>
+                  <th className="tr">Encore possible</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {visibleProducts.length === 0 ? (
-                  <tr><td colSpan={6}><Empty icon="📋" text="Aucun produit. Le menu vient de la caisse." /></td></tr>
+                  <tr><td colSpan={7}><Empty icon="clipboard" text="Aucun produit. Le menu vient de la caisse." /></td></tr>
                 ) : visibleProducts.map(p => {
                   const r = recByItem[p.item_id]
                   const cost = r ? r.cost_effective : 0
@@ -669,7 +743,35 @@ export default function IngredientsPage() {
                             </span>
                           : <span className="t12 cFaint">—</span>}
                       </td>
-                      <td className="tr nowrap">
+                      {/* The answer to "can I still sell this?" — and, when the
+                          answer is no, the name of the thing to go and buy. */}
+                      <td data-label="Encore possible" className="tr nowrap">
+                        {!r || r.buildable == null ? (
+                          <span className="t12 cFaint">—</span>
+                        ) : (
+                          <>
+                            <div
+                              className="num bold"
+                              style={{
+                                fontSize: 15,
+                                color: r.buildable === 0 ? 'var(--danger)'
+                                  : r.buildable <= 5 ? 'var(--warn)' : 'var(--ok)',
+                              }}
+                            >
+                              {r.buildable === 0 ? 'épuisé' : r.buildable}
+                            </div>
+                            {r.limited_by && (
+                              <div className="t11 cFaint">
+                                limité par {r.limited_by.name}
+                              </div>
+                            )}
+                            {r.buildable_unknown && (
+                              <div className="t11 cWarn">ingrédient manquant</div>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td className="tr actionCell">
                         <button className="btn btnSm" onClick={() => setEditRec({ product: p, recipe: r || null })}>
                           {r ? 'Modifier' : '+ Recette'}
                         </button>
@@ -770,7 +872,7 @@ function MoveModal({ ing, saving, onClose, onSave }: {
           <div>
             <div className="modalTitle">{ing.name}</div>
             <div className="t12 cMuted num">
-              en stock : {f3(ing.quantity)} {ing.stock_unit}
+              en stock : {qtyTrim(ing.quantity)} {ing.stock_unit}
             </div>
           </div>
           <button className="btn btnGhost btnSm spacer" onClick={onClose} aria-label="Fermer">✕</button>
@@ -796,7 +898,7 @@ function MoveModal({ ing, saving, onClose, onSave }: {
             <span className="help">
               {kind === 'count'
                 ? 'Remplace la quantité. L’écart avec le stock théorique est enregistré.'
-                : `Nouveau stock : ${f3(after)} ${ing.stock_unit}`}
+                : `Nouveau stock : ${qtyTrim(after)} ${ing.stock_unit}`}
             </span>
           </div>
 

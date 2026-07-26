@@ -29,6 +29,7 @@ import './theme.css'
 import { Icon, IconName } from './Icon'
 import { DESTINATIONS } from './TabBar'
 import { useTheme } from './useTheme'
+import { qtyTrim } from './fmt'
 
 /** Theme switch, present on every Shell page. Lives here rather than per-page so
  *  there is exactly one control and it cannot drift out of sync. */
@@ -127,7 +128,7 @@ export async function apiPost(path: string, body: any) {
 
 // ── Formatting ────────────────────────────────────────────────────
 // Re-exported so pages have one import. fmt.ts is the single source.
-export { money, money0, qty, qtyOrUncounted, variance, varianceMoney, when, atTime, onDay, since, num, CURRENCY } from './fmt'
+export { money, money0, qty, qtyTrim, qtyDelta, qtyOrUncounted, variance, varianceMoney, when, atTime, onDay, since, num, CURRENCY } from './fmt'
 export { Icon } from './Icon'
 export type { IconName } from './Icon'
 
@@ -336,7 +337,21 @@ export function LoginGate() {
  * Rendered when an endpoint reports its migration has not been run.
  * Two sentences: what is missing, and that nothing is lost.
  */
-export function NotReady({ sql }: { sql: string }) {
+export function NotReady({
+  sql,
+  missing,
+  db,
+}: {
+  sql: string
+  /** Relations the server found absent. Naming them is the difference between
+   *  advice someone can act on and a message that repeats after they already
+   *  ran the migration. */
+  missing?: string[]
+  /** Database the server actually inspected. When the SQL was run against a
+   *  different Neon branch, this is the only thing that reveals it. */
+  db?: { database: string; schema: string } | null
+}) {
+  const hasDetail = (missing && missing.length > 0) || !!db
   return (
     <div className="notice nWarn">
       <span className="noticeIcon"><Icon name="alert" size={16} /></span>
@@ -344,6 +359,28 @@ export function NotReady({ sql }: { sql: string }) {
         <div className="noticeTitle">Base de données non initialisée</div>
         Exécutez <code className="k">{sql}</code> dans Neon. Les caisses gardent tout en local
         en attendant : rien n&apos;est perdu.
+
+        {hasDetail && (
+          <div className="t12" style={{ marginTop: 8, lineHeight: 1.7 }}>
+            {missing && missing.length > 0 && (
+              <div>
+                Tables absentes :{' '}
+                {missing.map((m, i) => (
+                  <span key={m}>
+                    {i > 0 ? ', ' : ''}<code className="k">{m}</code>
+                  </span>
+                ))}
+              </div>
+            )}
+            {db && (
+              <div className="cFaint">
+                Base consultée : <code className="k">{db.database}</code>
+                {' '}(schéma <code className="k">{db.schema}</code>).
+                {' '}Si vous avez exécuté le SQL ailleurs, c&apos;est l&apos;explication.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -504,8 +541,8 @@ export function LevelMeter({
       </div>
       {showCaption && (
         <div className="meterCap">
-          <span className="num">{f3(v)} {unit || ''}</span>
-          {th > 0 ? <span className="num">seuil {f3(th)}</span> : <span>pas de seuil</span>}
+          <span className="num">{qtyTrim(v, unit)}</span>
+          {th > 0 ? <span className="num">seuil {qtyTrim(th)}</span> : <span>pas de seuil</span>}
         </div>
       )}
     </div>
@@ -533,7 +570,7 @@ export function BarList({
       {top.map((r, i) => (
         <div className="barItem" key={r.label + i}>
           <div className="barItemName" title={r.label}>{r.label}</div>
-          <div className="barItemVal num">{r.display ?? f3(r.value)}</div>
+          <div className="barItemVal num">{r.display ?? qtyTrim(r.value)}</div>
           <div className="barItemTrack">
             <div
               className="barItemFill"

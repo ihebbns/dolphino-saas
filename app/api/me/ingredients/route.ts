@@ -143,10 +143,70 @@ export async function GET(req: Request) {
     const rollup = await recipeCosts(rid)
     cacheComputedCosts(rid, rollup).catch(() => {})   // best effort, never blocks the read
 
+    // ── How many can I still make? ──────────────────────────────────────
+    //
+    // A product built from a recipe has no stock of its own, so "en stock" is
+    // meaningless for it — yet it is exactly what the owner wants to know. The
+    // answer is the ingredient that runs out first: a pizza with cheese for 40
+    // and dough for 5 is a pizza you can sell five times.
+    //
+    //   available recipe units = quantity × conversion_factor
+    //   need per portion       = line qty ÷ yield_qty
+    //   portions from that line = available ÷ need
+    //   buildable              = FLOOR(min over all lines)
+    //
+    // Floored because half a portion cannot be sold. Untracked ingredients (salt,
+    // pepper) are skipped — they are deliberately not counted, so treating their
+    // zero as a blocker would report every dish as unavailable.
+    const ingByKey: Record<string, any> = {}
+    for (const i of ingredients) ingByKey[i.ing_key] = i
+
+    function buildable(itemId: string, yieldQty: number) {
+      const rows = byItem[itemId] || []
+      const portions = Math.max(1, Number(yieldQty) || 1)
+      let limit: number | null = null
+      let limitedBy: { ing_key: string; name: string; available: number; need: number; unit: string } | null = null
+      let unknown = false
+
+      for (const l of rows) {
+        const ing = ingByKey[l.ing_key]
+        // A line pointing at a deleted ingredient makes the answer unknowable;
+        // saying so beats quietly returning a number that ignores it.
+        if (!ing) { unknown = true; continue }
+        if (!ing.tracked || ing.archived) continue
+
+        const needPerPortion = (Number(l.qty) || 0) / portions
+        if (!(needPerPortion > 0)) continue
+
+        const availableRecipeUnits = (Number(ing.quantity) || 0) * (Number(ing.conversion_factor) || 0)
+        const possible = availableRecipeUnits / needPerPortion
+
+        if (limit === null || possible < limit) {
+          limit = possible
+          limitedBy = {
+            ing_key: ing.ing_key,
+            name: ing.name,
+            available: Number(ing.quantity) || 0,
+            need: needPerPortion,
+            unit: ing.stock_unit,
+          }
+        }
+      }
+
+      // No tracked, quantified line at all: nothing constrains this product.
+      if (limit === null) return { buildable: null as number | null, limited_by: null, unknown }
+      return {
+        buildable: Math.max(0, Math.floor(limit)),
+        limited_by: limitedBy,
+        unknown,
+      }
+    }
+
     const recipesFull = recipes.map((r: any) => {
       const c = rollup.get(r.item_id)
       const computed = c ? c.computed : 0
       const used = c ? c.used : (r.cost_override ?? 0)
+      const cap = buildable(r.item_id, r.yield_qty)
       return {
         ...r,
         lines: byItem[r.item_id] || [],
@@ -158,6 +218,10 @@ export async function GET(req: Request) {
         // Ingredients with no price at all: the usual reason a plate cost looks
         // impossibly low.
         missing_cost: c ? c.missingCost : [],
+        // Portions still producible, and the ingredient that caps it.
+        buildable: cap.buildable,
+        limited_by: cap.limited_by,
+        buildable_unknown: cap.unknown,
       }
     })
 
