@@ -550,6 +550,75 @@ code.k {
   .sheet { max-width: 620px; border-radius: var(--r-lg); }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE TABLES — a table on a desktop, cards on a phone.
+   ═══════════════════════════════════════════════════════════════
+   Six pages rendered a wide <table> and the mobile rules only shrank the
+   padding, so Stock, Créances and Tiroir ran off the side of the screen on the
+   exact device the owner reads them on.
+
+   Done centrally rather than by rewriting six pages into card components: every
+   row becomes a card, the header row is hidden, and each cell announces itself
+   with the column name from its data-label. A cell without a data-label still
+   renders, just without a caption, so a page that has not been annotated yet
+   degrades instead of breaking.
+   ═══════════════════════════════════════════════════════════════ */
+@media (max-width: 700px) {
+  .tableWrap { overflow: visible; }
+  table.t { display: block; width: 100%; border: 0; }
+  table.t thead { display: none; }              /* captions move onto the cells */
+  table.t tbody { display: block; }
+
+  table.t tr {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+  table.t td {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    border: 0; padding: 4px 0; text-align: left !important;
+  }
+  table.t td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: 11.5px; font-weight: 600; color: var(--muted);
+  }
+  /* The first cell is the row's identity: no caption, and it leads the card. */
+  table.t td:first-child {
+    display: block;
+    font-weight: 600; font-size: 14.5px;
+    padding-bottom: 8px; margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.t td:first-child::before { content: none; }
+  /* An empty-state row must not look like a card. */
+  table.t td[colspan] { display: block; }
+  table.t td[colspan]::before { content: none; }
+  table.t tr:has(td[colspan]) { border: 0; background: none; padding: 0; }
+  /* Right-aligned numerics read better hard-right on a card. */
+  table.t td.tr, table.t td.num { justify-content: space-between; }
+  table.t td.nowrap { white-space: normal; }
+  /* Row actions become a full-width button row, not a cramped icon strip. */
+  table.t td.actionCell {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    justify-content: stretch; padding-top: 10px;
+  }
+  table.t td.actionCell::before { content: none; }
+  table.t td.actionCell .btn { flex: 1; min-width: 96px; margin: 0 !important; }
+}
+
+/* Desktop keeps the compact icon strip. */
+.actionCell .btn + .btn { margin-left: 4px; }
+
+/* Shown only on paper — a printed report has to state what it covers. */
+.printOnly { display: none; }
+.printHead { margin-bottom: 12px; }
+.printTitle { font-size: 15px; font-weight: 700; }
+.printSub { font-size: 11px; color: #444; margin-top: 2px; }
+
 /* ── PRINT ─────────────────────────────────────────────────── */
 /* The owner prints a day for their accountant, so navigation, buttons and
    alerts are noise — and cards waste half a page where a table fits. */
@@ -561,4 +630,8 @@ code.k {
   .recTable { display: table !important; width: 100%; }
   .card, .stat { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
   body { background: #fff; font-size: 11px; }
+  .printOnly { display: block !important; }
+  .select { display: none !important; }
+  thead { display: table-header-group; }   /* repeat headers across pages */
+  tr { break-inside: avoid; }
 }

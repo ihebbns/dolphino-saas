@@ -14,7 +14,7 @@
 // makes an écart provable and stops two tills clobbering each other.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
-import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, dt, num, Icon } from '../ui/Shell'
+import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, dt, num, Icon, useModules } from '../ui/Shell'
 
 type Variance = {
   item_id: string; item_name: string; item_emoji: string; category: string
@@ -69,6 +69,7 @@ export default function StockPage() {
   // the POS — no panel, no deductions, no movements.
   const [stockOn, setStockOn] = useState(true)
   const [modBusy, setModBusy] = useState(false)
+  const mods = useModules(key)
 
   useEffect(() => {
     if (key) load(key)
@@ -176,6 +177,8 @@ export default function StockPage() {
   return (
     <Shell
       active="/stock"
+      // Recipes are optional; a café that switched them off should not see the tab.
+      hideTabs={mods.on('ingredients') ? [] : ['/ingredients']}
       title="Stock"
       subtitle="Niveaux, alertes de seuil et traçabilité complète"
       restName={restName}
@@ -315,34 +318,35 @@ export default function StockPage() {
                   return (
                     <tr key={v.item_id}>
                       <td>
-                        <div className="row">
-                          <span style={{ fontSize: 17 }}>{v.item_emoji || '📦'}</span>
-                          <div>
-                            <div className="strong">{v.item_name || v.item_id}</div>
-                            <div className="t11 cFaint">{v.category || '—'}</div>
-                          </div>
-                        </div>
+                        <div className="strong">{v.item_name || v.item_id}</div>
+                        <div className="t11 cFaint">{v.category || '—'}</div>
                       </td>
-                      <td className="tr num nowrap">
+                      <td data-label="En stock" className="tr num nowrap">
                         <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{f3(v.theorique)}</span>
-                        {low && <div><span className="badge bDanger">stock bas</span></div>}
+                        {low && <span className="badge bDanger" style={{ marginLeft: 6 }}>stock bas</span>}
                       </td>
-                      <td className="tr num t13 cMuted">{t?.tracked ? t.low : '—'}</td>
-                      <td className="tr num nowrap">{f3(v.theorique * num(v.cost))} DT</td>
-                      <td className="t12 cMuted nowrap">
-                        {v.vendu_depuis > 0 && <span>🛒 −{f3(v.vendu_depuis)} </span>}
-                        {v.recu_depuis > 0 && <span className="cOk">📥 +{f3(v.recu_depuis)} </span>}
-                        {v.perte_depuis > 0 && <span className="cDanger">🗑️ −{f3(v.perte_depuis)} </span>}
-                        {v.ajuste_depuis !== 0 && <span className="cWarn">✏️ {v.ajuste_depuis > 0 ? '+' : ''}{f3(v.ajuste_depuis)}</span>}
+                      <td data-label="Seuil" className="tr num t13 cMuted">{t?.tracked ? t.low : '—'}</td>
+                      <td data-label="Valeur" className="tr num nowrap">{f3(v.theorique * num(v.cost))} DT</td>
+                      <td data-label="Depuis l'inventaire" className="t12 cMuted nowrap">
+                        {v.vendu_depuis > 0 && <span>vendu −{f3(v.vendu_depuis)} </span>}
+                        {v.recu_depuis > 0 && <span className="cOk">reçu +{f3(v.recu_depuis)} </span>}
+                        {v.perte_depuis > 0 && <span className="cDanger">perte −{f3(v.perte_depuis)} </span>}
+                        {v.ajuste_depuis !== 0 && <span className="cWarn">corrigé {v.ajuste_depuis > 0 ? '+' : ''}{f3(v.ajuste_depuis)}</span>}
                         {!v.vendu_depuis && !v.recu_depuis && !v.perte_depuis && !v.ajuste_depuis && '—'}
                       </td>
-                      <td className="t12 cMuted nowrap">
+                      <td data-label="Dernier inventaire" className="t12 cMuted nowrap">
                         {v.last_count_at ? <>{f3(v.dernier_compte)} le {dt(v.last_count_at)}</> : <span className="cFaint">jamais</span>}
                       </td>
-                      <td className="tr nowrap">
-                        <button className="btn btnSm" onClick={() => setMove({ item: v, kind: 'receive' })}>📥</button>
-                        <button className="btn btnSm" style={{ marginLeft: 4 }} onClick={() => setMove({ item: v, kind: 'waste' })}>🗑️</button>
-                        <button className="btn btnSm btnPrimary" style={{ marginLeft: 4 }} onClick={() => setMove({ item: v, kind: 'count' })}>Inventaire</button>
+                      <td className="tr nowrap actionCell">
+                        <button className="btn btnSm" title="Livraison reçue" onClick={() => setMove({ item: v, kind: 'receive' })}>
+                          <Icon name="plus" size={14} /> Réception
+                        </button>
+                        <button className="btn btnSm" title="Casse, périmé, offert" onClick={() => setMove({ item: v, kind: 'waste' })}>
+                          <Icon name="trash" size={14} /> Perte
+                        </button>
+                        <button className="btn btnSm btnPrimary" onClick={() => setMove({ item: v, kind: 'count' })}>
+                          <Icon name="clipboard" size={14} /> Inventaire
+                        </button>
                       </td>
                     </tr>
                   )
@@ -376,9 +380,9 @@ export default function StockPage() {
                     return (
                       <tr key={m.id}>
                         <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
-                        <td className="nowrap">{m.item_emoji || '📦'} {m.item_name || m.item_id}</td>
-                        <td><span className={'badge ' + k.cls}>{k.icon} {k.label}</span></td>
-                        <td className="tr num nowrap">
+                        <td data-label="Produit" className="nowrap">{m.item_emoji || '📦'} {m.item_name || m.item_id}</td>
+                        <td data-label="Type"><span className={'badge ' + k.cls}>{k.icon} {k.label}</span></td>
+                        <td data-label="Variation" className="tr num nowrap">
                           {isCount ? (
                             <>
                               <span className="bold">= {f3(m.count_value)}</span>
@@ -394,11 +398,11 @@ export default function StockPage() {
                             </span>
                           )}
                         </td>
-                        <td className="t12 cMuted">
+                        <td data-label="Motif" className="t12 cMuted">
                           {m.reason || (m.sale_num ? '#' + String(m.sale_num).padStart(3, '0') : '—')}
                         </td>
-                        <td className="t12 nowrap">{m.actor || <span className="cFaint">—</span>}</td>
-                        <td>
+                        <td data-label="Par" className="t12 nowrap">{m.actor || <span className="cFaint">—</span>}</td>
+                        <td data-label="Source">
                           <span className={'badge ' + (m.source === 'web' ? 'bInfo' : 'bNeutral')}>
                             {m.source === 'web' ? '💻 web' : '🖥️ caisse'}
                           </span>
@@ -431,17 +435,17 @@ export default function StockPage() {
                 ) : ecarts.map((e, i) => (
                   <tr key={i}>
                     <td className="t12 cMuted nowrap">{dt(e.client_ts)}</td>
-                    <td className="nowrap">{e.item_emoji || '📦'} {e.item_name || e.item_id}</td>
-                    <td className="tr num">{f3(e.theorique)}</td>
-                    <td className="tr num">{f3(e.compte)}</td>
-                    <td className="tr num bold" style={{ color: e.ecart < 0 ? 'var(--danger)' : 'var(--warn)' }}>
+                    <td data-label="Produit" className="nowrap">{e.item_emoji || '📦'} {e.item_name || e.item_id}</td>
+                    <td data-label="Théorique" className="tr num">{f3(e.theorique)}</td>
+                    <td data-label="Compté" className="tr num">{f3(e.compte)}</td>
+                    <td data-label="Écart" className="tr num bold" style={{ color: e.ecart < 0 ? 'var(--danger)' : 'var(--warn)' }}>
                       {e.ecart > 0 ? '+' : ''}{f3(e.ecart)}
                     </td>
-                    <td className="tr num nowrap" style={{ color: e.ecart_valeur < 0 ? 'var(--danger)' : undefined }}>
+                    <td data-label="Valeur" className="tr num nowrap" style={{ color: e.ecart_valeur < 0 ? 'var(--danger)' : undefined }}>
                       {f3(e.ecart_valeur)} DT
                     </td>
-                    <td className="t12 cMuted">{e.reason || '—'}</td>
-                    <td className="t12 nowrap">{e.actor || '—'}</td>
+                    <td data-label="Motif" className="t12 cMuted">{e.reason || '—'}</td>
+                    <td data-label="Par" className="t12 nowrap">{e.actor || '—'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -51,6 +51,20 @@ export default function IngredientsPage() {
   const [msg, setMsg] = useState('')
   const [restName, setRestName] = useState('')
   const [tab, setTab] = useState<'ing' | 'rec'>('ing')
+  // Recipes are optional. When the module is off the page stops offering them
+  // instead of showing tools nobody will maintain. Defaults to on.
+  const [ingOn, setIngOn] = useState(true)
+  const [modBusy, setModBusy] = useState(false)
+
+  async function toggleIngredientsModule() {
+    if (!key) return
+    const next = !ingOn
+    setModBusy(true); setMsg('')
+    const d = await apiPost('/api/me/config', { key, modules: { ingredients: next } })
+    setModBusy(false)
+    if (d.ok) setIngOn(next)
+    else setMsg(d.error || 'Erreur')
+  }
 
   const [ings, setIngs] = useState<Ing[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -127,8 +141,18 @@ export default function IngredientsPage() {
       badges={{ '/ingredients': lowCount }}
       actions={
         <>
+          <button
+            className="btn"
+            onClick={toggleIngredientsModule}
+            disabled={modBusy}
+            title={ingOn
+              ? 'Désactiver les ingrédients et recettes'
+              : 'Activer les ingrédients et recettes'}
+          >
+            {modBusy ? '…' : (ingOn ? 'Recettes activées' : 'Recettes désactivées')}
+          </button>
           <button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>
-          {tab === 'ing' && (
+          {tab === 'ing' && ingOn && (
             <button className="btn btnPrimary" onClick={() => setEditIng({ ...BLANK })}>+ Ingrédient</button>
           )}
         </>
@@ -136,6 +160,17 @@ export default function IngredientsPage() {
     >
       {!ready && <NotReady sql="migration-ingredients.sql" />}
       {msg && <div className="notice nDanger"><span className="noticeIcon">✕</span><div>{msg}</div></div>}
+
+      {/* Module off: stop offering what will not be maintained. Recipes are
+          optional by design — a Coca does not need one — so a café that does not
+          want them should not have the tab staring at it. */}
+      {!ingOn && (
+        <Empty
+          icon="flask"
+          text="Les ingrédients et recettes sont désactivés. Les coûts restent saisis à la main, produit par produit."
+          action={<button className="btn btnPrimary" onClick={toggleIngredientsModule} disabled={modBusy}>Activer les recettes</button>}
+        />
+      )}
 
       <div className="notice nInfo" hidden>
         <span className="noticeIcon">💡</span>
@@ -220,24 +255,24 @@ export default function IngredientsPage() {
                       <div className="strong">{i.name}</div>
                       <div className="t11 cFaint">{i.category || '—'}{i.archived ? ' · archivé' : ''}</div>
                     </td>
-                    <td className="t12 cMuted nowrap">
+                    <td data-label="Achat" className="t12 cMuted nowrap">
                       1 {i.stock_unit} = {i.conversion_factor} {i.recipe_unit}
                     </td>
-                    <td className="tr num nowrap">
+                    <td data-label="Prix d'achat" className="tr num nowrap">
                       {i.cost_per_stock_unit > 0
                         ? <>{f3(i.cost_per_stock_unit)} <span className="t11 cFaint">/ {i.stock_unit}</span></>
                         : <span className="badge bWarn">à définir</span>}
                     </td>
-                    <td className="tr num t12 cMuted nowrap">
+                    <td data-label="Coût unitaire" className="tr num t12 cMuted nowrap">
                       {i.cost_per_recipe_unit > 0 ? `${i.cost_per_recipe_unit.toFixed(5)} / ${i.recipe_unit}` : '—'}
                     </td>
-                    <td className="tr num nowrap">
+                    <td data-label="En stock" className="tr num nowrap">
                       <span className={i.is_low ? 'cDanger bold' : ''}>{f3(i.quantity)}</span>
                       <span className="t11 cFaint"> {i.stock_unit}</span>
                     </td>
-                    <td className="tr num t12 cMuted">{i.tracked ? f3(i.low_threshold) : '—'}</td>
-                    <td className="tr num nowrap">{f3(i.stock_value)} DT</td>
-                    <td className="tc">
+                    <td data-label="Seuil" className="tr num t12 cMuted">{i.tracked ? f3(i.low_threshold) : '—'}</td>
+                    <td data-label="Valeur" className="tr num nowrap">{f3(i.stock_value)} DT</td>
+                    <td data-label="Recettes" className="tc">
                       {i.used_in_recipes > 0
                         ? <span className="badge bInfo">{i.used_in_recipes}</span>
                         : <span className="t12 cFaint">—</span>}
@@ -296,7 +331,7 @@ export default function IngredientsPage() {
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Recette">
                         {!r ? (
                           <span className="badge bNeutral">aucune — coût manuel</span>
                         ) : (
@@ -312,13 +347,13 @@ export default function IngredientsPage() {
                           </div>
                         )}
                       </td>
-                      <td className="tr num nowrap">
+                      <td data-label="Prix de vente" className="tr num nowrap">
                         {p.price > 0 ? <>{f3(p.price)} <span className="owned">caisse</span></> : '—'}
                       </td>
-                      <td className="tr num nowrap">
+                      <td data-label="Coût" className="tr num nowrap">
                         {r ? f3(cost) : <span className="t12 cFaint">—</span>}
                       </td>
-                      <td className="tr num nowrap">
+                      <td data-label="Marge" className="tr num nowrap">
                         {r && p.price > 0
                           ? <span style={{ color: marge > 0 ? 'var(--ok)' : 'var(--danger)', fontWeight: 650 }}>
                               {f3(marge)} <span className="t11">({margePct}%)</span>

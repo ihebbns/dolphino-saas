@@ -23,6 +23,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
+import { recipeCosts, cacheComputedCosts, ingredientCosts, ingredientLedgerReady } from '@/lib/ingredients'
 
 export const runtime = 'edge'
 
@@ -124,7 +125,31 @@ export async function GET(req: Request) {
 
     const byItem: Record<string, any[]> = {}
     for (const l of lines) (byItem[l.item_id] ||= []).push({ ing_key: l.ing_key, qty: l.qty })
-    const recipesFull = recipes.map((r: any) => ({ ...r, lines: byItem[r.item_id] || [] }))
+
+    // Roll the lines up, and return BOTH the calculated figure and the one
+    // actually charged. An override that hides the calculation turns a decision
+    // into a guess — the gap between them is what exposes a stale recipe or a
+    // bad assumption, so it has to stay on screen.
+    const rollup = await recipeCosts(rid)
+    cacheComputedCosts(rid, rollup).catch(() => {})   // best effort, never blocks the read
+
+    const recipesFull = recipes.map((r: any) => {
+      const c = rollup.get(r.item_id)
+      const computed = c ? c.computed : 0
+      const used = c ? c.used : (r.cost_override ?? 0)
+      return {
+        ...r,
+        lines: byItem[r.item_id] || [],
+        cost_computed: computed,
+        cost_used: used,
+        // Signed gap, so the UI can show "+19 %" without recomputing it.
+        cost_gap: Math.round((used - computed) * 1000) / 1000,
+        cost_gap_pct: computed > 0 ? Math.round(((used - computed) / computed) * 1000) / 10 : null,
+        // Ingredients with no price at all: the usual reason a plate cost looks
+        // impossibly low.
+        missing_cost: c ? c.missingCost : [],
+      }
+    })
 
     const [totals] = await sql`
       SELECT COUNT(*) FILTER (WHERE NOT archived)::int                    AS nb_ingredients,

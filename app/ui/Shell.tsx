@@ -27,6 +27,7 @@
 import { useEffect, useState } from 'react'
 import './theme.css'
 import { Icon, IconName } from './Icon'
+import { DESTINATIONS } from './TabBar'
 
 export const API = process.env.NEXT_PUBLIC_API_URL || 'https://servio.tn'
 
@@ -38,20 +39,34 @@ export type Dest = {
   tabs?: { href: string; name: string }[]
 }
 
-export const DESTS: Dest[] = [
-  { href: '/dashboard', name: "Aujourd'hui", icon: 'home' },
-  {
-    href: '/stock', name: 'Produits', icon: 'box',
-    tabs: [
-      { href: '/stock', name: 'Stock' },
-      { href: '/catalog', name: 'Coûts' },
-      { href: '/ingredients', name: 'Recettes' },
-    ],
-  },
-  { href: '/audit', name: 'Caisse', icon: 'drawer' },
-  { href: '/credits', name: 'Créances', icon: 'receipt' },
-  { href: '/account', name: 'Compte', icon: 'settings' },
-]
+// Single source of truth, shared with the dashboard's dark page via ui/TabBar.
+export const DESTS: Dest[] = DESTINATIONS.map(d => ({
+  href: d.href,
+  name: d.name,
+  icon: d.icon,
+  tabs: d.subs,
+}))
+
+/**
+ * Reads which optional modules this establishment uses. Presentation only: a
+ * module that is off simply stops being offered, so a café that does not do
+ * recipes never sees a Recettes tab it will not maintain.
+ * Defaults to ON so nothing disappears for an existing client.
+ */
+export function useModules(key: string | null) {
+  const [modules, setModules] = useState<Record<string, boolean>>({})
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => {
+    if (!key) return
+    apiGet('/api/me/config', key).then(d => {
+      const m = (d && (d.modules || (d.config && d.config.modules))) || {}
+      setModules(typeof m === 'object' ? m : {})
+      setLoaded(true)
+    }).catch(() => setLoaded(true))
+  }, [key])
+  const on = (name: string) => modules[name] !== false
+  return { modules, loaded, on }
+}
 
 /** Kept for anything still importing the old grouped nav. */
 export const NAV = DESTS
@@ -123,6 +138,7 @@ export function Shell({
   children,
   restName,
   badges,
+  hideTabs,
 }: {
   active: string
   title: string
@@ -131,6 +147,8 @@ export function Shell({
   children: React.ReactNode
   restName?: string
   badges?: Record<string, number>
+  /** Sub-routes to hide, e.g. Recettes when the ingredients module is off. */
+  hideTabs?: string[]
 }) {
   const dest = destOf(active)
   const tabs = dest?.tabs
@@ -188,9 +206,9 @@ export function Shell({
           <div className="topRight">{actions}</div>
         </header>
 
-        {tabs && tabs.length > 1 && (
+        {tabs && tabs.filter(t => !hideTabs?.includes(t.href)).length > 1 && (
           <div className="segWrap" role="tablist" aria-label={dest?.name}>
-            {tabs.map(t => (
+            {tabs.filter(t => !hideTabs?.includes(t.href)).map(t => (
               <a
                 key={t.href}
                 href={t.href}

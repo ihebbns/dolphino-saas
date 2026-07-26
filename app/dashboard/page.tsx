@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import s from '../dashboard.module.css'
+import { TabBar } from '../ui/TabBar'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://servio.tn'
 const f   = (n: any) => Number(n || 0).toFixed(3)
@@ -1177,72 +1178,17 @@ export default function Home() {
 
   return (
     <>
-      <BackOfficeNav active="/dashboard" />
-      <Dashboard apiKey={apiKey} restInfo={restInfo} onLogout={logout} />
+      {/* Content clears the fixed bottom bar so the last row is never trapped. */}
+      <div style={{ paddingBottom: 'calc(74px + env(safe-area-inset-bottom, 0px))' }}>
+        <Dashboard apiKey={apiKey} restInfo={restInfo} onLogout={logout} />
+      </div>
+      <TabBar active="/dashboard" theme="dark" />
     </>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Back-office navigation.
-//
-// Deliberately inline-styled rather than using app/ui/theme.css: that stylesheet
-// sets a light `body` background, which would fight this dashboard's dark CSS
-// module. Restyling the dashboard is a separate job; this exists so the other
-// pages are actually reachable, because without it Ingrédients, Créances, Stock
-// and the audit trails were built but invisible.
-// ═══════════════════════════════════════════════════════════════════
-const BO_LINKS = [
-  { href: '/dashboard',   icon: '📊', name: 'Tableau de bord' },
-  { href: '/credits',     icon: '📒', name: 'Créances' },
-  { href: '/stock',       icon: '📦', name: 'Stock' },
-  { href: '/catalog',     icon: '🏷️', name: 'Produits & coûts' },
-  { href: '/ingredients', icon: '🥣', name: 'Ingrédients' },
-  { href: '/audit',       icon: '🔓', name: 'Tiroir-caisse' },
-  { href: '/account',     icon: '⚙️', name: 'Établissement' },
-]
-
-// Local only. A page file in the App Router may export nothing but `default`
-// and a fixed set of reserved names, so exporting this broke the type check.
-// It is used solely inside this file; the shared sidebar now lives in ui/Shell.
-function BackOfficeNav({ active }: { active: string }) {
-  return (
-    <div
-      style={{
-        display: 'flex', alignItems: 'center', gap: 4,
-        padding: '8px 14px', background: '#0F0C08',
-        borderBottom: '1px solid #231C12',
-        overflowX: 'auto', position: 'sticky', top: 0, zIndex: 50,
-        fontFamily: "-apple-system,'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif",
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 10, flexShrink: 0 }}>
-        <div style={{
-          width: 26, height: 26, borderRadius: 7,
-          background: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 800, fontSize: 13,
-        }}>S</div>
-        <span style={{ fontWeight: 700, fontSize: 13.5, color: '#F0E8D8' }}>Servio</span>
-      </div>
-      {BO_LINKS.map(l => {
-        const on = l.href === active
-        return (
-          <a
-            key={l.href} href={l.href}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '7px 11px', borderRadius: 7, textDecoration: 'none',
-              fontSize: 13, fontWeight: on ? 700 : 500, whiteSpace: 'nowrap',
-              background: on ? 'rgba(245,158,11,.14)' : 'transparent',
-              color: on ? '#E8A84C' : '#9C9285',
-            }}
-          >
-            <span style={{ fontSize: 13 }}>{l.icon}</span>
-            <span>{l.name}</span>
-          </a>
-        )
-      })}
-    </div>
-  )
-}
+// The black top navbar that used to live here is gone. It scrolled sideways on a
+// phone and hid half its items, and it was duplicated inline because theme.css
+// sets a light body background that fought this page's dark CSS module.
+// ui/TabBar.tsx solves both: one navigation definition, styled inline so it sits
+// happily on dark or light, fixed to the bottom where a thumb reaches it.

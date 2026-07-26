@@ -31,6 +31,7 @@ import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import { recordMovement, ledgerReady, POS_KINDS } from '@/lib/stock'
+import { consumeForSale } from '@/lib/ingredients'
 
 export const runtime = 'edge'
 
@@ -367,11 +368,41 @@ export async function PATCH(req: Request) {
     }
   }
 
+  // ── Recipe explosion ────────────────────────────────────────────────
+  // Selling a pizza used to deduct the pizza and leave the cheese untouched:
+  // recipes computed a cost and nothing else, so there was no actual consumption
+  // to compare a theoretical figure against.
+  //
+  // Done HERE, on the web, rather than in the POS. The till already reports what
+  // it sold; a recipe is a web-side fact it has no reason to know. That also
+  // means every terminal already installed starts deducting ingredients without
+  // a rebuild.
+  //
+  // Deliberately after the product movements and wrapped: an ingredient problem
+  // must never cost us the sale itself.
+  let ingredients = 0
+  try {
+    ingredients = await consumeForSale(
+      rid,
+      sold.map(it => ({
+        item_id: String(it.item_id ?? '').slice(0, 64),
+        qty: Math.max(1, parseInt(String(it.qty)) || 1),
+        uid: it.uid,
+        ts: it.ts ?? null,
+        sale_num: saleNum,
+      })),
+      { actor, source: 'pos', saleNum },
+    )
+  } catch { /* never block a sale on its ingredient explosion */ }
+
   return cors(NextResponse.json({
     ok: true,
     updated,
     // Surfaced so the POS can stop retrying a movement that already landed.
     duplicates,
     ledger: useLedger,
+    // How many ingredient movements the recipes produced. 0 simply means no
+    // sold product had an enabled recipe with tracked ingredients.
+    ingredients,
   }))
 }

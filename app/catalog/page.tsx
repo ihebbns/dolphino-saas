@@ -261,10 +261,10 @@ export default function CatalogPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="t13 cMuted nowrap">
+                    <td data-label="Catégorie" className="t13 cMuted nowrap">
                       {p.category || '—'}<span className="owned">caisse</span>
                     </td>
-                    <td className="tr num nowrap">
+                    <td data-label="Prix de vente" className="tr num nowrap">
                       {isMenuOwned(p) ? (
                         <span className="strong" title="Prix géré dans la caisse">
                           {f3(p.price)}<span className="owned">caisse</span>
@@ -277,7 +277,7 @@ export default function CatalogPage() {
                         />
                       )}
                     </td>
-                    <td className="tr">
+                    <td data-label="Coût d'achat" className="tr">
                       <input
                         className="input inputNum inputSm"
                         style={{ width: 110, borderColor: noCost ? 'var(--danger-line)' : undefined }}
@@ -286,24 +286,24 @@ export default function CatalogPage() {
                         onChange={e => edit(p.item_id, 'cost', e.target.value)}
                       />
                     </td>
-                    <td className="tr num nowrap">
+                    <td data-label="Marge" className="tr num nowrap">
                       {price > 0 && !noCost ? (
                         <span style={{ color: margin > 0 ? 'var(--ok)' : 'var(--danger)', fontWeight: 650 }}>
                           {f3(margin)} <span className="t11">({marginPct}%)</span>
                         </span>
                       ) : <span className="cFaint">—</span>}
                     </td>
-                    <td className="tr num nowrap">
+                    <td data-label="Stock" className="tr num nowrap">
                       <a href="/stock" title="Les quantités se gèrent sur Stock, avec traçabilité"
                          style={{ color: p.tracked && p.quantity <= p.low_threshold ? 'var(--danger)' : 'var(--text-2)', textDecoration: 'none' }}>
                         {p.quantity}
                         <span className="owned">stock</span>
                       </a>
                     </td>
-                    <td className="tc">
+                    <td data-label="Suivi" className="tc">
                       <button className="switch" data-on={p.tracked} onClick={() => edit(p.item_id, 'tracked', !p.tracked)} />
                     </td>
-                    <td className="tr">
+                    <td data-label="Seuil" className="tr">
                       <input
                         className="input inputNum inputSm" style={{ width: 74 }}
                         type="number" step="1" min="0" value={p.low_threshold}

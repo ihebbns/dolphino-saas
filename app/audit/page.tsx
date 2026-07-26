@@ -12,7 +12,7 @@
 // noticed.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
-import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, f3, dt } from '../ui/Shell'
+import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, f3, dt, Icon } from '../ui/Shell'
 
 type Event = {
   id: number; reason: string; amount: number | null; note: string
@@ -89,8 +89,40 @@ export default function AuditPage() {
       subtitle="Chaque ouverture du tiroir, avec son motif et son auteur"
       restName={restName}
       badges={{ '/audit': manualOpens.length }}
-      actions={<button className="btn" onClick={() => key && load(key, days)}>↻ Recharger</button>}
+      actions={
+        <>
+          {/* Date range. The endpoint already takes a day count, so this is the
+              same request with a friendlier control rather than new logic. */}
+          <select
+            className="select"
+            value={days}
+            onChange={e => { const d = parseInt(e.target.value); setDays(d); if (key) load(key, d) }}
+            aria-label="Période"
+          >
+            <option value={1}>Aujourd&apos;hui</option>
+            <option value={7}>7 jours</option>
+            <option value={30}>30 jours</option>
+            <option value={90}>90 jours</option>
+          </select>
+          {/* Print/PDF uses the browser's own dialog, where "Save as PDF" is the
+              standard destination. The print stylesheet already drops the
+              navigation and buttons and forces tables back, so the output is a
+              clean document rather than a screenshot of an app. */}
+          <button className="btn" onClick={() => window.print()} title="Imprimer ou enregistrer en PDF">
+            <Icon name="print" size={15} /> PDF
+          </button>
+          <button className="btn" onClick={() => key && load(key, days)}>↻ Recharger</button>
+        </>
+      }
     >
+      {/* Only appears on paper: a printed page needs to say what it covers. */}
+      <div className="printOnly printHead">
+        <div className="printTitle">Journal du tiroir-caisse — {restName || 'Servio'}</div>
+        <div className="printSub">
+          Période : {days === 1 ? "aujourd'hui" : `${days} derniers jours`}
+          {' · '}Édité le {new Date().toLocaleString('fr-TN')}
+        </div>
+      </div>
       {!ready && <NotReady sql="migration-drawer-log.sql" />}
       {msg && <div className="notice nDanger"><span className="noticeIcon">✕</span><div>{msg}</div></div>}
 
@@ -184,19 +216,19 @@ export default function AuditPage() {
                         <span className="strong">{a.actor || <span className="cFaint">inconnu</span>}</span>
                       </div>
                     </td>
-                    <td className="tr num">
+                    <td data-label="Ouvertures manuelles" className="tr num">
                       {a.manual_opens > 0
                         ? <span className="badge bWarn">{a.manual_opens}</span>
                         : <span className="cFaint">0</span>}
                     </td>
-                    <td className="tr num">{a.retraits}</td>
-                    <td className="tr num nowrap" style={{ color: a.total_retire ? 'var(--danger)' : undefined }}>
+                    <td data-label="Retraits" className="tr num">{a.retraits}</td>
+                    <td data-label="Total retiré" className="tr num nowrap" style={{ color: a.total_retire ? 'var(--danger)' : undefined }}>
                       {f3(a.total_retire)} DT
                     </td>
-                    <td className="tr num nowrap" style={{ color: a.total_ajoute ? 'var(--ok)' : undefined }}>
+                    <td data-label="Total ajouté" className="tr num nowrap" style={{ color: a.total_ajoute ? 'var(--ok)' : undefined }}>
                       {f3(a.total_ajoute)} DT
                     </td>
-                    <td className="tr num cMuted">{a.total}</td>
+                    <td data-label="Événements" className="tr num cMuted">{a.total}</td>
                   </tr>
                 ))}
               </tbody>
@@ -234,19 +266,19 @@ export default function AuditPage() {
                 return (
                   <tr key={e.id}>
                     <td className="t12 cMuted nowrap">{dt(e.client_ts)}</td>
-                    <td><span className={'badge ' + r.cls}>{r.icon} {r.label}</span></td>
-                    <td className="tr num nowrap">{e.amount !== null ? f3(e.amount) + ' DT' : <span className="cFaint">—</span>}</td>
-                    <td className="t12 cMuted">{e.note || '—'}</td>
-                    <td className="t12 nowrap">
+                    <td data-label="Motif"><span className={'badge ' + r.cls}>{r.icon} {r.label}</span></td>
+                    <td data-label="Montant" className="tr num nowrap">{e.amount !== null ? f3(e.amount) + ' DT' : <span className="cFaint">—</span>}</td>
+                    <td data-label="Détail" className="t12 cMuted">{e.note || '—'}</td>
+                    <td data-label="Par" className="t12 nowrap">
                       {e.actor || <span className="cFaint">—</span>}
                       {e.is_manager && <span className="owned">mgr</span>}
                     </td>
-                    <td className="tc">
+                    <td data-label="Tiroir" className="tc">
                       {e.opened
                         ? <span className="badge bOk">ouvert</span>
                         : <span className="badge bWarn">refusé</span>}
                     </td>
-                    <td className="t11 cFaint nowrap">{e.terminal_id || '—'}</td>
+                    <td data-label="Caisse" className="t11 cFaint nowrap">{e.terminal_id || '—'}</td>
                   </tr>
                 )
               })}

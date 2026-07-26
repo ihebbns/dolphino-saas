@@ -1,0 +1,189 @@
+'use client'
+// ═══════════════════════════════════════════════════════════════════
+// Profil — one place for "me and my account".
+//
+// Replaces Établissement in the navigation. The owner had two settings
+// destinations and no obvious home for their own credentials; now there is one.
+//
+// SCOPE NOTE — this is presentation only, as asked. The establishment details
+// section reuses the existing /api/me/config endpoint, so it saves for real.
+// Password change and staff accounts are rendered as the real forms but are
+// DISABLED, because the backend for them does not exist yet: today the API key
+// IS the password, and there are no per-person web accounts. Shipping fake
+// inputs that silently do nothing would be worse than saying so.
+// ═══════════════════════════════════════════════════════════════════
+import { useEffect, useState } from 'react'
+import { Shell, LoginGate, Loading, useApiKey, apiGet, apiPost, Icon } from '../ui/Shell'
+
+export default function ProfilPage() {
+  const { key, checked } = useApiKey()
+  const [loading, setLoading] = useState(true)
+  const [msg, setMsg] = useState('')
+  const [restName, setRestName] = useState('')
+  const [city, setCity] = useState('')
+  const [phone, setPhone] = useState('')
+  const [plan, setPlan] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [reveal, setReveal] = useState(false)
+  const [pwEmail, setPwEmail] = useState('')
+  const [pwCur, setPwCur] = useState('')
+  const [pwNew, setPwNew] = useState('')
+  const [pwBusy, setPwBusy] = useState(false)
+
+  async function changePassword() {
+    setPwBusy(true); setMsg('')
+    const d = await apiPost('/api/me/password', { email: pwEmail, current: pwCur, next: pwNew })
+    setPwBusy(false)
+    if (d.ok) {
+      setPwCur(''); setPwNew('')
+      setMsg('✓ Mot de passe modifié' + (d.upgraded ? ' et sécurisé' : ''))
+    } else setMsg(d.error || 'Erreur')
+  }
+
+  useEffect(() => { if (checked && key) load(key) }, [checked, key])
+
+  async function load(k: string) {
+    setLoading(true)
+    const d = await apiGet('/api/me/config', k)
+    if (d.ok) {
+      setRestName(d.name || '')
+      setCity(d.city || '')
+      setPhone(d.phone || '')
+      setPlan(d.plan || '')
+    } else setMsg(d.error || 'Chargement impossible')
+    setLoading(false)
+  }
+
+  async function save() {
+    if (!key) return
+    setSaving(true); setMsg('')
+    const d = await apiPost('/api/me/config', { key, name: restName, city, phone })
+    setSaving(false)
+    setMsg(d.ok ? '✓ Enregistré' : (d.error || 'Erreur'))
+  }
+
+  if (!checked) return null
+  if (!key) return <LoginGate />
+
+  const masked = key.length > 8 ? key.slice(0, 4) + '••••••••' + key.slice(-4) : '••••••••'
+
+  return (
+    <Shell active="/profil" title="Profil" subtitle="Votre compte et votre établissement" restName={restName}>
+      {msg && (
+        <div className={'notice ' + (msg.startsWith('✓') ? 'nOk' : 'nDanger')}>
+          <span className="noticeIcon"><Icon name={msg.startsWith('✓') ? 'check' : 'close'} size={16} /></span>
+          <div>{msg}</div>
+        </div>
+      )}
+
+      {loading ? <Loading /> : (
+        <>
+          {/* ── Établissement ─────────────────────────────────────── */}
+          <div className="card mb14">
+            <div className="cardPad">
+              <div className="strong mb14">Établissement</div>
+
+              <div className="field mb14">
+                <label className="label" htmlFor="pf-name">Nom</label>
+                <input id="pf-name" className="input" value={restName} onChange={e => setRestName(e.target.value)} />
+              </div>
+              <div className="field mb14">
+                <label className="label" htmlFor="pf-city">Ville</label>
+                <input id="pf-city" className="input" value={city} onChange={e => setCity(e.target.value)} />
+              </div>
+              <div className="field mb14">
+                <label className="label" htmlFor="pf-phone">Téléphone</label>
+                <input id="pf-phone" className="input" value={phone} onChange={e => setPhone(e.target.value)} />
+              </div>
+
+              <button className="btn btnPrimary" onClick={save} disabled={saving}>
+                {saving ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Clé de licence ────────────────────────────────────── */}
+          <div className="card mb14">
+            <div className="cardPad">
+              <div className="strong mb14">Clé de licence</div>
+              <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                <code className="k" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {reveal ? key : masked}
+                </code>
+                <button className="btn btnGhost btnSm" onClick={() => setReveal(v => !v)}>
+                  {reveal ? 'Masquer' : 'Afficher'}
+                </button>
+              </div>
+              <span className="help">
+                C&apos;est la clé que la caisse utilise. Ne la partagez pas : elle donne accès à
+                toutes vos données.
+              </span>
+              {plan ? <div className="t12 cMuted" style={{ marginTop: 8 }}>Formule : {plan}</div> : null}
+            </div>
+          </div>
+
+          {/* ── Mot de passe ──────────────────────────────────────── */}
+          {/* Authenticated by the current password, not by the api_key stored in
+              this browser — otherwise anyone with access to a terminal could
+              take over the account. */}
+          <div className="card mb14">
+            <div className="cardPad">
+              <div className="strong mb14">Mot de passe</div>
+
+              <div className="field mb14">
+                <label className="label" htmlFor="pf-email">Email du compte</label>
+                <input id="pf-email" className="input" type="email" value={pwEmail}
+                  onChange={e => setPwEmail(e.target.value)} autoComplete="username" />
+              </div>
+              <div className="field mb14">
+                <label className="label" htmlFor="pf-old">Mot de passe actuel</label>
+                <input id="pf-old" className="input" type="password" value={pwCur}
+                  onChange={e => setPwCur(e.target.value)} autoComplete="current-password" />
+              </div>
+              <div className="field mb14">
+                <label className="label" htmlFor="pf-new">Nouveau mot de passe</label>
+                <input id="pf-new" className="input" type="password" value={pwNew}
+                  onChange={e => setPwNew(e.target.value)} autoComplete="new-password" />
+                <span className="help">8 caractères minimum.</span>
+              </div>
+
+              <button className="btn btnPrimary" onClick={changePassword}
+                disabled={pwBusy || !pwEmail || !pwCur || pwNew.length < 8}>
+                {pwBusy ? 'Modification…' : 'Changer le mot de passe'}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Utilisateurs ──────────────────────────────────────── */}
+          <div className="card">
+            <div className="cardPad">
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="strong">Utilisateurs</div>
+                <span className="pill p-flat">Bientôt</span>
+              </div>
+
+              <div className="recList" style={{ marginTop: 12 }}>
+                <div className="recCard" style={{ cursor: 'default' }}>
+                  <div className="recMain">
+                    <div className="recTitle">{restName || 'Propriétaire'}</div>
+                    <div className="recMeta"><span>Accès complet · web + caisse</span></div>
+                  </div>
+                  <span className="pill p-ok">Vous</span>
+                </div>
+              </div>
+
+              <button className="btn" style={{ marginTop: 12 }} disabled>
+                <Icon name="plus" size={15} /> Ajouter un utilisateur
+              </button>
+              <span className="help">
+                Les PIN de la caisse se gèrent dans la caisse. Un PIN par personne rendrait la
+                traçabilité nominative : aujourd&apos;hui un mouvement est signé par un rôle
+                (« Manager »), pas par un individu.
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+    </Shell>
+  )
+}

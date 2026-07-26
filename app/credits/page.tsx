@@ -188,12 +188,12 @@ export default function CreditsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="tr num nowrap bold" style={{ color: c.balance > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                    <td data-label="Doit" className="tr num nowrap bold" style={{ color: c.balance > 0 ? 'var(--danger)' : 'var(--ok)' }}>
                       {f3(c.balance)} DT
                     </td>
-                    <td className="tr num cMuted">{f3(c.total_pris)}</td>
-                    <td className="tr num cMuted">{f3(c.total_regle)}</td>
-                    <td className="nowrap">
+                    <td data-label="Total pris" className="tr num cMuted">{f3(c.total_pris)}</td>
+                    <td data-label="Total réglé" className="tr num cMuted">{f3(c.total_regle)}</td>
+                    <td data-label="Dernier mouvement" className="nowrap">
                       <div className="t13">{dt(c.last_movement_at)}</div>
                       {isStale && <div className="t11 cWarn">⏳ {d} jours sans mouvement</div>}
                     </td>
@@ -224,21 +224,21 @@ export default function CreditsPage() {
               ) : movements.slice(0, 80).map(m => (
                 <tr key={m.id}>
                   <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
-                  <td>{m.name || m.client_key}</td>
-                  <td>
+                  <td data-label="Client">{m.name || m.client_key}</td>
+                  <td data-label="Type">
                     <span className={'badge ' + (m.kind === 'payment' ? 'bOk' : m.kind === 'credit' ? 'bDanger' : 'bNeutral')}>
                       {m.kind === 'payment'
                         ? '💵 Règlement' + (m.pay_method === 'card' ? ' (carte)' : '')
                         : m.kind === 'credit' ? '📒 À crédit' : '✏️ Correction'}
                     </span>
                   </td>
-                  <td className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                  <td data-label="Montant" className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}>
                     {m.delta > 0 ? '+' : '−'}{f3(Math.abs(m.delta))}
                   </td>
-                  <td className="t12 cMuted" style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <td data-label="Détail" className="t12 cMuted" style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {m.items_summary || m.reason || (m.sale_num ? '#' + String(m.sale_num).padStart(3, '0') : '—')}
                   </td>
-                  <td className="t12 cMuted">{m.actor || '—'}</td>
+                  <td data-label="Par" className="t12 cMuted">{m.actor || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -283,11 +283,11 @@ export default function CreditsPage() {
                     {movements.filter(m => m.client_key === sel.client_key).map(m => (
                       <tr key={m.id}>
                         <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
-                        <td className="t12">
+                        <td data-label="Type" className="t12">
                           {m.kind === 'payment' ? '💵 Règlement' : m.kind === 'credit' ? '📒 À crédit' : '✏️ Correction'}
                           {m.items_summary ? <span className="cFaint"> — {m.items_summary}</span> : null}
                         </td>
-                        <td className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                        <td data-label="Montant" className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}>
                           {m.delta > 0 ? '+' : '−'}{f3(Math.abs(m.delta))}
                         </td>
                       </tr>
