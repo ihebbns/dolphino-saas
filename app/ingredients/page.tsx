@@ -97,18 +97,8 @@ export default function IngredientsPage() {
   const [tab, setTab] = useState<'buy' | 'ing' | 'rec' | 'log'>('buy')
   // Recipes are optional. When the module is off the page stops offering them
   // instead of showing tools nobody will maintain. Defaults to on.
+  // Module state is READ from the server config, never changed from here.
   const [ingOn, setIngOn] = useState(true)
-  const [modBusy, setModBusy] = useState(false)
-
-  async function toggleIngredientsModule() {
-    if (!key) return
-    const next = !ingOn
-    setModBusy(true); setMsg('')
-    const d = await apiPost('/api/me/config', { key, modules: { ingredients: next } })
-    setModBusy(false)
-    if (d.ok) setIngOn(next)
-    else setMsg(d.error || 'Erreur')
-  }
 
   const [ings, setIngs] = useState<Ing[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -275,16 +265,6 @@ export default function IngredientsPage() {
       badges={{ '/ingredients': lowCount }}
       actions={
         <>
-          <button
-            className="btn"
-            onClick={toggleIngredientsModule}
-            disabled={modBusy}
-            title={ingOn
-              ? 'Désactiver les ingrédients et recettes'
-              : 'Activer les ingrédients et recettes'}
-          >
-            {modBusy ? '…' : (ingOn ? 'Recettes activées' : 'Recettes désactivées')}
-          </button>
           <button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>
           {tab === 'ing' && ingOn && (
             <button className="btn btnPrimary" onClick={() => setEditIng({ ...BLANK })}>+ Ingrédient</button>
@@ -301,8 +281,7 @@ export default function IngredientsPage() {
       {!ingOn && (
         <Empty
           icon="flask"
-          text="Les ingrédients et recettes sont désactivés. Les coûts restent saisis à la main, produit par produit."
-          action={<button className="btn btnPrimary" onClick={toggleIngredientsModule} disabled={modBusy}>Activer les recettes</button>}
+          text="Les ingrédients et recettes sont désactivés pour ce compte. Contactez l'administrateur pour les activer."
         />
       )}
 

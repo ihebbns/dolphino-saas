@@ -106,6 +106,23 @@ export async function PATCH(req: Request) {
         await sql`UPDATE restaurants SET ${sql(k)} = ${String(v).slice(0, 2000)} WHERE id = ${id}`
       }
     }
+
+    // ── Module toggle (admin only) ────────────────────────────────────
+    // Clients cannot change their own modules via /api/me/config. This is the
+    // only path. It merges into the existing config.modules, so setting
+    // { modules: { ingredients: true } } does not wipe the others.
+    if (body.modules && typeof body.modules === 'object') {
+      const [row] = await sql`SELECT config FROM restaurants WHERE id = ${id} LIMIT 1`
+      const cfg = (row?.config && typeof row.config === 'object') ? row.config : {}
+      const cur = (cfg.modules && typeof cfg.modules === 'object') ? cfg.modules : {}
+      const next: Record<string, boolean> = { ...cur }
+      for (const [mk, mv] of Object.entries(body.modules)) {
+        if (typeof mv === 'boolean') next[mk] = mv
+      }
+      cfg.modules = next
+      await sql`UPDATE restaurants SET config = ${JSON.stringify(cfg)}::jsonb WHERE id = ${id}`
+    }
+
     return NextResponse.json({ ok: true })
   } catch (e: any) {
     return NextResponse.json(serverError('admin/clients', e), { status:500 })

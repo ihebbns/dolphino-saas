@@ -79,7 +79,11 @@ export async function POST(req: Request) {
     if (typeof body.logoLetter === 'string')  nextConfig.logoLetter = body.logoLetter.slice(0, 2).toUpperCase()
     if (typeof body.tagline === 'string')     nextConfig.tagline = body.tagline.slice(0, 120)
     if (typeof body.currency === 'string')    nextConfig.currency = body.currency.slice(0, 6)
-    if (body.modules)                         nextConfig.modules = { ...(current.modules || {}), ...sanitizeModules(body.modules) }
+    // Modules are admin-controlled. The client's own key cannot add or remove a
+    // module — that would let a €0 plan enable every feature by posting to this
+    // endpoint. The only path that writes modules is PUT /api/admin/clients (at
+    // creation) and eventually a PATCH from admin.
+    // if (body.modules) nextConfig.modules = ...   ← REMOVED
     if (body.tableCount !== undefined)        nextConfig.tableCount = parseInt(body.tableCount) || 12
     if (Array.isArray(body.sections))         nextConfig.sections = body.sections.map((s: any) => String(s).slice(0, 40)).filter(Boolean)
     // Lock stock editing at the till, making the POS view-only for quantities.

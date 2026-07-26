@@ -70,10 +70,9 @@ export default function StockPage() {
   // only the EXE never opens this page and must stay fully operational.
   const [posLocked, setPosLocked] = useState(false)
   const [lockBusy, setLockBusy] = useState(false)
-  // Whether this establishment uses stock at all. Off hides it everywhere in
-  // the POS — no panel, no deductions, no movements.
+  // Whether this establishment uses stock at all. Read from the server config,
+  // not changeable from this page — only admin toggles modules.
   const [stockOn, setStockOn] = useState(true)
-  const [modBusy, setModBusy] = useState(false)
   const mods = useModules(key)
 
   useEffect(() => {
@@ -121,21 +120,8 @@ export default function StockPage() {
     setLoading(false)
   }
 
-  /** The one switch that makes an establishment work without stock at all. */
-  async function toggleStockModule() {
-    if (!key) return
-    const next = !stockOn
-    setModBusy(true); setMsg('')
-    const d = await apiPost('/api/me/config', { key, modules: { stockTracking: next } })
-    setModBusy(false)
-    if (d.ok) {
-      setStockOn(next)
-      setMsg(next
-        ? '✓ Stock activé — la caisse reprend le suivi à la prochaine synchro'
-        : '✓ Stock désactivé — la caisse ne suivra plus aucune quantité')
-    } else setMsg(d.error || 'Erreur')
-  }
-
+  /** Lock/unlock POS stock editing — this is an operational choice the owner
+   *  makes, not a module toggle. It belongs here. */
   async function toggleLock() {
     if (!key) return
     const next = !posLocked
@@ -214,16 +200,6 @@ export default function StockPage() {
       badges={{ '/stock': lowList.length }}
       actions={
         <>
-          <button
-            className="btn"
-            onClick={toggleStockModule}
-            disabled={modBusy}
-            title={stockOn
-              ? 'Désactiver complètement la gestion du stock'
-              : 'Activer la gestion du stock'}
-          >
-            {modBusy ? '…' : <><Icon name={stockOn ? 'check' : 'close'} size={15} />{stockOn ? 'Stock activé' : 'Stock désactivé'}</>}
-          </button>
           <button
             className="btn"
             onClick={toggleLock}
