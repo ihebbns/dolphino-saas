@@ -299,7 +299,19 @@ export async function GET(req: Request) {
     // The catalog said the tables were there, yet a query still hit a missing
     // relation — so report exactly which one rather than repeating the generic
     // advice. This is the path the credit_reconciliation view fell down.
-    if (isMissingSchema(err)) return notReady(await missingTables())
+    if (isMissingSchema(err)) {
+      const gaps = await missingTables()
+      const id = await dbIdentity(sql)
+      // Include the REAL error so the admin can see which column or relation is
+      // actually absent — "run the migration" is useless advice when the tables
+      // exist but a COLUMN was added after the initial run.
+      return cors(NextResponse.json({
+        ok: true, ready: false,
+        clients: [], movements: [], totals: null,
+        note: `Schéma incomplet : ${String(err?.message || '').slice(0, 200)}`,
+        missing: gaps, db: id,
+      }))
+    }
     return cors(NextResponse.json(serverError('credits GET', err), { status: 500 }))
   }
 }
