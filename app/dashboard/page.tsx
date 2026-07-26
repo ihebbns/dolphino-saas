@@ -90,6 +90,7 @@ function KpiCards({ k }: { k: any }) {
     { icon:'📊', val: fmt(k.avg_ticket),      unit:'DT', lbl:'Ticket moyen',      color:'kpiCardBlue'   },
     { icon:'💵', val: fmt(k.cash_total),      unit:'DT', lbl:'Espèces',           color:'kpiCardOrange' },
     { icon:'💳', val: fmt(+k.card_total + +k.mobile_total), unit:'DT', lbl:'Carte / Mobile', color:'kpiCardPurple' },
+    { icon:'📒', val: fmt(k.credit_total),    unit:'DT', lbl:'À crédit',          color:'kpiCardBlue'   },
     { icon:'🏠', val: k.sur_place, unit:'', lbl:'Sur place',
       sub: `${k.emporter} emporter · ${k.livraison} livraison`, color:'kpiCardGold' },
   ]
@@ -136,11 +137,13 @@ function PaymentDonut({ k }: { k: any }) {
   const cash   = +k.cash_total || 0
   const card   = +k.card_total || 0
   const mobile = +k.mobile_total || 0
-  const total  = cash + card + mobile || 1
+  const credit = +k.credit_total || 0
+  const total  = cash + card + mobile + credit || 1
   const items  = [
     { label:'Espèces', val:cash,   pct:Math.round(cash/total*100),   color:'var(--gold-l)' },
     { label:'Carte',   val:card,   pct:Math.round(card/total*100),   color:'var(--blue)'   },
     { label:'Mobile',  val:mobile, pct:Math.round(mobile/total*100), color:'var(--green)'  },
+    { label:'À crédit',val:credit, pct:Math.round(credit/total*100), color:'var(--orange)' },
   ].filter(i => i.val > 0)
 
   let offset = 25
@@ -1023,21 +1026,27 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
                 <CategoryBreakdown items={data.topItems}/>
               </div>
             </div>
-            {/* Stock boissons */}
-            {data.stock && data.stock.length > 0 && (
+            {/* Only the next few actions belong on the home screen. The full
+                stock table is available one tap away; showing every zero makes
+                the dashboard feel broken before stock has been configured. */}
+            {data.stockValuation?.lowStock?.length > 0 && (
               <div className={s.section}>
-                <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🥤</span> Stock Boissons</div></div>
+                <div className={s.sectionHdr}>
+                  <div className={s.sectionTitle}><span>📦</span> À réapprovisionner</div>
+                  <a href="/stock" className={s.btnIcon} style={{ fontSize:12, textDecoration:'none' }}>Voir le stock →</a>
+                </div>
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:'8px' }}>
-                  {data.stock.map((item: any, i: number) => (
+                  {data.stockValuation.lowStock.slice(0, 6).map((item: any, i: number) => (
                     <div key={i} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'var(--radius)', padding:'14px', textAlign:'center', position:'relative', overflow:'hidden' }}>
-                      {item.quantity <= 3 && <div style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:'var(--red)' }}/>}
+                      {item.quantity <= item.low_threshold && <div style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:'var(--red)' }}/>} 
                       <div style={{ fontSize:'24px', marginBottom:'4px' }}>{item.item_emoji || '🥤'}</div>
                       <div style={{ fontSize:'12px', fontWeight:'600', marginBottom:'4px' }}>{item.item_name}</div>
-                      <div style={{ fontSize:'20px', fontWeight:'800', color: item.quantity <= 3 ? 'var(--red)' : item.quantity <= 10 ? 'var(--orange)' : 'var(--green)' }}>{item.quantity}</div>
-                      <div style={{ fontSize:'10px', color:'var(--muted)' }}>en stock</div>
+                      <div style={{ fontSize:'20px', fontWeight:'800', color:'var(--red)' }}>{item.quantity}</div>
+                      <div style={{ fontSize:'10px', color:'var(--muted)' }}>seuil {item.low_threshold}</div>
                     </div>
                   ))}
                 </div>
+                {data.stockValuation.lowStock.length > 6 && <div style={{ marginTop:10, fontSize:12, color:'var(--muted)' }}>+ {data.stockValuation.lowStock.length - 6} autre(s) article(s) à vérifier dans Stock.</div>}
               </div>
             )}
             <div className={s.section}>

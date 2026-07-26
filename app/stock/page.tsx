@@ -278,6 +278,21 @@ export default function StockPage() {
         </div>
       )}
 
+      {/* A long initial list of zeroes is a setup state, not an emergency.
+          Make the next decision explicit instead of asking an owner to infer it
+          from dozens of red rows. */}
+      {unitVariance.length >= 12 && lowList.length >= 12 && (
+        <div className="notice nInfo mb14">
+          <span className="noticeIcon">✓</span>
+          <div>
+            <div className="noticeTitle">Configurer le suivi du stock</div>
+            Ne suivez que ce que vous comptez réellement : <b>à l&apos;unité</b> pour les boissons,
+            <b> par recette</b> pour les plats, ou <b>non suivi</b> pour le reste.{' '}
+            <a href="/catalog">Configurer les produits →</a>
+          </div>
+        </div>
+      )}
+
       <div className="statGrid mb20">
         <div className="stat">
           <div className="statLabel">Valeur du stock</div>
