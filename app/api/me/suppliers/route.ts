@@ -19,6 +19,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
+import { refreshSupplierBalance } from '@/lib/suppliers'
 import { serverError, isMissingSchema, notReadyPayload, missingRelations, dbIdentity } from '@/lib/apiError'
 
 export const runtime = 'edge'
@@ -46,34 +47,6 @@ async function resolveRestaurant(key: string) {
     WHERE api_key = ${key} AND plan NOT IN ('suspended', 'suspended_dash')
     LIMIT 1`
   return rows.length ? rows[0] : null
-}
-
-/** Recalculate a supplier's cached balance from the ledger. */
-async function refreshBalance(rid: number, supplierId: number) {
-  // Credit deliveries (from both stock and ingredient movements)
-  let totalCredit = 0
-  try {
-    const [r1] = await sql`
-      SELECT COALESCE(SUM(ABS(delta) * COALESCE(unit_cost, 0)), 0)::float AS total
-      FROM stock_movements
-      WHERE restaurant_id = ${rid} AND supplier_id = ${supplierId}
-        AND kind = 'receive' AND payment_method = 'credit'`
-    const [r2] = await sql`
-      SELECT COALESCE(SUM(ABS(delta) * COALESCE(unit_cost, 0)), 0)::float AS total
-      FROM ingredient_movements
-      WHERE restaurant_id = ${rid} AND supplier_id = ${supplierId}
-        AND kind = 'receive' AND payment_method = 'credit'`
-    totalCredit = (r1?.total || 0) + (r2?.total || 0)
-  } catch { /* ledger tables may not exist yet */ }
-
-  const [p] = await sql`
-    SELECT COALESCE(SUM(amount), 0)::float AS total
-    FROM supplier_payments
-    WHERE restaurant_id = ${rid} AND supplier_id = ${supplierId}`
-
-  const balance = Math.round((totalCredit - (p?.total || 0)) * 1000) / 1000
-  await sql`UPDATE suppliers SET balance = ${balance}, updated_at = NOW() WHERE id = ${supplierId}`
-  return balance
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -195,7 +168,7 @@ export async function POST(req: Request) {
                 ${clip(body.reference, 120)}, ${clip(body.notes, 2000)},
                 ${clip(body.actor, 80) || 'back-office'}, NOW())`
 
-      const balance = await refreshBalance(rid, supplierId)
+      const balance = await refreshSupplierBalance(rid, supplierId)
       return cors(NextResponse.json({ ok: true, balance }))
     }
 

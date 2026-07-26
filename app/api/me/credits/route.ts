@@ -138,18 +138,31 @@ export async function POST(req: Request) {
     }
 
     // ── Balances ──────────────────────────────────────────────────────
+    // A current balance without movements is still useful, but it must not
+    // make a payment disappear from the client fiche. For older tills that
+    // only send balances, append one clearly labelled reconciliation movement
+    // for the observed change. New tills send their exact events below.
+    const explicitClients = new Set(
+      movements.map(m => clip(m?.cid, 64) || (clip(m?.name, 120).trim() ? slugKey(clip(m?.name, 120)) : '')).filter(Boolean)
+    )
     let upserted = 0
+    let inferred = 0
     for (const c of clients.slice(0, 1000)) {
       const name = clip(c?.name, 120).trim()
       if (!name) continue
       const clientKey = clip(c?.cid, 64) || slugKey(name)
       const archived = !!c?.archived
+      const nextBalance = n3(c?.balance)
+      const previous = await sql`
+        SELECT balance::float AS balance FROM credits
+        WHERE restaurant_id = ${rid} AND client_key = ${clientKey} LIMIT 1`
+      const before = n3(previous[0]?.balance)
 
       await sql`
         INSERT INTO credits
           (restaurant_id, client_key, name, phone, balance, archived, archived_at, terminal_id, client_ts, updated_at)
         VALUES
-          (${rid}, ${clientKey}, ${name}, ${clip(c?.phone, 40)}, ${n3(c?.balance)},
+          (${rid}, ${clientKey}, ${name}, ${clip(c?.phone, 40)}, ${nextBalance},
            ${archived}, ${archived ? safeTs(c?.ts) : null}, ${terminalId}, ${safeTs(c?.ts)}, NOW())
         ON CONFLICT (restaurant_id, client_key) DO UPDATE SET
           name        = EXCLUDED.name,
@@ -161,6 +174,23 @@ export async function POST(req: Request) {
           client_ts   = EXCLUDED.client_ts,
           updated_at  = NOW()`
       upserted++
+
+      const delta = n3(nextBalance - before)
+      if (delta !== 0 && !explicitClients.has(clientKey)) {
+        const kind = delta > 0 ? 'credit' : 'payment'
+        // Keep the fallback key short enough for the database column while
+        // retaining both balances and the source instant for replay safety.
+        const uid = `balance:${clientKey.slice(0, 22)}:${before}:${nextBalance}:${Date.parse(safeTs(c?.ts))}`
+        const insertedFallback = await sql`
+          INSERT INTO credit_movements
+            (restaurant_id, client_key, kind, delta, reason, terminal_id, client_ts, client_uid)
+          VALUES
+            (${rid}, ${clientKey}, ${kind}, ${delta}, ${'Synchronisation caisse'},
+             ${terminalId}, ${safeTs(c?.ts)}, ${uid})
+          ON CONFLICT (restaurant_id, client_uid) DO NOTHING
+          RETURNING id`
+        if (insertedFallback.length) inferred++
+      }
     }
 
     // ── History ───────────────────────────────────────────────────────
@@ -197,7 +227,7 @@ export async function POST(req: Request) {
       if (res.length) inserted++; else skipped++
     }
 
-    return cors(NextResponse.json({ ok: true, ready: true, clients: upserted, movements: inserted, skipped }))
+    return cors(NextResponse.json({ ok: true, ready: true, clients: upserted, movements: inserted, inferred, skipped }))
   } catch (err: any) {
     // Acknowledge rather than 500: a till that gets an error here retries the
     // same batch forever. Missing schema is our problem to fix, not the till's.

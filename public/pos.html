@@ -1393,6 +1393,44 @@ async function syncSale(od) {
   return false;
 }
 
+// Credit is local-first like the sale queue, but its audit trail must also
+// reach the web: the owner needs to see each repayment in the client fiche.
+// The entire small ledger is resent safely; stable UIDs make retries no-ops.
+function creditClientId(c, index){
+  if(c.cid) return c.cid;
+  const base=(c.name||'client').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'client';
+  c.cid='local-'+base+'-'+index;
+  return c.cid;
+}
+async function syncCredits(){
+  if(!SYNC_ENABLED || !SYNC_API_KEY || SYNC_API_KEY==='CHANGE-ME-KEY') return false;
+  const credits=loadCredits();
+  const clients=[]; const movements=[];
+  credits.forEach((c,index)=>{
+    const cid=creditClientId(c,index);
+    clients.push({cid,name:c.name||'',phone:c.phone||'',balance:Number(c.balance)||0,archived:false});
+    (c.history||[]).forEach((h,hi)=>{
+      const kind=h.type==='payment'?'payment':'credit';
+      const amount=Number(h.amount)||0;
+      if(!(amount>0)) return;
+      movements.push({
+        uid:cid+':'+hi+':'+kind+':'+amount+':'+(h.date||'')+':'+(h.time||''),
+        cid, name:c.name||'', kind, delta:amount,
+        payMethod:h.payMethod || (kind==='payment'?'cash':'credit'),
+        items:h.items||'', reason:'', actor:USERS[currentUser]?.name||'',
+      });
+    });
+  });
+  saveCredits(credits);
+  try{
+    const url=SYNC_API_URL.replace('/api/sync','/api/me/credits');
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-Api-Key':SYNC_API_KEY},
+      body:JSON.stringify({key:SYNC_API_KEY,terminalId:'pos-'+(CLIENT_CONFIG.clientId||'local'),clients,movements})});
+    return !!(await res.json()).ok;
+  }catch(e){ return false; }
+}
+
 async function flushQueue() {
   if (!syncQueue.length) return;
   const remaining = [];
@@ -1420,6 +1458,7 @@ async function flushQueue() {
 window.addEventListener('online', () => {
   flushQueue();
   flushClotureQueue();
+  syncCredits();
   flash('☁ Synchronisation en cours...');
 });
 
@@ -3011,6 +3050,7 @@ function confirmCreditSale(idx){
   hist.push(od);daily+=g;lastOrderData=od;orderNum++;
   document.getElementById('dt').textContent='Ventes du jour : '+f(daily)+' DT';
   syncSale(od);
+  syncCredits();
   items=[];disc=0;payMode='cash';orderType='place';
   document.getElementById('cr').value='';
   document.querySelectorAll('.db').forEach((b,i)=>b.classList.toggle('on',i===0));
@@ -3067,12 +3107,12 @@ function confirmCreditPayment(idx){
   if(amount<=0){flash('Montant invalide');return;}
   if(amount>c.balance+0.01){flash('Montant > dette');return;}
   c.balance=Math.max(0,c.balance-amount);
-  c.history.push({type:'payment',amount,date:new Date().toLocaleDateString('fr-TN'),time:new Date().toLocaleTimeString('fr-TN')});
+  const payMethod = window.__creditPayMethod === 'card' ? 'card' : 'cash';
+  c.history.push({type:'payment',amount,payMethod,date:new Date().toLocaleDateString('fr-TN'),time:new Date().toLocaleTimeString('fr-TN')});
   credits[idx]=c;saveCredits(credits);
   // Only a CASH settlement puts money in the drawer. A card settlement still
   // clears the debt, but must not inflate the expected cash total, otherwise
   // the clôture would report a shortfall that does not exist.
-  const payMethod = window.__creditPayMethod === 'card' ? 'card' : 'cash';
   if(currentSession && payMethod === 'cash'){
     if(!currentSession.cashMovements)currentSession.cashMovements=[];
     currentSession.cashMovements.push({type:'in',amount,reason:'Crédit: '+c.name,method:'cash',time:new Date().toLocaleTimeString('fr-TN'),by:USERS[currentUser]?.name||''});
@@ -3083,6 +3123,7 @@ function confirmCreditPayment(idx){
   if(payMethod === 'cash') openDrawer('credit_payment', amount, 'Crédit: ' + c.name);
   window.__creditPayMethod = 'cash';   // reset for the next repayment
   destroySessionModal();
+  syncCredits();
   flash('✓ '+f(amount)+' DT reçu de '+c.name+(c.balance>0?' (reste: '+f(c.balance)+')':' — soldé ✅'));
   showCreditManager();
 }

@@ -22,6 +22,7 @@
 // ═══════════════════════════════════════════════════
 
 import { sql } from '@/lib/db'
+import { refreshSupplierBalance } from '@/lib/suppliers'
 
 export type IngKind = 'consume' | 'receive' | 'waste' | 'adjust' | 'count'
 
@@ -130,6 +131,16 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
   const paymentMethod = m.kind === 'receive' && m.paymentMethod ? clip(m.paymentMethod, 20) : null
   const clientUid = clip(m.clientUid, 160)
 
+  // Avoid relying on a partial unique index: several older databases have the
+  // table but missed that index, which used to reject every recipe movement.
+  if (clientUid) {
+    try {
+      const prior = await sql`SELECT 1 FROM ingredient_movements
+                              WHERE restaurant_id = ${rid} AND client_uid = ${clientUid} LIMIT 1`
+      if (prior.length) return null
+    } catch { /* the insert below reports a real schema problem */ }
+  }
+
   try {
     if (clientUid) {
       const ins = await sql`
@@ -144,9 +155,7 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
            ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
            ${safeTs(m.clientTs)}, ${clientUid})
-        ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
-        RETURNING id`
-      if (!ins.length) return null            // already recorded — do not re-apply
+        `
     } else {
       await sql`
         INSERT INTO ingredient_movements
@@ -184,9 +193,7 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
                ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
                ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
                ${safeTs(m.clientTs)}, ${clientUid})
-            ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
-            RETURNING id`
-          if (!ins.length) return null
+            `
         } else {
           await sql`
             INSERT INTO ingredient_movements
@@ -205,7 +212,15 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
     }
   }
 
-  try { return await refreshIngredientCache(rid, ingKey) } catch { return null }
+  if (m.kind === 'receive' && supplierId && paymentMethod === 'credit') {
+    try { await refreshSupplierBalance(rid, supplierId) } catch { /* cached later */ }
+  }
+
+  try { return await refreshIngredientCache(rid, ingKey) }
+  catch {
+    try { return await derivedIngredientQty(rid, ingKey) }
+    catch { return 0 }
+  }
 }
 
 // ── Recipe explosion ──────────────────────────────────────────────────

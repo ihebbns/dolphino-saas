@@ -33,6 +33,7 @@ import {
   recipeCosts, cacheComputedCosts, ingredientCosts, ingredientLedgerReady,
   recordIngMovement, type IngKind,
 } from '@/lib/ingredients'
+import { refreshSupplierBalance } from '@/lib/suppliers'
 import { serverError, isMissingSchema, notReadyPayload } from '@/lib/apiError'
 
 export const runtime = 'edge'
@@ -452,6 +453,16 @@ export async function POST(req: Request) {
         return cors(NextResponse.json({ ok: false, error: 'Un comptage ne peut pas être négatif' }, { status: 400 }))
       }
 
+      const supplierId = kind === 'receive' && body.supplier_id ? parseInt(String(body.supplier_id)) || null : null
+      const paymentMethod = kind === 'receive' && body.payment_method ? clip(body.payment_method, 20) as any : null
+      const unitCost = kind === 'receive' ? n3(body.unit_cost) : 0
+      if (kind === 'receive' && paymentMethod === 'credit' && !supplierId) {
+        return cors(NextResponse.json({ ok: false, error: 'Choisissez le fournisseur pour un achat à crédit' }, { status: 400 }))
+      }
+      if (kind === 'receive' && paymentMethod === 'credit' && !(unitCost > 0)) {
+        return cors(NextResponse.json({ ok: false, error: 'Indiquez le prix payé pour calculer la dette fournisseur' }, { status: 400 }))
+      }
+
       // The caller states an intent, not a sign. Deriving the sign here is what
       // stops a "perte" from being sent as +2 and silently adding stock.
       const delta =
@@ -465,18 +476,22 @@ export async function POST(req: Request) {
         kind,
         delta: kind === 'count' ? null : delta,
         countValue: kind === 'count' ? qty : null,
-        unitCost: kind === 'receive' ? n3(body.unit_cost) : null,
+        unitCost: kind === 'receive' ? unitCost : null,
         reason: clip(body.reason, 200),
         actor: clip(body.actor, 80) || 'back-office',
         source: 'web',
-        supplierId: kind === 'receive' && body.supplier_id ? parseInt(String(body.supplier_id)) || null : null,
-        paymentMethod: kind === 'receive' && body.payment_method ? clip(body.payment_method, 20) as any : null,
+        supplierId,
+        paymentMethod,
       })
 
       if (newQty === null) {
         return cors(NextResponse.json({ ok: false, error: 'Mouvement non enregistré' }, { status: 409 }))
       }
-      return cors(NextResponse.json({ ok: true, ing_key: ingKey, quantity: newQty }))
+      let supplierBalance: number | null = null
+      if (kind === 'receive' && paymentMethod === 'credit' && supplierId) {
+        try { supplierBalance = await refreshSupplierBalance(rid, supplierId) } catch { /* ledger row is still valid */ }
+      }
+      return cors(NextResponse.json({ ok: true, ing_key: ingKey, quantity: newQty, supplier_balance: supplierBalance }))
     }
 
     // ── Recipe ────────────────────────────────────────────────
@@ -520,6 +535,14 @@ export async function POST(req: Request) {
       //   becomes the product's cost, automatically" the owner asked for.
       const rollup = await recipeCosts(rid)
       await cacheComputedCosts(rid, rollup)
+
+      // A saved, enabled recipe is the owner's instruction to consume its
+      // ingredients on sale. Keep an existing stock row in recipe mode so the
+      // POS does not mistakenly subtract a separate finished-product quantity.
+      if (body.enabled !== false) {
+        try { await sql`UPDATE stock SET track_mode = 'recipe', updated_at = NOW()
+                        WHERE restaurant_id = ${rid} AND item_id = ${itemId}` } catch { /* older stock schema */ }
+      }
 
       return cors(NextResponse.json({ ok: true, item_id: itemId }))
     }

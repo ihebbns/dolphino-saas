@@ -16,6 +16,7 @@
 // ═══════════════════════════════════════════════════
 
 import { sql } from '@/lib/db'
+import { refreshSupplierBalance } from '@/lib/suppliers'
 
 export type MovementKind = 'sale' | 'receive' | 'waste' | 'adjust' | 'return' | 'count'
 
@@ -317,6 +318,12 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
       // Table missing or other write failure — do not break the caller.
       return null
     }
+  }
+
+  // A credit delivery changes what we owe immediately. Rebuild its cached
+  // supplier balance from the ledger; failure here must not undo the delivery.
+  if (m.kind === 'receive' && supplierId && paymentMethod === 'credit') {
+    try { await refreshSupplierBalance(rid, supplierId) } catch { /* cached later */ }
   }
 
   // The immutable ledger row is the source of truth.  A cache refresh failure

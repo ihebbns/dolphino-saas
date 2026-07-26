@@ -171,9 +171,9 @@ export async function POST(req: Request) {
     return cors(NextResponse.json({ ok: false, error: "Les ventes ne peuvent venir que de la caisse" }, { status: 400 }))
   }
 
-  const reason = String(body.reason ?? '').slice(0, 200)
+    const reason = String(body.reason ?? '').slice(0, 200)
   // A manual correction without a stated reason defeats the audit trail.
-  if (kind === 'adjust' && !reason) {
+    if (kind === 'adjust' && !reason) {
     return cors(NextResponse.json({ ok: false, error: 'Motif obligatoire pour un ajustement' }, { status: 400 }))
   }
 
@@ -187,6 +187,15 @@ export async function POST(req: Request) {
         ok: false,
         error: 'Journal de stock non initialisé — exécutez migration-stock-movements.sql',
       }, { status: 409 }))
+    }
+    const supplierId = kind === 'receive' && body.supplier_id ? parseInt(String(body.supplier_id)) || null : null
+    const paymentMethod = kind === 'receive' && body.payment_method ? String(body.payment_method).slice(0, 20) : null
+    const unitCost = kind === 'receive' ? (parseFloat(String(body.unit_cost)) || 0) : 0
+    if (kind === 'receive' && paymentMethod === 'credit' && !supplierId) {
+      return cors(NextResponse.json({ ok: false, error: 'Choisissez le fournisseur pour un achat à crédit' }, { status: 400 }))
+    }
+    if (kind === 'receive' && paymentMethod === 'credit' && !(unitCost > 0)) {
+      return cors(NextResponse.json({ ok: false, error: 'Indiquez le prix payé pour calculer la dette fournisseur' }, { status: 400 }))
     }
 
     // The stock row must exist before a movement can reference it.
@@ -205,9 +214,9 @@ export async function POST(req: Request) {
       source: 'web',
       clientTs: body.ts ?? null,
       clientUid: String(body.uid ?? '').slice(0, 64),
-      unitCost: kind === 'receive' ? (parseFloat(String(body.unit_cost)) || null) : null,
-      supplierId: kind === 'receive' && body.supplier_id ? parseInt(String(body.supplier_id)) || null : null,
-      paymentMethod: kind === 'receive' && body.payment_method ? String(body.payment_method).slice(0, 20) as any : null,
+      unitCost: kind === 'receive' ? unitCost || null : null,
+      supplierId,
+      paymentMethod: paymentMethod as any,
     })
 
     if (quantity === null) {

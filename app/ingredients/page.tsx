@@ -846,7 +846,9 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
   const [payMethod, setPayMethod] = useState<'comptant' | 'credit'>('comptant')
 
   const q = num(qty)
-  const valid = kind === 'count' ? qty !== '' && q >= 0 : q > 0
+  const creditNeedsDetails = kind === 'receive' && payMethod === 'credit'
+  const valid = (kind === 'count' ? qty !== '' && q >= 0 : q > 0)
+    && (!creditNeedsDetails || (supplierId !== null && num(unitCost) > 0))
 
   // Show the resulting quantity before committing. Mental arithmetic at the end
   // of a shift is where counting mistakes come from.
@@ -911,13 +913,15 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
 
           {kind === 'receive' && (
             <div className="field mb14">
-              <label className="label" htmlFor="mcost">Prix payé par {ing.stock_unit} (optionnel)</label>
+              <label className="label" htmlFor="mcost">Prix payé par {ing.stock_unit}{creditNeedsDetails ? ' *' : ' (optionnel)'}</label>
               <input
                 id="mcost" className="input" type="number" step="any" min="0"
                 value={unitCost} onChange={e => setUnitCost(e.target.value)}
               />
               <span className="help">
-                Alimente le coût moyen pondéré utilisé par les recettes. Laissez vide si le prix n’a pas changé.
+                {creditNeedsDetails
+                  ? 'Requis : quantité × prix = dette ajoutée à ce fournisseur.'
+                  : 'Alimente le coût moyen pondéré utilisé par les recettes. Laissez vide si le prix n’a pas changé.'}
               </span>
             </div>
           )}
@@ -925,7 +929,7 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
           {kind === 'receive' && (
             <>
               <div className="field mb14">
-                <label className="label">Fournisseur</label>
+                <label className="label">Fournisseur{creditNeedsDetails ? ' *' : ''}</label>
                 <select className="input" value={supplierId ?? ''} onChange={e => {
                   const v = e.target.value
                   setSupplierId(v ? parseInt(v) : null)
@@ -941,7 +945,11 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
                   <button type="button" className="chip" data-on={payMethod === 'credit'} onClick={() => setPayMethod('credit')}>À crédit</button>
                 </div>
                 <span className="help">
-                  {payMethod === 'credit' ? 'Ajouté à la dette du fournisseur.' : 'Payé — pas de dette.'}
+                  {payMethod === 'credit'
+                    ? supplierId && num(unitCost) > 0
+                      ? `Dette ajoutée : ${qtyTrim(q * num(unitCost))} DT.`
+                      : 'Choisissez le fournisseur et le prix pour enregistrer la dette.'
+                    : 'Payé — pas de dette.'}
                 </span>
               </div>
             </>
