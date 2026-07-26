@@ -247,7 +247,8 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
            ${clientTs}, ${clientUid})
         ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
         RETURNING id`
-      if (!ins.length) return null   // already recorded — idempotent, not an error
+      // Already recorded → do not touch the cache, do not double-apply.
+      if (!ins.length) return null
     } else {
       await sql`
         INSERT INTO stock_movements
@@ -262,56 +263,10 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
            ${clientTs}, '')`
     }
-  } catch (e: any) {
-    // A missing column on the supplier-related fields means migration-suppliers.sql
-    // has not been run yet. Retry without those columns so the core movement still
-    // lands — better to record the delivery without the supplier than to lose it.
-    const code = String(e?.code || '')
-    const msg = String(e?.message || '')
-    const isMissingCol = code === '42703' || /does not exist|undefined_column/i.test(msg)
-    const isSupplierCol = /supplier_id|payment_method/i.test(msg)
-
-    if (isMissingCol && isSupplierCol) {
-      // Retry without the new columns (graceful degradation)
-      try {
-        if (clientUid) {
-          const ins = await sql`
-            INSERT INTO stock_movements
-              (restaurant_id, item_id, kind, delta, count_value, expected_value,
-               unit_cost, reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
-            VALUES
-              (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
-               ${unitCost},
-               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
-               ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
-               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
-               ${clientTs}, ${clientUid})
-            ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
-            RETURNING id`
-          if (!ins.length) return null
-        } else {
-          await sql`
-            INSERT INTO stock_movements
-              (restaurant_id, item_id, kind, delta, count_value, expected_value,
-               unit_cost, reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
-            VALUES
-              (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
-               ${unitCost},
-               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
-               ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
-               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
-               ${clientTs}, '')`
-        }
-      } catch {
-        return null   // table missing entirely — caller handles
-      }
-    } else if (code === '42P01' || /relation.*does not exist/i.test(msg)) {
-      // Table missing entirely (migration-stock-movements.sql not run)
-      return null
-    } else {
-      // Re-throw anything else so the route can return the real error
-      throw e
-    }
+  } catch (e) {
+    // Table missing (migration not run) or any write failure: do not break the
+    // caller. Legacy behaviour continues to work without the audit trail.
+    return null
   }
 
   try { return await refreshStockCache(rid, itemId) } catch { return null }

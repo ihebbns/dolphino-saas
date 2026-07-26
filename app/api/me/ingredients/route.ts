@@ -275,13 +275,28 @@ export async function GET(req: Request) {
       usage, movements, ledger: usage.length > 0 || movements.length > 0,
     }))
   } catch (e: any) {
-    if (isMissingSchema(e)) return cors(NextResponse.json(notReadyPayload('migration-ingredients.sql', { ingredients: [], recipes: [], products: [], totals: null })))
+    if (isMissingSchema(e)) {
+      // Don't just say "run the migration" — say WHICH relation is missing so the
+      // owner knows whether to run migration-ingredients.sql or migration-suppliers.sql.
+      const needed = ['ingredients', 'recipes', 'recipe_lines', 'ingredient_stock', 'recipe_cost']
+      let missing: string[] = []
+      try {
+        const rows = await sql`
+          SELECT relname AS name FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = ANY(current_schemas(false))
+            AND c.relkind IN ('r','v','m','p','f')
+            AND c.relname = ANY(${needed})`
+        const found = new Set(rows.map((r: any) => String(r.name)))
+        missing = needed.filter(n => !found.has(n))
+      } catch { /* catalog unavailable */ }
+      // If all core tables are present, the real error is a missing column
+      // (e.g. supplier_id from migration-suppliers.sql not yet run). Report it.
+      const sqlFile = missing.length > 0 ? 'migration-ingredients.sql' : 'migration-repair.sql (exécutez migration-suppliers.sql)'
+      return cors(NextResponse.json(notReadyPayload(sqlFile, { ingredients: [], recipes: [], products: [], totals: null }, missing.length ? missing : undefined)))
+    }
     return cors(NextResponse.json(serverError('me/ingredients', e), { status: 500 }))
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-export async function POST(req: Request) {
+  } {
   let body: any
   try { body = await req.json() } catch { return cors(NextResponse.json({ ok: false, error: 'Bad JSON' }, { status: 400 })) }
 

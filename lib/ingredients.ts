@@ -146,7 +146,7 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
            ${safeTs(m.clientTs)}, ${clientUid})
         ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
         RETURNING id`
-      if (!ins.length) return null
+      if (!ins.length) return null            // already recorded — do not re-apply
     } else {
       await sql`
         INSERT INTO ingredient_movements
@@ -161,49 +161,10 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
            ${safeTs(m.clientTs)}, '')`
     }
-  } catch (e: any) {
-    const code = String(e?.code || '')
-    const msg = String(e?.message || '')
-    const isMissingCol = code === '42703' || /does not exist|undefined_column/i.test(msg)
-    const isSupplierCol = /supplier_id|payment_method/i.test(msg)
-
-    if (isMissingCol && isSupplierCol) {
-      // Retry without supplier columns — migration-suppliers.sql not run yet
-      try {
-        if (clientUid) {
-          const ins = await sql`
-            INSERT INTO ingredient_movements
-              (restaurant_id, ing_key, kind, delta, count_value, expected_value, unit_cost,
-               reason, actor, source, item_id, sale_uid, sale_num, client_ts, client_uid)
-            VALUES
-              (${rid}, ${ingKey}, ${m.kind}, ${delta}, ${countValue}, ${expected}, ${unitCost},
-               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source ?? 'web'},
-               ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
-               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
-               ${safeTs(m.clientTs)}, ${clientUid})
-            ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
-            RETURNING id`
-          if (!ins.length) return null
-        } else {
-          await sql`
-            INSERT INTO ingredient_movements
-              (restaurant_id, ing_key, kind, delta, count_value, expected_value, unit_cost,
-               reason, actor, source, item_id, sale_uid, sale_num, client_ts, client_uid)
-            VALUES
-              (${rid}, ${ingKey}, ${m.kind}, ${delta}, ${countValue}, ${expected}, ${unitCost},
-               ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source ?? 'web'},
-               ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
-               ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
-               ${safeTs(m.clientTs)}, '')`
-        }
-      } catch {
-        return null
-      }
-    } else if (code === '42P01' || /relation.*does not exist/i.test(msg)) {
-      return null  // table missing entirely
-    } else {
-      throw e  // re-throw so the caller can surface the real error
-    }
+  } catch {
+    // Not migrated, or a write failure. Never break the caller: a sale must be
+    // recorded even if its ingredient explosion cannot be.
+    return null
   }
 
   try { return await refreshIngredientCache(rid, ingKey) } catch { return null }
