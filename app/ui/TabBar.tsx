@@ -35,6 +35,7 @@ export const DESTINATIONS: Destination[] = [
       { href: '/stock', name: 'Stock' },
       { href: '/catalog', name: 'Coûts' },
       { href: '/ingredients', name: 'Recettes' },
+      { href: '/fournisseurs', name: 'Fournisseurs' },
     ],
   },
   // No Caisse destination, and no Tiroir either. The clôtures live as a tab INSIDE

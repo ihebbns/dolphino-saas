@@ -130,6 +130,12 @@ export type MovementInput = {
   clientTs?: string | null
   /** Idempotency key. Blank means "not deduplicated". */
   clientUid?: string
+  /** The unit price paid, used for weighted average cost. Only on 'receive'. */
+  unitCost?: number | null
+  /** Supplier who delivered. Nullable (passager = one-time supplier). */
+  supplierId?: number | null
+  /** How the delivery was paid: 'comptant' | 'credit'. Drives supplier balance. */
+  paymentMethod?: 'comptant' | 'credit' | null
 }
 
 const n3 = (v: any): number => {
@@ -219,14 +225,22 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
     try { expected = await derivedQuantity(rid, itemId) } catch { expected = null }
   }
 
+  // Fields that only matter on a delivery (kind='receive') but live on the same
+  // row because the movement IS the delivery — there is no separate table.
+  const unitCost = m.kind === 'receive' && m.unitCost != null && n3(m.unitCost) > 0 ? n3(m.unitCost) : null
+  const supplierId = m.kind === 'receive' && m.supplierId ? m.supplierId : null
+  const paymentMethod = m.kind === 'receive' && m.paymentMethod ? clip(m.paymentMethod, 20) : null
+
   try {
     if (clientUid) {
       const ins = await sql`
         INSERT INTO stock_movements
           (restaurant_id, item_id, kind, delta, count_value, expected_value,
+           unit_cost, supplier_id, payment_method,
            reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
         VALUES
           (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
+           ${unitCost}, ${supplierId}, ${paymentMethod},
            ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
            ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
@@ -239,9 +253,11 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
       await sql`
         INSERT INTO stock_movements
           (restaurant_id, item_id, kind, delta, count_value, expected_value,
+           unit_cost, supplier_id, payment_method,
            reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
         VALUES
           (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
+           ${unitCost}, ${supplierId}, ${paymentMethod},
            ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
            ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},

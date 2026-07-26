@@ -42,6 +42,10 @@ export type IngMovement = {
   saleNum?: number | null
   clientTs?: string | null
   clientUid?: string
+  /** Supplier who delivered. Nullable (passager). */
+  supplierId?: number | null
+  /** Payment method: 'comptant' | 'credit'. Drives supplier balance. */
+  paymentMethod?: 'comptant' | 'credit' | null
 }
 
 const n4 = (v: any): number => {
@@ -122,6 +126,8 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
 
   const unitCost = m.kind === 'receive' && m.unitCost != null && n4(m.unitCost) > 0
     ? n4(m.unitCost) : null
+  const supplierId = m.kind === 'receive' && m.supplierId ? m.supplierId : null
+  const paymentMethod = m.kind === 'receive' && m.paymentMethod ? clip(m.paymentMethod, 20) : null
   const clientUid = clip(m.clientUid, 160)
 
   try {
@@ -129,9 +135,11 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
       const ins = await sql`
         INSERT INTO ingredient_movements
           (restaurant_id, ing_key, kind, delta, count_value, expected_value, unit_cost,
+           supplier_id, payment_method,
            reason, actor, source, item_id, sale_uid, sale_num, client_ts, client_uid)
         VALUES
           (${rid}, ${ingKey}, ${m.kind}, ${delta}, ${countValue}, ${expected}, ${unitCost},
+           ${supplierId}, ${paymentMethod},
            ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source ?? 'web'},
            ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
@@ -143,9 +151,11 @@ export async function recordIngMovement(rid: number, m: IngMovement): Promise<nu
       await sql`
         INSERT INTO ingredient_movements
           (restaurant_id, ing_key, kind, delta, count_value, expected_value, unit_cost,
+           supplier_id, payment_method,
            reason, actor, source, item_id, sale_uid, sale_num, client_ts, client_uid)
         VALUES
           (${rid}, ${ingKey}, ${m.kind}, ${delta}, ${countValue}, ${expected}, ${unitCost},
+           ${supplierId}, ${paymentMethod},
            ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source ?? 'web'},
            ${clip(m.itemId, 64)}, ${clip(m.saleUid, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},

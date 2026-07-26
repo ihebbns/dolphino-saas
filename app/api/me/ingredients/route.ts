@@ -399,6 +399,8 @@ export async function POST(req: Request) {
         reason: clip(body.reason, 200),
         actor: clip(body.actor, 80) || 'back-office',
         source: 'web',
+        supplierId: kind === 'receive' && body.supplier_id ? parseInt(String(body.supplier_id)) || null : null,
+        paymentMethod: kind === 'receive' && body.payment_method ? clip(body.payment_method, 20) as any : null,
       })
 
       if (newQty === null) {

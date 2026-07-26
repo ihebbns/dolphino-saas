@@ -205,6 +205,9 @@ export async function POST(req: Request) {
       source: 'web',
       clientTs: body.ts ?? null,
       clientUid: String(body.uid ?? '').slice(0, 64),
+      unitCost: kind === 'receive' ? (parseFloat(String(body.unit_cost)) || null) : null,
+      supplierId: kind === 'receive' && body.supplier_id ? parseInt(String(body.supplier_id)) || null : null,
+      paymentMethod: kind === 'receive' && body.payment_method ? String(body.payment_method).slice(0, 20) as any : null,
     })
 
     if (quantity === null) {

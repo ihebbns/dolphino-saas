@@ -66,6 +66,8 @@ export default function StockPage() {
   const [onlyLow, setOnlyLow] = useState(false)
   const [move, setMove] = useState<{ item: Variance; kind: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  /** Suppliers for the receive modal dropdown. Loaded once. */
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
   // Stock editing at the till. Unlocked by default, because a client who bought
   // only the EXE never opens this page and must stay fully operational.
   const [posLocked, setPosLocked] = useState(false)
@@ -117,6 +119,11 @@ export default function StockPage() {
       setThresholds(t)
       setUnitTracked(unit)
     }
+    // Load suppliers for the receive modal
+    try {
+      const sup = await apiGet('/api/me/suppliers', k)
+      if (sup.ok) setSuppliers((sup.suppliers || []).filter((s: any) => !s.archived).map((s: any) => ({ id: s.id, name: s.name })))
+    } catch {}
     setLoading(false)
   }
 
@@ -477,6 +484,7 @@ export default function StockPage() {
       {move && (
         <MovementModal
           item={move.item} kind={move.kind} saving={saving}
+          suppliers={suppliers}
           onClose={() => setMove(null)}
           onSubmit={submitMovement}
         />
@@ -486,14 +494,18 @@ export default function StockPage() {
 }
 
 // ─────────────────────────────────────────────────────────────
-function MovementModal({ item, kind: initialKind, saving, onClose, onSubmit }: any) {
+function MovementModal({ item, kind: initialKind, saving, suppliers, onClose, onSubmit }: any) {
   const [kind, setKind] = useState(initialKind)
   const [qty, setQty] = useState<any>('')
   const [reason, setReason] = useState('')
+  const [unitCost, setUnitCost] = useState('')
+  const [supplierId, setSupplierId] = useState<number | null>(null)
+  const [supplierName, setSupplierName] = useState('')
+  const [payMethod, setPayMethod] = useState<'comptant' | 'credit'>('comptant')
 
   const isCount = kind === 'count'
+  const isReceive = kind === 'receive'
   const k = (KIND as any)[kind] || KIND.adjust
-  // A correction with no stated reason is exactly what the ledger exists to prevent.
   const reasonRequired = kind === 'adjust' || kind === 'waste'
   const valid = num(qty) > 0 && (!reasonRequired || reason.trim().length > 0)
   const after = isCount ? num(qty)
@@ -543,6 +555,58 @@ function MovementModal({ item, kind: initialKind, saving, onClose, onSubmit }: a
             {reasonRequired && <span className="help">Obligatoire : une perte ou une correction sans motif n&apos;est pas traçable.</span>}
           </div>
 
+          {/* ── Supplier + payment (receive only) ──────────────────────── */}
+          {isReceive && (
+            <>
+              <div className="field">
+                <label className="label">Prix d&apos;achat unitaire</label>
+                <input
+                  className="input inputNum" style={{ maxWidth: 170 }}
+                  type="number" step="0.001" min="0"
+                  value={unitCost} onChange={e => setUnitCost(e.target.value)}
+                  placeholder="DT / unité"
+                />
+                <span className="help">Alimente le coût moyen pondéré. Vide = prix inchangé.</span>
+              </div>
+              <div className="field">
+                <label className="label">Fournisseur</label>
+                <select
+                  className="input" style={{ maxWidth: 260 }}
+                  value={supplierId ?? ''}
+                  onChange={e => {
+                    const v = e.target.value
+                    if (v === '') { setSupplierId(null); setSupplierName('') }
+                    else if (v === '__new') { setSupplierId(null); setSupplierName('') }
+                    else setSupplierId(parseInt(v))
+                  }}
+                >
+                  <option value="">Passager (pas de fiche)</option>
+                  {suppliers.map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                  <option value="__new">+ Ajouter un fournisseur…</option>
+                </select>
+                {supplierId === null && supplierName === '__new' ? null : null}
+              </div>
+              <div className="field">
+                <label className="label">Paiement</label>
+                <div className="row" style={{ gap: 6 }}>
+                  <button type="button" className="chip" data-on={payMethod === 'comptant'} onClick={() => setPayMethod('comptant')}>
+                    Comptant
+                  </button>
+                  <button type="button" className="chip" data-on={payMethod === 'credit'} onClick={() => setPayMethod('credit')}>
+                    À crédit
+                  </button>
+                </div>
+                <span className="help">
+                  {payMethod === 'credit'
+                    ? 'Le montant sera ajouté à la dette du fournisseur.'
+                    : 'Payé immédiatement — aucune dette créée.'}
+                </span>
+              </div>
+            </>
+          )}
+
           {isCount && (
             <div className="notice nInfo" style={{ margin: 0 }}>
               <span className="noticeIcon">ℹ</span>
@@ -572,6 +636,10 @@ function MovementModal({ item, kind: initialKind, saving, onClose, onSubmit }: a
               actor: 'web',
               ts: new Date().toISOString(),
               uid: 'W' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+              // Supplier fields (receive only)
+              ...(isReceive && num(unitCost) > 0 ? { unit_cost: num(unitCost) } : {}),
+              ...(isReceive && supplierId ? { supplier_id: supplierId } : {}),
+              ...(isReceive ? { payment_method: payMethod } : {}),
             })}
           >{saving ? '…' : 'Enregistrer'}</button>
         </div>

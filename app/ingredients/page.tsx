@@ -106,6 +106,8 @@ export default function IngredientsPage() {
   const [totals, setTotals] = useState<any>(null)
   const [usage, setUsage] = useState<Usage[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
+  /** Suppliers for the receive modal dropdown. */
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
   /** Quick quantity update, one ingredient at a time. */
   const [moveIng, setMoveIng] = useState<Ing | null>(null)
 
@@ -133,6 +135,11 @@ export default function IngredientsPage() {
       setUsage(d.usage || [])
       setMovements(d.movements || [])
     } else setMsg(d.error || 'Erreur de chargement')
+    // Load suppliers
+    try {
+      const sup = await apiGet('/api/me/suppliers', k)
+      if (sup.ok) setSuppliers((sup.suppliers || []).filter((s: any) => !s.archived).map((s: any) => ({ id: s.id, name: s.name })))
+    } catch {}
     setLoading(false)
   }
 
@@ -767,6 +774,7 @@ export default function IngredientsPage() {
       {moveIng && (
         <MoveModal
           ing={moveIng} saving={saving}
+          suppliers={suppliers}
           onClose={() => setMoveIng(null)}
           onSave={v => save('moveIngredient', v)}
         />
@@ -806,9 +814,10 @@ export default function IngredientsPage() {
  * The price field only appears on a delivery, since that is the only case where a
  * price means something — it feeds the weighted average cost used by recipes.
  */
-function MoveModal({ ing, saving, onClose, onSave }: {
+function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
   ing: Ing
   saving: boolean
+  suppliers: { id: number; name: string }[]
   onClose: () => void
   onSave: (v: any) => void
 }) {
@@ -818,6 +827,8 @@ function MoveModal({ ing, saving, onClose, onSave }: {
     ing.cost_per_stock_unit > 0 ? String(ing.cost_per_stock_unit) : ''
   )
   const [reason, setReason] = useState('')
+  const [supplierId, setSupplierId] = useState<number | null>(null)
+  const [payMethod, setPayMethod] = useState<'comptant' | 'credit'>('comptant')
 
   const q = num(qty)
   const valid = kind === 'count' ? qty !== '' && q >= 0 : q > 0
@@ -837,6 +848,8 @@ function MoveModal({ ing, saving, onClose, onSave }: {
       qty: q,
       unit_cost: kind === 'receive' ? num(unitCost) : undefined,
       reason: reason.trim() || undefined,
+      supplier_id: kind === 'receive' && supplierId ? supplierId : undefined,
+      payment_method: kind === 'receive' ? payMethod : undefined,
     })
   }
 
@@ -892,6 +905,31 @@ function MoveModal({ ing, saving, onClose, onSave }: {
                 Alimente le coût moyen pondéré utilisé par les recettes. Laissez vide si le prix n’a pas changé.
               </span>
             </div>
+          )}
+
+          {kind === 'receive' && (
+            <>
+              <div className="field mb14">
+                <label className="label">Fournisseur</label>
+                <select className="input" value={supplierId ?? ''} onChange={e => {
+                  const v = e.target.value
+                  setSupplierId(v ? parseInt(v) : null)
+                }}>
+                  <option value="">Passager (pas de fiche)</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="field mb14">
+                <label className="label">Paiement</label>
+                <div className="row" style={{ gap: 6 }}>
+                  <button type="button" className="chip" data-on={payMethod === 'comptant'} onClick={() => setPayMethod('comptant')}>Comptant</button>
+                  <button type="button" className="chip" data-on={payMethod === 'credit'} onClick={() => setPayMethod('credit')}>À crédit</button>
+                </div>
+                <span className="help">
+                  {payMethod === 'credit' ? 'Ajouté à la dette du fournisseur.' : 'Payé — pas de dette.'}
+                </span>
+              </div>
+            </>
           )}
 
           {kind !== 'receive' && (
