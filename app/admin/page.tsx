@@ -165,6 +165,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
   const [actionClient, setActionClient] = useState<any>(null)
+  const [showAdd, setShowAdd] = useState(false)
   const [demoRequests, setDemoRequests] = useState<any[]>([])
   const [showDemos, setShowDemos] = useState(false)
 
@@ -244,8 +245,14 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
         {/* Info bar */}
         <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', padding:'12px 18px', marginBottom:'20px', fontSize:'12px', color:'var(--muted)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'8px' }}>
-          <span>📂 Pour créer un nouveau client + EXE → <code style={{ color:'var(--gold-l)', background:'var(--panel)', padding:'2px 8px', borderRadius:'4px' }}>node build-server.js</code> puis ouvrir <code style={{ color:'var(--gold-l)', background:'var(--panel)', padding:'2px 8px', borderRadius:'4px' }}>localhost:4500</code></span>
+          <span>📂 {clients.length} client{clients.length !== 1 ? 's' : ''} — utilisez le formulaire ci-dessous pour en ajouter un nouveau.</span>
+          <button onClick={() => setShowAdd(!showAdd)} style={{ background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'8px', padding:'8px 16px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700' }}>
+            {showAdd ? '✕ Fermer' : '+ Nouveau client'}
+          </button>
         </div>
+
+        {/* ── Add Client Form ──────────────────────────────────────────── */}
+        {showAdd && <AddClientForm adminKey={key} onDone={() => { setShowAdd(false); loadClients(); flash('✓ Client créé') }} onError={(e) => flash(e)} />}
 
         {/* Client list */}
         <div style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'12px', overflow:'hidden' }}>
@@ -388,5 +395,154 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
         </div>
       )}
     </Wrap>
+  )
+}
+
+
+// ═══════════════ ADD CLIENT FORM ═══════════════
+const MODULES_LIST = [
+  { id: 'stockTracking', label: '📦 Stock produits', desc: 'Comptage par unité, seuils, livraisons' },
+  { id: 'ingredients', label: '🧪 Ingrédients & recettes', desc: 'Coût auto, déduction sur vente' },
+  { id: 'credits', label: '📒 Crédit client', desc: 'Ardoises / créances' },
+  { id: 'sessions', label: '🔒 Clôtures caisse', desc: 'Fond, compté, écart' },
+  { id: 'delivery', label: '🛵 Livraison', desc: 'Type de commande + livraison' },
+  { id: 'tables', label: '🪑 Plan de salle', desc: 'Tables, zones' },
+]
+
+function AddClientForm({
+  adminKey, onDone, onError,
+}: {
+  adminKey: string
+  onDone: () => void
+  onError: (msg: string) => void
+}) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [pass, setPass] = useState('')
+  const [city, setCity] = useState('')
+  const [phone, setPhone] = useState('')
+  const [apiKey, setApiKey] = useState(() => {
+    // Generate a random key like SRVO-XXXXX-001
+    const r = Math.random().toString(36).substring(2, 7).toUpperCase()
+    return `SRVO-${r}-001`
+  })
+  const [modules, setModules] = useState<Record<string, boolean>>({
+    stockTracking: true,
+    sessions: true,
+  })
+  const [saving, setSaving] = useState(false)
+
+  const toggle = (id: string) => setModules(m => ({ ...m, [id]: !m[id] }))
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim() || !email.trim() || !pass.trim() || !apiKey.trim()) {
+      onError('Nom, email, mot de passe et clé API sont obligatoires')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch(`${API}/api/admin/clients`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_key: adminKey,
+          name: name.trim(),
+          email: email.trim(),
+          password: pass,
+          api_key: apiKey.trim(),
+          city: city.trim(),
+          phone: phone.trim(),
+          modules,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) onDone()
+      else onError(data.error || 'Erreur lors de la création')
+    } catch {
+      onError('Impossible de contacter le serveur')
+    }
+    setSaving(false)
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', background: 'var(--card)', border: '1.5px solid var(--div)',
+    borderRadius: '8px', padding: '11px 14px', color: 'var(--txt)', fontSize: '14px',
+    outline: 'none', boxSizing: 'border-box',
+  }
+  const labelStyle: React.CSSProperties = {
+    fontSize: '11px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px',
+    textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block',
+  }
+
+  return (
+    <form onSubmit={submit} style={{
+      background: 'var(--panel)', border: '1px solid var(--div)', borderRadius: '12px',
+      padding: '24px', marginBottom: '20px',
+    }}>
+      <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '18px', color: 'var(--gold-l)' }}>
+        Nouveau client
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
+        <div>
+          <label style={labelStyle}>Nom du commerce *</label>
+          <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Café Central" required />
+        </div>
+        <div>
+          <label style={labelStyle}>Ville</label>
+          <input style={inputStyle} value={city} onChange={e => setCity(e.target.value)} placeholder="Tunis" />
+        </div>
+        <div>
+          <label style={labelStyle}>Email *</label>
+          <input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="gerant@email.com" required />
+        </div>
+        <div>
+          <label style={labelStyle}>Téléphone</label>
+          <input style={inputStyle} value={phone} onChange={e => setPhone(e.target.value)} placeholder="XX XXX XXX" />
+        </div>
+        <div>
+          <label style={labelStyle}>Mot de passe *</label>
+          <input style={inputStyle} value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" required />
+        </div>
+        <div>
+          <label style={labelStyle}>Clé API (licence) *</label>
+          <input style={inputStyle} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="SRVO-XXXXX-001" required />
+        </div>
+      </div>
+
+      {/* Module selection */}
+      <div style={{ marginBottom: '18px' }}>
+        <label style={labelStyle}>Modules activés</label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', marginTop: '8px' }}>
+          {MODULES_LIST.map(m => (
+            <button
+              key={m.id} type="button"
+              onClick={() => toggle(m.id)}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: '2px',
+                padding: '12px', borderRadius: '10px', textAlign: 'left', cursor: 'pointer',
+                background: modules[m.id] ? 'var(--gold-dim)' : 'var(--card)',
+                border: `1.5px solid ${modules[m.id] ? 'var(--gold)' : 'var(--div)'}`,
+                color: modules[m.id] ? 'var(--gold-l)' : 'var(--muted)',
+                transition: 'all .12s',
+              }}
+            >
+              <span style={{ fontSize: '13px', fontWeight: 600 }}>{m.label}</span>
+              <span style={{ fontSize: '10px', opacity: 0.8 }}>{m.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <button type="submit" disabled={saving} style={{
+        width: '100%', padding: '14px', border: 'none', borderRadius: '10px',
+        background: 'linear-gradient(135deg,var(--gold),var(--gold-l))',
+        color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+        opacity: saving ? 0.6 : 1,
+      }}>
+        {saving ? 'Création en cours…' : '⚡ Créer le client'}
+      </button>
+    </form>
   )
 }

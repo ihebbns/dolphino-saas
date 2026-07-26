@@ -45,17 +45,27 @@ export async function PUT(req: Request) {
   try { body = await req.json() } catch { return NextResponse.json({ ok:false, error:'Bad JSON' }, { status:400 }) }
   if (!checkAdmin(body)) return NextResponse.json({ ok:false, error:'Unauthorized' }, { status:401 })
 
-  const { name, email, password, api_key, city='', phone='' } = body
+  const { name, email, password, api_key, city='', phone='', modules } = body
   if (!name || !email || !password || !api_key) {
     return NextResponse.json({ ok:false, error:'Missing required fields' }, { status:400 })
   }
 
   const hash = await bcrypt.hash(password, 10)
 
+  // Modules are stored inside config.modules as a { key: boolean } map, the same
+  // structure the client's /api/me/config reads and writes.
+  const config: Record<string, any> = {}
+  if (modules && typeof modules === 'object') {
+    config.modules = {}
+    for (const [k, v] of Object.entries(modules)) {
+      if (typeof v === 'boolean') config.modules[k] = v
+    }
+  }
+
   try {
     await sql`
-      INSERT INTO restaurants (name, owner_email, password_hash, api_key, city, phone, plan)
-      VALUES (${name}, ${email.toLowerCase()}, ${hash}, ${api_key}, ${city}, ${phone}, 'active')
+      INSERT INTO restaurants (name, owner_email, password_hash, api_key, city, phone, plan, config)
+      VALUES (${name}, ${email.toLowerCase()}, ${hash}, ${api_key}, ${city}, ${phone}, 'active', ${JSON.stringify(config)})
     `
     return NextResponse.json({ ok:true })
   } catch(e: any) {
