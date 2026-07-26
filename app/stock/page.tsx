@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost,
-  f3, qtyTrim, qtyDelta, dt, num, Icon, useModules,
+  f3, qtyTrim, qtyDelta, dt, num, Icon, LevelMeter, useModules,
 } from '../ui/Shell'
 
 type Variance = {
@@ -37,6 +37,16 @@ type Ecart = {
   reason: string; actor: string; source: string; client_ts: string
 }
 
+/** One ingredient row from /api/me/ingredients. Shared between the dedicated
+ *  /ingredients page and the combined /stock view. */
+type IngRow = {
+  ing_key: string; name: string; category: string
+  stock_unit: string; recipe_unit: string; conversion_factor: number
+  cost_per_stock_unit: number; quantity: number; low_threshold: number
+  tracked: boolean; archived: boolean; stock_value: number
+  is_low: boolean; used_in_recipes: number
+}
+
 const KIND = {
   sale:    { label: 'Vente',      cls: 'bNeutral', icon: '🛒' },
   receive: { label: 'Livraison',  cls: 'bOk',      icon: '📥' },
@@ -52,7 +62,7 @@ export default function StockPage() {
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
   const [restName, setRestName] = useState('')
-  const [tab, setTab] = useState<'levels' | 'moves' | 'ecarts'>('levels')
+  const [tab, setTab] = useState<'levels' | 'ingredients' | 'moves' | 'ecarts'>('levels')
 
   const [variance, setVariance] = useState<Variance[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
@@ -68,6 +78,11 @@ export default function StockPage() {
   const [saving, setSaving] = useState(false)
   /** Suppliers for the receive modal dropdown. Loaded once. */
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
+  /** Ingredients for the ingredient sub-tab. */
+  const [ings, setIngs] = useState<IngRow[]>([])
+  const [ingReady, setIngReady] = useState(false)
+  const [moveIng, setMoveIng] = useState<IngRow | null>(null)
+  const [savingIng, setSavingIng] = useState(false)
   // Stock editing at the till. Unlocked by default, because a client who bought
   // only the EXE never opens this page and must stay fully operational.
   const [posLocked, setPosLocked] = useState(false)
@@ -124,6 +139,16 @@ export default function StockPage() {
       const sup = await apiGet('/api/me/suppliers', k)
       if (sup.ok) setSuppliers((sup.suppliers || []).filter((s: any) => !s.archived).map((s: any) => ({ id: s.id, name: s.name })))
     } catch {}
+
+    // Load ingredients for the combined stock view
+    try {
+      const ing = await apiGet('/api/me/ingredients', k)
+      if (ing.ok && ing.ready !== false) {
+        setIngs((ing.ingredients || []).filter((i: any) => !i.archived))
+        setIngReady(true)
+      }
+    } catch {}
+
     setLoading(false)
   }
 
@@ -152,6 +177,15 @@ export default function StockPage() {
     const d = await apiPost('/api/me/stock-log', { key, ...payload })
     setSaving(false)
     if (d.ok) { setMove(null); await load(key); setMsg('✓ Mouvement enregistré') }
+    else setMsg(d.error || 'Erreur')
+  }
+
+  async function submitIngMovement(payload: any) {
+    if (!key) return
+    setSavingIng(true); setMsg('')
+    const d = await apiPost('/api/me/ingredients', { key, action: 'moveIngredient', ...payload })
+    setSavingIng(false)
+    if (d.ok) { setMoveIng(null); await load(key); setMsg('✓ Mouvement ingrédient enregistré') }
     else setMsg(d.error || 'Erreur')
   }
 
@@ -291,10 +325,18 @@ export default function StockPage() {
       )}
 
       <div className="toolbar">
-        <button className="chip" data-on={tab === 'levels'} onClick={() => setTab('levels')}>📦 Niveaux</button>
-        <button className="chip" data-on={tab === 'moves'} onClick={() => setTab('moves')}>🧾 Mouvements</button>
+        <button className="chip" data-on={tab === 'levels'} onClick={() => setTab('levels')}>
+          🥤 Stock produits <span className="t11 cMuted">(unité)</span>
+        </button>
+        <button className="chip" data-on={tab === 'ingredients'} onClick={() => setTab('ingredients')}>
+          🧀 Stock ingrédients <span className="t11 cMuted">(kg, L…)</span>
+          {ingReady && ings.filter(i => i.is_low).length > 0 && (
+            <span className="badge bDanger" style={{ marginLeft: 6 }}>{ings.filter(i => i.is_low).length}</span>
+          )}
+        </button>
+        <button className="chip" data-on={tab === 'moves'} onClick={() => setTab('moves')}>Mouvements</button>
         <button className="chip" data-on={tab === 'ecarts'} onClick={() => setTab('ecarts')}>
-          ⚠ Écarts{ecarts.length ? ` (${ecarts.length})` : ''}
+          Écarts{ecarts.length ? ` (${ecarts.length})` : ''}
         </button>
         <input
           className="input" style={{ maxWidth: 250, marginLeft: 8 }}
@@ -382,6 +424,58 @@ export default function StockPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* ── Ingredient stock ── */}
+      {tab === 'ingredients' && (
+        !ingReady ? (
+          <div className="notice nWarn">
+            <span className="noticeIcon">i</span>
+            <div>Les ingrédients ne sont pas encore configurés. Allez sur
+              {' '}<a href="/ingredients">Recettes</a> pour les ajouter.</div>
+          </div>
+        ) : (
+          <div className="card">
+            <div className="tableWrap">
+              <table className="t">
+                <thead>
+                  <tr>
+                    <th>Ingrédient</th>
+                    <th>Niveau</th>
+                    <th className="tr">En stock</th>
+                    <th className="tr">Valeur</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {ings.filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+                    <tr><td colSpan={5}><Empty icon="flask" text="Aucun ingrédient." /></td></tr>
+                  ) : ings
+                      .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()))
+                      .map(i => (
+                    <tr key={i.ing_key}>
+                      <td>
+                        <div className="strong">{i.name}</div>
+                        <div className="t11 cFaint">{i.category || '—'}</div>
+                      </td>
+                      <td data-label="Niveau" style={{ minWidth: 120 }}>
+                        <LevelMeter value={i.quantity} threshold={i.low_threshold} unit={i.stock_unit} />
+                      </td>
+                      <td data-label="En stock" className="tr num nowrap">
+                        <span className={i.is_low ? 'bold cDanger' : ''}>{qtyTrim(i.quantity)}</span>
+                        <span className="t11 cFaint"> {i.stock_unit}</span>
+                      </td>
+                      <td data-label="Valeur" className="tr num nowrap">{f3(i.stock_value)} DT</td>
+                      <td className="tr actionCell">
+                        <button className="btn btnSm btnPrimary" onClick={() => setMoveIng(i)}>Stock</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
       )}
 
       {/* ── Movement trail ── */}
@@ -489,8 +583,51 @@ export default function StockPage() {
           onSubmit={submitMovement}
         />
       )}
+      {moveIng && (
+        <IngredientMovementModal
+          ingredient={moveIng} saving={savingIng} suppliers={suppliers}
+          onClose={() => setMoveIng(null)} onSubmit={submitIngMovement}
+        />
+      )}
     </Shell>
   )
+}
+
+function IngredientMovementModal({ ingredient, saving, suppliers, onClose, onSubmit }: any) {
+  const [kind, setKind] = useState<'receive' | 'waste' | 'count'>('receive')
+  const [qty, setQty] = useState('')
+  const [unitCost, setUnitCost] = useState(ingredient.cost_per_stock_unit > 0 ? String(ingredient.cost_per_stock_unit) : '')
+  const [reason, setReason] = useState('')
+  const [supplierId, setSupplierId] = useState<number | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<'comptant' | 'credit'>('comptant')
+  const q = num(qty)
+  const valid = kind === 'count' ? qty !== '' && q >= 0 : q > 0
+  const after = kind === 'count' ? q : kind === 'receive' ? num(ingredient.quantity) + q : num(ingredient.quantity) - q
+
+  const submit = () => valid && onSubmit({
+    ing_key: ingredient.ing_key, kind, qty: q,
+    ...(kind === 'receive' && num(unitCost) > 0 ? { unit_cost: num(unitCost) } : {}),
+    ...(reason.trim() ? { reason: reason.trim() } : {}),
+    ...(kind === 'receive' && supplierId ? { supplier_id: supplierId } : {}),
+    ...(kind === 'receive' ? { payment_method: paymentMethod } : {}),
+  })
+
+  return <div className="overlay" onClick={onClose}>
+    <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+      <div className="modalHead"><div><div className="modalTitle">🧀 {ingredient.name}</div><div className="t12 cMuted">En stock : <b>{qtyTrim(ingredient.quantity)} {ingredient.stock_unit}</b></div></div><button className="btn btnGhost btnSm spacer" onClick={onClose}>✕</button></div>
+      <div className="modalBody col" style={{ gap: 14 }}>
+        <div className="row wrap" style={{ gap: 6 }}>
+          <button className="chip" data-on={kind === 'receive'} onClick={() => setKind('receive')}>📥 Livraison</button>
+          <button className="chip" data-on={kind === 'waste'} onClick={() => setKind('waste')}>🗑️ Perte</button>
+          <button className="chip" data-on={kind === 'count'} onClick={() => setKind('count')}>📋 Inventaire</button>
+        </div>
+        <div className="field"><label className="label">{kind === 'count' ? 'Quantité comptée' : 'Quantité'} ({ingredient.stock_unit})</label><input className="input inputNum" type="number" step="0.001" min="0" autoFocus value={qty} onChange={e => setQty(e.target.value)} /><span className="help">{kind === 'count' ? 'Le comptage fixe le nouveau stock.' : `Stock après : ${qtyTrim(after)} ${ingredient.stock_unit}`}</span></div>
+        {kind === 'receive' && <><div className="field"><label className="label">Prix payé par {ingredient.stock_unit} (optionnel)</label><input className="input inputNum" type="number" step="0.001" min="0" value={unitCost} onChange={e => setUnitCost(e.target.value)} /></div><div className="field"><label className="label">Fournisseur</label><select className="input" value={supplierId ?? ''} onChange={e => setSupplierId(e.target.value ? parseInt(e.target.value) : null)}><option value="">Passager (pas de fiche)</option>{suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div><div className="row" style={{ gap: 6 }}><button className="chip" data-on={paymentMethod === 'comptant'} onClick={() => setPaymentMethod('comptant')}>Comptant</button><button className="chip" data-on={paymentMethod === 'credit'} onClick={() => setPaymentMethod('credit')}>À crédit</button></div></>}
+        {kind !== 'receive' && <div className="field"><label className="label">Motif (optionnel)</label><input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder={kind === 'waste' ? 'Périmé, cassé…' : 'Inventaire'} /></div>}
+      </div>
+      <div className="modalFoot"><button className="btn" onClick={onClose}>Annuler</button><button className="btn btnPrimary" disabled={!valid || saving} onClick={submit}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button></div>
+    </div>
+  </div>
 }
 
 // ─────────────────────────────────────────────────────────────
