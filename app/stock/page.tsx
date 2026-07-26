@@ -52,7 +52,7 @@ export default function StockPage() {
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
   const [restName, setRestName] = useState('')
-  const [tab, setTab] = useState<'levels' | 'moves' | 'ecarts'>('levels')
+  const [tab, setTab] = useState<'levels' | 'ing' | 'moves' | 'ecarts'>('levels')
 
   const [variance, setVariance] = useState<Variance[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
@@ -291,7 +291,8 @@ export default function StockPage() {
       )}
 
       <div className="toolbar">
-        <button className="chip" data-on={tab === 'levels'} onClick={() => setTab('levels')}>📦 Niveaux</button>
+        <button className="chip" data-on={tab === 'levels'} onClick={() => setTab('levels')}>Stock</button>
+        <button className="chip" data-on={tab === 'ing'} onClick={() => setTab('ing')}>Ingrédients</button>
         <button className="chip" data-on={tab === 'moves'} onClick={() => setTab('moves')}>🧾 Mouvements</button>
         <button className="chip" data-on={tab === 'ecarts'} onClick={() => setTab('ecarts')}>
           ⚠ Écarts{ecarts.length ? ` (${ecarts.length})` : ''}

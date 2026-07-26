@@ -296,19 +296,20 @@ export async function GET(req: Request) {
       clients, movements, totals,
     }))
   } catch (err: any) {
-    // The catalog said the tables were there, yet a query still hit a missing
-    // relation — so report exactly which one rather than repeating the generic
-    // advice. This is the path the credit_reconciliation view fell down.
+    // A missing column or relation: find out exactly what's absent so the user
+    // sees a precise message, not a generic "run the migration" that may already
+    // have been run.
     if (isMissingSchema(err)) {
       const gaps = await missingTables()
       const id = await dbIdentity(sql)
-      // Include the REAL error so the admin can see which column or relation is
-      // actually absent — "run the migration" is useless advice when the tables
-      // exist but a COLUMN was added after the initial run.
+      // If both tables are confirmed present, the error is a missing COLUMN.
+      // Surface the actual Postgres message so the user knows exactly what to add.
       return cors(NextResponse.json({
         ok: true, ready: false,
         clients: [], movements: [], totals: null,
-        note: `Schéma incomplet : ${String(err?.message || '').slice(0, 200)}`,
+        note: gaps.length
+          ? `Tables absentes : ${gaps.join(', ')} — exécutez migration-credits.sql`
+          : `Colonne manquante : ${String(err?.message || '').slice(0, 300)}`,
         missing: gaps, db: id,
       }))
     }

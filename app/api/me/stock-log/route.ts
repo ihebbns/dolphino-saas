@@ -211,7 +211,10 @@ export async function POST(req: Request) {
     })
 
     if (quantity === null) {
-      return cors(NextResponse.json({ ok: false, error: 'Mouvement ignoré (doublon ou valeur nulle)' }, { status: 409 }))
+      // null means either a true duplicate (idempotent, fine) or the table is
+      // missing. The ledgerReady() check above already handles the missing-table
+      // case, so reaching here with null most likely means a duplicate uid.
+      return cors(NextResponse.json({ ok: true, item_id: itemId, kind, quantity: null, note: 'doublon' }))
     }
 
     return cors(NextResponse.json({ ok: true, item_id: itemId, kind, quantity }))
