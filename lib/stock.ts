@@ -218,6 +218,19 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
   const clientTs = safeTs(m.clientTs)
   const clientUid = clip(m.clientUid, 64)
 
+  // Some older installations have the ledger table and its client_uid column,
+  // but missed the partial unique index from the migration.  `ON CONFLICT ...
+  // WHERE` then rejects *every* movement with that UID.  Check first instead:
+  // this keeps replay protection without making a valid delivery/correction
+  // depend on an optional index being present.
+  if (clientUid) {
+    const prior = await sql`
+      SELECT 1 FROM stock_movements
+      WHERE restaurant_id = ${rid} AND client_uid = ${clientUid}
+      LIMIT 1`
+    if (prior.length) return null
+  }
+
   // For a count, freeze what the system believed so the écart stays accurate
   // forever, exactly like the cash clôture stores theorique next to compté.
   let expected: number | null = null
@@ -233,7 +246,7 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
 
   try {
     if (clientUid) {
-      const ins = await sql`
+      await sql`
         INSERT INTO stock_movements
           (restaurant_id, item_id, kind, delta, count_value, expected_value,
            unit_cost, supplier_id, payment_method,
@@ -245,10 +258,7 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
            ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
            ${clientTs}, ${clientUid})
-        ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
-        RETURNING id`
-      // Already recorded → do not touch the cache, do not double-apply.
-      if (!ins.length) return null
+        `
     } else {
       await sql`
         INSERT INTO stock_movements
@@ -275,7 +285,7 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
     if (isSupplierCol) {
       try {
         if (clientUid) {
-          const ins = await sql`
+          await sql`
             INSERT INTO stock_movements
               (restaurant_id, item_id, kind, delta, count_value, expected_value,
                unit_cost, reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
@@ -286,9 +296,7 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
                ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
                ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
                ${clientTs}, ${clientUid})
-            ON CONFLICT (restaurant_id, client_uid) WHERE client_uid <> '' DO NOTHING
-            RETURNING id`
-          if (!ins.length) return null
+            `
         } else {
           await sql`
             INSERT INTO stock_movements
@@ -311,7 +319,15 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
     }
   }
 
-  try { return await refreshStockCache(rid, itemId) } catch { return null }
+  // The immutable ledger row is the source of truth.  A cache refresh failure
+  // must never make the caller believe the movement was rejected (and retry it
+  // as a duplicate).  Return the derived value when possible; the next valid
+  // movement will refresh stock.quantity again.
+  try { return await refreshStockCache(rid, itemId) }
+  catch {
+    try { return await derivedQuantity(rid, itemId) }
+    catch { return 0 }
+  }
 }
 
 /** Append several movements. Returns how many were actually recorded. */
