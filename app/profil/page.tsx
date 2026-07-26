@@ -102,25 +102,9 @@ export default function ProfilPage() {
             </div>
           </div>
 
-          {/* ── Clé de licence ────────────────────────────────────── */}
-          <div className="card mb14">
-            <div className="cardPad">
-              <div className="strong mb14">Clé de licence</div>
-              <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-                <code className="k" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {reveal ? key : masked}
-                </code>
-                <button className="btn btnGhost btnSm" onClick={() => setReveal(v => !v)}>
-                  {reveal ? 'Masquer' : 'Afficher'}
-                </button>
-              </div>
-              <span className="help">
-                C&apos;est la clé que la caisse utilise. Ne la partagez pas : elle donne accès à
-                toutes vos données.
-              </span>
-              {plan ? <div className="t12 cMuted" style={{ marginTop: 8 }}>Formule : {plan}</div> : null}
-            </div>
-          </div>
+          {/* Licence key hidden — the client does not need to see or manage it,
+              and exposing it invites sharing it, which is the one credential that
+              gives full access to their data. */}
 
           {/* ── Mot de passe ──────────────────────────────────────── */}
           {/* Authenticated by the current password, not by the api_key stored in
