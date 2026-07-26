@@ -174,22 +174,6 @@ export default function CreditsPage() {
         </div>
       )}
 
-      {drifting.length > 0 && (
-        <div className="notice nWarn">
-          <span className="noticeIcon">⚠</span>
-          <div>
-            <div className="noticeTitle">{drifting.length} solde(s) incohérent(s)</div>
-            Le solde annoncé par la caisse ne correspond pas à son propre historique.
-            {drifting.map(c => (
-              <div key={c.client_key}>
-                • {c.name} — caisse {f3(c.balance)}, historique {f3(c.balance_derived)}
-                <span className="cDanger strong"> (écart {f3(c.drift)})</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="toolbar">
         <input
           className="input" style={{ maxWidth: 300 }}
@@ -347,19 +331,6 @@ export default function CreditsPage() {
                 </div>
               </div>
 
-              {/* A balance that disagrees with its own history belongs on the
-                  fiche, not only in a page-level banner: this is where someone
-                  looks when the figure is questioned. */}
-              {Math.abs(sel.drift || 0) > 0.001 && (
-                <div className="notice nWarn mb20">
-                  <span className="noticeIcon">⚠</span>
-                  <div>
-                    <div className="noticeTitle">Solde incohérent</div>
-                    La caisse annonce {f3(sel.balance)} DT, son historique donne {f3(sel.balance_derived)} DT
-                    — écart de <span className="strong">{f3(sel.drift)} DT</span>.
-                  </div>
-                </div>
-              )}
               {sel.archived && (
                 <div className="notice nDanger mb20">
                   <span className="noticeIcon">⚠</span>

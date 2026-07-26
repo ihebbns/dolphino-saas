@@ -110,6 +110,8 @@ export default function IngredientsPage() {
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
   /** Quick quantity update, one ingredient at a time. */
   const [moveIng, setMoveIng] = useState<Ing | null>(null)
+  /** Archive is a deliberate lifecycle action, so it gets its own reason dialog. */
+  const [archiveIng, setArchiveIng] = useState<Ing | null>(null)
 
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -148,7 +150,7 @@ export default function IngredientsPage() {
     setSaving(true); setMsg('')
     const d = await apiPost('/api/me/ingredients', { key, action, ...payload })
     setSaving(false)
-    if (d.ok) { setEditIng(null); setEditRec(null); setMoveIng(null); await load(key) }
+    if (d.ok) { setEditIng(null); setEditRec(null); setMoveIng(null); setArchiveIng(null); await load(key) }
     else setMsg(d.error || 'Erreur')
     return d.ok
   }
@@ -273,7 +275,7 @@ export default function IngredientsPage() {
       actions={
         <>
           <button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>
-          {tab === 'ing' && ingOn && (
+          {ingOn && (
             <button className="btn btnPrimary" onClick={() => setEditIng({ ...BLANK })}>+ Ingrédient</button>
           )}
         </>
@@ -652,9 +654,15 @@ export default function IngredientsPage() {
                           className="btn btnSm btnDanger" style={{ marginLeft: 6 }}
                           onClick={() => {
                             if (i.used_in_recipes > 0) { setMsg(`"${i.name}" est utilisé dans ${i.used_in_recipes} recette(s) — retirez-le d'abord.`); return }
-                            if (confirm(`Archiver "${i.name}" ?`)) save('deleteIngredient', { ing_key: i.ing_key })
+                            setArchiveIng(i)
                           }}
                         >Archiver</button>
+                      )}
+                      {i.archived && (
+                        <button className="btn btnSm btnPrimary" style={{ marginLeft: 6 }}
+                          onClick={() => save('restoreIngredient', { ing_key: i.ing_key, reason: 'Remis en service' })}>
+                          Restaurer
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -784,6 +792,13 @@ export default function IngredientsPage() {
           value={editIng} saving={saving}
           onClose={() => setEditIng(null)}
           onSave={v => save('saveIngredient', v)}
+        />
+      )}
+      {archiveIng && (
+        <ArchiveIngredientModal
+          ingredient={archiveIng} saving={saving}
+          onClose={() => setArchiveIng(null)}
+          onArchive={reason => save('deleteIngredient', { ing_key: archiveIng.ing_key, reason })}
         />
       )}
       {editRec && (
@@ -955,8 +970,41 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
 }
 
 // ─────────────────────────────────────────────────────────────
+function ArchiveIngredientModal({ ingredient, saving, onClose, onArchive }: {
+  ingredient: Ing; saving: boolean; onClose: () => void; onArchive: (reason: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  const canArchive = reason.trim().length > 0
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modalHead">
+          <div><div className="modalTitle">Archiver {ingredient.name}</div><div className="t12 cMuted">L&apos;historique, les coûts et les mouvements restent conservés.</div></div>
+          <button className="btn btnGhost btnSm spacer" onClick={onClose}>✕</button>
+        </div>
+        <div className="modalBody col" style={{ gap: 14 }}>
+          <div className="notice nInfo" style={{ margin: 0 }}><span className="noticeIcon">i</span><div>L&apos;ingrédient disparaît des achats et des nouvelles recettes. Vous pourrez le restaurer plus tard.</div></div>
+          <div className="field">
+            <label className="label">Motif <span className="cDanger">*</span></label>
+            <input className="input" autoFocus value={reason} onChange={e => setReason(e.target.value)} placeholder="Ex. fournisseur changé, produit arrêté" />
+            <span className="help">Le motif sera conservé dans le journal d&apos;audit.</span>
+          </div>
+        </div>
+        <div className="modalFoot">
+          <button className="btn" onClick={onClose}>Annuler</button>
+          <button className="btn btnDanger" disabled={!canArchive || saving} onClick={() => onArchive(reason.trim())}>
+            {saving ? 'Archivage…' : 'Archiver'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
 function IngredientModal({ value, saving, onClose, onSave }: any) {
   const [v, setV] = useState<any>({ ...value })
+  const isNew = !value.ing_key
   const set = (k: string, x: any) => setV((p: any) => ({ ...p, [k]: x }))
   const unitCost = num(v.conversion_factor) > 0 ? num(v.cost_per_stock_unit) / num(v.conversion_factor) : 0
 
@@ -1024,11 +1072,18 @@ function IngredientModal({ value, saving, onClose, onSave }: any) {
               </span>
             </div>
             <div className="field grow">
-              <label className="label">En stock ({v.stock_unit || 'unité'})</label>
-              <input
-                className="input inputNum" type="number" step="0.001" min="0"
-                value={v.quantity ?? ''} onChange={e => set('quantity', e.target.value)}
-              />
+              <label className="label">{isNew ? 'Stock initial' : 'Stock actuel'} ({v.stock_unit || 'unité'})</label>
+              {isNew ? (
+                <input
+                  className="input inputNum" type="number" step="0.001" min="0"
+                  value={v.quantity ?? ''} onChange={e => set('quantity', e.target.value)}
+                />
+              ) : (
+                <>
+                  <div className="input inputNum" style={{ background: 'var(--surface-2)' }}>{qtyTrim(v.quantity)} {v.stock_unit}</div>
+                  <span className="help">Utilisez le bouton « Stock » pour une livraison, perte ou inventaire traçable.</span>
+                </>
+              )}
             </div>
           </div>
 

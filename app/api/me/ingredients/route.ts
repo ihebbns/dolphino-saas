@@ -72,6 +72,17 @@ function resolveId(cat: string, it: any): string {
 async function ready(): Promise<boolean> {
   try { await sql`SELECT 1 FROM ingredients LIMIT 1`; return true } catch { return false }
 }
+
+/** Lifecycle actions are deliberately separate from quantity movements: an
+ * archive is an administrative fact, never a stock adjustment.  Older
+ * deployments keep working until migration-ingredient-audit.sql is applied. */
+async function recordIngredientEvent(rid: number, ingKey: string, kind: 'created' | 'updated' | 'archived' | 'restored', reason = '', actor = 'back-office') {
+  try {
+    await sql`
+      INSERT INTO ingredient_events (restaurant_id, ing_key, kind, reason, actor)
+      VALUES (${rid}, ${ingKey}, ${kind}, ${clip(reason, 200)}, ${clip(actor, 80)})`
+  } catch { /* audit table is an additive migration; never block operations */ }
+}
 async function resolveRestaurant(key: string) {
   const rows = await sql`
     SELECT id, name, menu_json FROM restaurants
@@ -120,6 +131,16 @@ export async function GET(req: Request) {
       FROM ingredient_stock
       WHERE restaurant_id = ${rid}
       ORDER BY archived, category NULLS LAST, name`
+
+    let events: any[] = []
+    try {
+      events = await sql`
+        SELECT e.id, e.ing_key, i.name, e.kind, e.reason, e.actor, e.created_at
+        FROM ingredient_events e
+        LEFT JOIN ingredients i ON i.restaurant_id = e.restaurant_id AND i.ing_key = e.ing_key
+        WHERE e.restaurant_id = ${rid}
+        ORDER BY e.created_at DESC, e.id DESC LIMIT 80`
+    } catch { /* migration-ingredient-audit.sql has not been run yet */ }
 
     const recipes = await sql`
       SELECT rc.item_id, rc.item_name, rc.cost_mode, rc.cost_override::float,
@@ -272,7 +293,7 @@ export async function GET(req: Request) {
     return cors(NextResponse.json({
       ok: true, ready: true, name: rest.name,
       ingredients, recipes: recipesFull, products, totals,
-      usage, movements, ledger: usage.length > 0 || movements.length > 0,
+      usage, movements, events, ledger: usage.length > 0 || movements.length > 0,
     }))
   } catch (e: any) {
     if (isMissingSchema(e)) {
@@ -331,6 +352,13 @@ export async function POST(req: Request) {
         return cors(NextResponse.json({ ok: false, error: 'Le facteur de conversion doit être supérieur à 0' }, { status: 400 }))
       }
 
+      // Editing a master record must never overwrite the count.  The quantity
+      // submitted by the form is used only for a brand-new ingredient, then is
+      // immediately recorded as an opening inventory movement below.
+      const existing = await sql`
+        SELECT 1 FROM ingredients WHERE restaurant_id = ${rid} AND ing_key = ${ingKey} LIMIT 1`
+      const openingQty = existing.length ? 0 : Math.max(0, n3(body.quantity))
+
       await sql`
         INSERT INTO ingredients
           (restaurant_id, ing_key, name, category, stock_unit, recipe_unit,
@@ -338,15 +366,23 @@ export async function POST(req: Request) {
         VALUES
           (${rid}, ${ingKey}, ${name}, ${clip(body.category, 60)},
            ${clip(body.stock_unit, 24) || 'kg'}, ${clip(body.recipe_unit, 24) || 'g'},
-           ${conv}, ${n3(body.cost_per_stock_unit)}, ${n3(body.quantity)},
+           ${conv}, ${n3(body.cost_per_stock_unit)}, ${openingQty},
            ${n3(body.low_threshold)}, ${body.tracked !== false}, NOW())
         ON CONFLICT (restaurant_id, ing_key) DO UPDATE SET
           name = EXCLUDED.name, category = EXCLUDED.category,
           stock_unit = EXCLUDED.stock_unit, recipe_unit = EXCLUDED.recipe_unit,
           conversion_factor = EXCLUDED.conversion_factor,
           cost_per_stock_unit = EXCLUDED.cost_per_stock_unit,
-          quantity = EXCLUDED.quantity, low_threshold = EXCLUDED.low_threshold,
-          tracked = EXCLUDED.tracked, archived = FALSE, updated_at = NOW()`
+          low_threshold = EXCLUDED.low_threshold,
+          tracked = EXCLUDED.tracked, updated_at = NOW()`
+      if (!existing.length && await ingredientLedgerReady()) {
+        await recordIngMovement(rid, {
+          ingKey, kind: 'count', countValue: openingQty,
+          reason: 'Stock initial', actor: clip(body.actor, 80) || 'back-office', source: 'web',
+          clientUid: `initial:${ingKey}`,
+        })
+      }
+      recordIngredientEvent(rid, ingKey, existing.length ? 'updated' : 'created', '', clip(body.actor, 80) || 'back-office')
       return cors(NextResponse.json({ ok: true, ing_key: ingKey }))
     }
 
@@ -363,9 +399,24 @@ export async function POST(req: Request) {
           ok: false, error: `Utilisé dans ${used[0].n} recette(s) — retirez-le d'abord.`,
         }, { status: 409 }))
       }
+      const reason = clip(body.reason, 200).trim()
+      if (!reason) return cors(NextResponse.json({ ok: false, error: 'Motif obligatoire pour archiver un ingrédient' }, { status: 400 }))
       await sql`UPDATE ingredients SET archived = TRUE, updated_at = NOW()
                 WHERE restaurant_id = ${rid} AND ing_key = ${ingKey}`
+      recordIngredientEvent(rid, ingKey, 'archived', reason, clip(body.actor, 80) || 'back-office')
       return cors(NextResponse.json({ ok: true }))
+    }
+
+    if (action === 'restoreIngredient') {
+      const ingKey = clip(body.ing_key, 64)
+      if (!ingKey) return cors(NextResponse.json({ ok: false, error: 'ing_key requis' }, { status: 400 }))
+      const restored = await sql`
+        UPDATE ingredients SET archived = FALSE, updated_at = NOW()
+        WHERE restaurant_id = ${rid} AND ing_key = ${ingKey} AND archived = TRUE
+        RETURNING ing_key`
+      if (!restored.length) return cors(NextResponse.json({ ok: false, error: 'Ingrédient introuvable ou déjà actif' }, { status: 404 }))
+      recordIngredientEvent(rid, ingKey, 'restored', clip(body.reason, 200), clip(body.actor, 80) || 'back-office')
+      return cors(NextResponse.json({ ok: true, ing_key: ingKey }))
     }
 
     // ── Quantity movement ─────────────────────────────────────

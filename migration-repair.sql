@@ -10,6 +10,24 @@
 -- ═══════════════════════════════════════════════════
 
 -- ── credit_movements ────────────────────────────────────────────────────
+-- Early installations called this field client_name.  The current API and
+-- reconciliation view use name, so keep old customer records while bringing
+-- the schema forward instead of treating the whole credits feature as absent.
+ALTER TABLE credits ADD COLUMN IF NOT EXISTS name VARCHAR(120);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'credits' AND column_name = 'client_name'
+  ) THEN
+    UPDATE credits
+    SET name = client_name
+    WHERE (name IS NULL OR name = '') AND client_name IS NOT NULL;
+    ALTER TABLE credits ALTER COLUMN client_name DROP NOT NULL;
+  END IF;
+END $$;
+
 ALTER TABLE credit_movements ADD COLUMN IF NOT EXISTS pay_method    VARCHAR(20)   DEFAULT '';
 ALTER TABLE credit_movements ADD COLUMN IF NOT EXISTS items_summary VARCHAR(400)  DEFAULT '';
 ALTER TABLE credit_movements ADD COLUMN IF NOT EXISTS sale_num      INTEGER;
