@@ -26,6 +26,7 @@ import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import { recordMovement, isMovementKind, ledgerReady } from '@/lib/stock'
+import { serverError, isMissingSchema, notReadyPayload } from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -146,7 +147,8 @@ export async function GET(req: Request) {
       movements, variance, ecarts, totals,
     }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    if (isMissingSchema(e)) return cors(NextResponse.json(notReadyPayload('migration-stock-movements.sql', { movements: [], variance: [], totals: null })))
+    return cors(NextResponse.json(serverError('me/stock-log', e), { status: 500 }))
   }
 }
 
@@ -211,6 +213,7 @@ export async function POST(req: Request) {
 
     return cors(NextResponse.json({ ok: true, item_id: itemId, kind, quantity }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    if (isMissingSchema(e)) return cors(NextResponse.json(notReadyPayload('migration-stock-movements.sql', { movements: [], variance: [], totals: null })))
+    return cors(NextResponse.json(serverError('me/stock-log', e), { status: 500 }))
   }
 }

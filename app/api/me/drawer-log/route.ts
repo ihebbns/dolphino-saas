@@ -27,6 +27,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
+import { serverError, isMissingSchema, notReadyPayload } from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -121,7 +122,8 @@ export async function POST(req: Request) {
 
     return cors(NextResponse.json({ ok: true, ready: true, inserted, skipped }))
   } catch (err: any) {
-    return cors(NextResponse.json({ ok: false, error: err.message }, { status: 500 }))
+    if (isMissingSchema(err)) return cors(NextResponse.json(notReadyPayload('migration-drawer-log.sql', { events: [], byActor: [], totals: null, inserted: 0 })))
+    return cors(NextResponse.json(serverError('me/drawer-log', err), { status: 500 }))
   }
 }
 
@@ -196,6 +198,7 @@ export async function GET(req: Request) {
       events, byActor, totals,
     }))
   } catch (err: any) {
-    return cors(NextResponse.json({ ok: false, error: err.message }, { status: 500 }))
+    if (isMissingSchema(err)) return cors(NextResponse.json(notReadyPayload('migration-drawer-log.sql', { events: [], byActor: [], totals: null, inserted: 0 })))
+    return cors(NextResponse.json(serverError('me/drawer-log', err), { status: 500 }))
   }
 }

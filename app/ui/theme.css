@@ -57,6 +57,67 @@
   --shadow-lg: 0 12px 32px rgba(16,24,40,.12), 0 4px 8px rgba(16,24,40,.06);
 
   --nav-w: 236px;
+
+  color-scheme: light;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK
+   ═══════════════════════════════════════════════════════════════════
+   Same token names, dark values. Nothing below this block references a
+   literal surface colour, so overriding the palette is enough — the one
+   place a literal appears is `#fff` on a filled brand/danger button,
+   which is correct in both themes.
+
+   The switch is `data-theme` on <html>, set by ui/useTheme.ts. Every page
+   reads the same key, so one toggle moves the whole back office. Before
+   this existed the dashboard had its own toggle and every other page was
+   pinned light, which made the control look broken.
+
+   `color-scheme` is declared so native scrollbars, date pickers and
+   <select> popups follow too; without it those stay white and give the
+   page away as half-themed.
+   ═══════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  --bg:            #0E1116;
+  --surface:       #151A21;
+  --surface-2:     #1A2028;
+  --surface-3:     #212832;
+
+  --line:          #2A313C;
+  --line-strong:   #3B4450;
+
+  --text:          #E9EDF3;
+  --text-2:        #B6BEC9;
+  --muted:         #8A94A2;
+  --faint:         #69727E;
+
+  /* Amber lightened: #B45309 on a dark surface fails contrast. */
+  --brand:         #F5B041;
+  --brand-fill:    #F59E0B;
+  --brand-soft:    rgba(245,158,11,.14);
+  --brand-line:    rgba(245,158,11,.38);
+
+  /* Semantic hues lifted for legibility, tints kept as low-alpha washes
+     so they tint the dark surface instead of punching light holes in it. */
+  --ok:            #4ADE80;
+  --ok-soft:       rgba(74,222,128,.12);
+  --ok-line:       rgba(74,222,128,.30);
+  --danger:        #FB7185;
+  --danger-soft:   rgba(251,113,133,.12);
+  --danger-line:   rgba(251,113,133,.32);
+  --warn:          #FBBF24;
+  --warn-soft:     rgba(251,191,36,.12);
+  --warn-line:     rgba(251,191,36,.32);
+  --info:          #60A5FA;
+  --info-soft:     rgba(96,165,250,.12);
+  --info-line:     rgba(96,165,250,.32);
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
+  --shadow:    0 1px 3px rgba(0,0,0,.50), 0 1px 2px rgba(0,0,0,.40);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,.55), 0 4px 8px rgba(0,0,0,.40);
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -519,13 +580,29 @@ code.k {
   .app { display: block; }
   .nav { display: none; }                 /* the bottom bar replaces it */
   .main { display: block; }
+  /* Title and actions on one non-wrapping row pushed the buttons off the right
+     edge of the phone, so reaching "Recharger" meant scrolling the page
+     sideways. The row wraps now: title first, actions on their own line. */
   .topbar {
     position: sticky; top: 0; z-index: 50;
-    padding: 12px 14px; height: auto;
+    padding: 10px 14px; height: auto;
     background: var(--surface); border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   }
   .topTitle { font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+  /* Full width claims a new line; wrap keeps every button inside the viewport.
+     margin-left is reset because `auto` would otherwise right-align a row that
+     now starts its own line. */
+  .topRight {
+    flex: 1 1 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  /* Actions are secondary to the content, so they do not need the full 44px
+     block height that primary controls get. */
+  .topRight .btn { min-height: 38px; }
   .page {
     padding: 14px;
     /* Clear the fixed tab bar so the last row is never trapped under it. */
@@ -634,4 +711,109 @@ code.k {
   .select { display: none !important; }
   thead { display: table-header-group; }   /* repeat headers across pages */
   tr { break-inside: avoid; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GRAPHICS
+   ═══════════════════════════════════════════════════════════════════
+   Small, honest chart primitives. No chart library: these render from the
+   numbers already on the page, print correctly, and cost nothing on a phone
+   over a Tunisian mobile connection.
+
+   The rule for all of them is that the BAR IS THE COMPARISON. A bar whose
+   length does not mean anything is decoration, so every one here is scaled
+   against something stated in the label next to it.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Level bar: quantity against a threshold. Reads at a glance in a table row. */
+.meter {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+  min-width: 60px;
+}
+.meterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--ok);
+  transition: width .25s ease;
+}
+.meterFill[data-tone="warn"]   { background: var(--warn); }
+.meterFill[data-tone="danger"] { background: var(--danger); }
+.meterFill[data-tone="info"]   { background: var(--info); }
+.meterFill[data-tone="muted"]  { background: var(--line-strong); }
+
+/* The threshold notch: where "reorder" begins. Without it the bar says how full
+   the container is, which is not the question being asked. */
+.meterMark {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  width: 2px;
+  background: var(--text-2);
+  opacity: .45;
+}
+
+.meterRow { display: flex; flex-direction: column; gap: 4px; min-width: 84px; }
+.meterCap { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+
+/* Horizontal bar list: ranked comparison, e.g. top consumption. */
+.barList { display: flex; flex-direction: column; gap: 10px; }
+.barItem { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: baseline; }
+.barItemName { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barItemVal  { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.barItemTrack {
+  grid-column: 1 / -1;
+  height: 8px; border-radius: 999px;
+  background: var(--surface-3); overflow: hidden;
+}
+.barItemFill { height: 100%; border-radius: 999px; background: var(--brand-fill); transition: width .25s ease; }
+.barItemFill[data-tone="danger"] { background: var(--danger); }
+.barItemFill[data-tone="ok"]     { background: var(--ok); }
+.barItemFill[data-tone="info"]   { background: var(--info); }
+.barItemSub { grid-column: 1 / -1; font-size: 11px; color: var(--faint); }
+
+/* Days-of-cover pill: the "when do I run out" answer. */
+.cover { display: inline-flex; align-items: baseline; gap: 4px; font-variant-numeric: tabular-nums; }
+.coverNum { font-size: 15px; font-weight: 700; }
+.coverUnit { font-size: 11px; color: var(--muted); }
+
+@media (max-width: 640px) {
+  .meterRow { min-width: 0; }
+  .meter { min-width: 0; }
+}
+
+@media print {
+  /* Backgrounds are dropped by default when printing, which would erase every
+     bar. Force them, otherwise a printed stock report loses its comparison. */
+  .meter, .meterFill, .barItemTrack, .barItemFill {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Two panels side by side on a desktop, stacked on a phone. */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+
+.cardTitle {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 12px;
+}
+.cardTitle small { font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--faint); }
+
+/* One line with an ellipsis on a wide screen, free to wrap on a phone.
+   Written as a class rather than an inline style precisely so the phone rules
+   below can override it — an inline style cannot be beaten by a media query. */
+.clamp1 {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 999px) {
+  .clamp1 { max-width: none; white-space: normal; overflow: visible; text-overflow: clip; }
 }

@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import bcrypt from 'bcryptjs'
+import { serverError } from '@/lib/apiError'
 
 export const runtime = 'nodejs'
 
@@ -58,7 +59,7 @@ export async function PUT(req: Request) {
     `
     return NextResponse.json({ ok:true })
   } catch(e: any) {
-    return NextResponse.json({ ok:false, error: e.message }, { status:500 })
+    return NextResponse.json(serverError('admin/clients', e), { status:500 })
   }
 }
 
@@ -97,6 +98,6 @@ export async function PATCH(req: Request) {
     }
     return NextResponse.json({ ok: true })
   } catch (e: any) {
-    return NextResponse.json({ ok:false, error: e.message }, { status:500 })
+    return NextResponse.json(serverError('admin/clients', e), { status:500 })
   }
 }

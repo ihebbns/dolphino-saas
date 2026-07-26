@@ -39,11 +39,36 @@ export default function CreditsPage() {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [sel, setSel] = useState<Client | null>(null)
+  // The fiche used to filter the page's shared movement list. That list is the
+  // last 200 movements ACROSS ALL clients, so any ardoise whose activity had
+  // scrolled past that window showed a truncated history — or "aucun mouvement"
+  // for a client who visibly owed money. The fiche now asks the server for that
+  // one client's own history.
+  const [ficheRows, setFicheRows] = useState<Movement[] | null>(null)
+  const [ficheBusy, setFicheBusy] = useState(false)
 
   useEffect(() => {
     if (key) load(key)
     else if (checked) setLoading(false)
   }, [key, checked])
+
+  async function openFiche(c: Client) {
+    setSel(c)
+    setFicheRows(null)
+    if (!key) return
+    setFicheBusy(true)
+    const d = await apiGet(
+      `/api/me/credits?client=${encodeURIComponent(c.client_key)}&limit=1000`, key
+    )
+    setFicheBusy(false)
+    // Fall back to the shared list rather than showing nothing if the call fails.
+    setFicheRows(d.ok ? (d.movements || []) : movements.filter(m => m.client_key === c.client_key))
+  }
+
+  function closeFiche() {
+    setSel(null)
+    setFicheRows(null)
+  }
 
   async function load(k: string) {
     setLoading(true); setMsg('')
@@ -76,6 +101,23 @@ export default function CreditsPage() {
   }
   if (!key) return <LoginGate />
 
+  // Until the migration runs nothing is known. Rendering the KPI cards here would
+  // print "Total dû 0.000 DT", which reads as "nobody owes you anything" — a
+  // claim we cannot make. Show only what is true: the table isn't set up yet.
+  if (!ready) {
+    return (
+      <Shell
+        active="/credits"
+        title="Créances clients"
+        subtitle="Argent qui vous est dû — les ardoises se gèrent à la caisse"
+        restName={restName}
+        actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
+      >
+        <NotReady sql="migration-credits.sql" />
+      </Shell>
+    )
+  }
+
   return (
     <Shell
       active="/credits"
@@ -85,7 +127,6 @@ export default function CreditsPage() {
       badges={{ '/credits': totals?.nb_debiteurs ?? 0 }}
       actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
     >
-      {!ready && <NotReady sql="migration-credits.sql" />}
       {msg && <div className="notice nDanger"><span className="noticeIcon">✕</span><div>{msg}</div></div>}
 
       <div className="statGrid mb20">
@@ -195,10 +236,12 @@ export default function CreditsPage() {
                     <td data-label="Total réglé" className="tr num cMuted">{f3(c.total_regle)}</td>
                     <td data-label="Dernier mouvement" className="nowrap">
                       <div className="t13">{dt(c.last_movement_at)}</div>
-                      {isStale && <div className="t11 cWarn">⏳ {d} jours sans mouvement</div>}
+                      {isStale && <div className="t11 cWarn">{d} jours sans mouvement</div>}
                     </td>
-                    <td className="tr">
-                      <button className="btn btnSm" onClick={() => setSel(c)}>Historique →</button>
+                    {/* actionCell makes this a full-width button row on a phone
+                        instead of a cramped strip pinned to the right edge. */}
+                    <td className="tr actionCell">
+                      <button className="btn btnSm" onClick={() => openFiche(c)}>Fiche</button>
                     </td>
                   </tr>
                 )
@@ -235,7 +278,10 @@ export default function CreditsPage() {
                   <td data-label="Montant" className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}>
                     {m.delta > 0 ? '+' : '−'}{f3(Math.abs(m.delta))}
                   </td>
-                  <td data-label="Détail" className="t12 cMuted" style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {/* clamp1 instead of an inline nowrap: an inline style beats the
+                      mobile media query, so this cell stayed one long unbreakable
+                      line and dragged the whole card layout wider than the phone. */}
+                  <td data-label="Détail" className="t12 cMuted clamp1">
                     {m.items_summary || m.reason || (m.sale_num ? '#' + String(m.sale_num).padStart(3, '0') : '—')}
                   </td>
                   <td data-label="Par" className="t12 cMuted">{m.actor || '—'}</td>
@@ -247,51 +293,143 @@ export default function CreditsPage() {
       </div>
 
       {sel && (
-        <div className="overlay" onClick={() => setSel(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="overlay" onClick={closeFiche}>
+          <div
+            className="modal" onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" aria-label={`Fiche de ${sel.name}`}
+          >
             <div className="modalHead">
               <div className="avatar">{(sel.name || '?').charAt(0).toUpperCase()}</div>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div className="modalTitle">{sel.name}</div>
-                <div className="t12 cMuted">{sel.phone || '—'}</div>
+                <div className="t12 cMuted">{sel.phone || 'pas de téléphone'}</div>
               </div>
-              <button className="btn btnGhost btnSm spacer" onClick={() => setSel(null)}>✕</button>
+              <button className="btn btnGhost btnSm spacer" onClick={closeFiche} aria-label="Fermer">✕</button>
             </div>
             <div className="modalBody">
+              {/* The balance leads: it is the amount to ask for. */}
               <div className="statGrid mb20">
                 <div className="stat">
-                  <div className="statLabel">Solde</div>
+                  <div className="statLabel">Doit actuellement</div>
                   <div className="statValue num" style={{ color: sel.balance > 0 ? 'var(--danger)' : 'var(--ok)' }}>
                     {f3(sel.balance)} DT
+                  </div>
+                  <div className="statHint">
+                    {sel.balance > 0 ? 'ardoise ouverte' : 'rien à réclamer'}
                   </div>
                 </div>
                 <div className="stat">
                   <div className="statLabel">Total pris</div>
                   <div className="statValue num">{f3(sel.total_pris)}</div>
+                  <div className="statHint">{sel.nb_credits ?? 0} fois à crédit</div>
                 </div>
                 <div className="stat">
                   <div className="statLabel">Total réglé</div>
                   <div className="statValue num">{f3(sel.total_regle)}</div>
+                  <div className="statHint">{sel.nb_payments ?? 0} règlement(s)</div>
+                </div>
+                <div className="stat">
+                  <div className="statLabel">Dernier mouvement</div>
+                  <div className="statValue" style={{ fontSize: 15 }}>{dt(sel.last_movement_at)}</div>
+                  <div className="statHint">
+                    {(() => {
+                      const d = daysSince(sel.last_movement_at)
+                      return d == null ? '—'
+                        : d >= 30 ? <span className="cWarn">{d} jours sans mouvement</span>
+                        : `il y a ${d} jour(s)`
+                    })()}
+                  </div>
                 </div>
               </div>
-              {movements.filter(m => m.client_key === sel.client_key).length === 0 ? (
-                <Empty icon="🧾" text="Aucun mouvement reçu pour ce client" />
+
+              {/* A balance that disagrees with its own history belongs on the
+                  fiche, not only in a page-level banner: this is where someone
+                  looks when the figure is questioned. */}
+              {Math.abs(sel.drift || 0) > 0.001 && (
+                <div className="notice nWarn mb20">
+                  <span className="noticeIcon">⚠</span>
+                  <div>
+                    <div className="noticeTitle">Solde incohérent</div>
+                    La caisse annonce {f3(sel.balance)} DT, son historique donne {f3(sel.balance_derived)} DT
+                    — écart de <span className="strong">{f3(sel.drift)} DT</span>.
+                  </div>
+                </div>
+              )}
+              {sel.archived && (
+                <div className="notice nDanger mb20">
+                  <span className="noticeIcon">⚠</span>
+                  <div>
+                    <div className="noticeTitle">Fiche supprimée à la caisse</div>
+                    {sel.balance > 0
+                      ? 'Elle a été supprimée alors qu’une dette restait due.'
+                      : 'Conservée ici pour l’historique.'}
+                  </div>
+                </div>
+              )}
+
+              <div className="cardTitle">
+                Historique complet
+                {ficheRows ? <small>{ficheRows.length} mouvement(s)</small> : null}
+              </div>
+
+              {ficheBusy ? (
+                <div className="col" style={{ gap: 8 }}>
+                  <div className="skel" style={{ height: 40 }} />
+                  <div className="skel" style={{ height: 40 }} />
+                  <div className="skel" style={{ height: 40 }} />
+                </div>
+              ) : !ficheRows || ficheRows.length === 0 ? (
+                <Empty
+                  icon="receipt"
+                  text="Aucun mouvement reçu pour ce client. Les ardoises remontent depuis la caisse à chaque synchronisation."
+                />
               ) : (
                 <table className="t">
-                  <thead><tr><th>Date</th><th>Type</th><th className="tr">Montant</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Date</th><th>Type</th><th className="tr">Montant</th><th className="tr">Solde après</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {movements.filter(m => m.client_key === sel.client_key).map(m => (
-                      <tr key={m.id}>
-                        <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
-                        <td data-label="Type" className="t12">
-                          {m.kind === 'payment' ? '💵 Règlement' : m.kind === 'credit' ? '📒 À crédit' : '✏️ Correction'}
-                          {m.items_summary ? <span className="cFaint"> — {m.items_summary}</span> : null}
-                        </td>
-                        <td data-label="Montant" className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                          {m.delta > 0 ? '+' : '−'}{f3(Math.abs(m.delta))}
-                        </td>
-                      </tr>
-                    ))}
+                    {/* Running balance, computed backwards from the current one so
+                        each line answers "what did he owe after this?" — the
+                        question actually asked when a client disputes a total.
+                        The server returns newest first, so walking down the list
+                        means subtracting the row above. */}
+                    {ficheRows.map((m, i) => {
+                      const after = ficheRows
+                        .slice(0, i)
+                        .reduce((bal, r) => bal - r.delta, sel.balance)
+                      return (
+                        <tr key={m.id}>
+                          <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
+                          <td data-label="Type" className="t12">
+                            <span className={'badge ' + (
+                              m.kind === 'payment' ? 'bOk' : m.kind === 'credit' ? 'bDanger' : 'bNeutral'
+                            )}>
+                              {m.kind === 'payment'
+                                ? 'Règlement' + (m.pay_method === 'card' ? ' (carte)' : '')
+                                : m.kind === 'credit' ? 'À crédit' : 'Correction'}
+                            </span>
+                            {m.items_summary
+                              ? <div className="t11 cFaint">{m.items_summary}</div>
+                              : m.reason ? <div className="t11 cFaint">{m.reason}</div>
+                              : m.sale_num ? <div className="t11 cFaint">#{String(m.sale_num).padStart(3, '0')}</div>
+                              : null}
+                            {m.actor ? <div className="t11 cFaint">par {m.actor}</div> : null}
+                          </td>
+                          <td
+                            data-label="Montant" className="tr num nowrap bold"
+                            style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}
+                          >
+                            {m.delta > 0 ? '+' : '−'}{f3(Math.abs(m.delta))}
+                          </td>
+                          <td data-label="Solde après" className="tr num nowrap t12 cMuted">
+                            {f3(after)}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               )}

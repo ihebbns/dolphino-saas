@@ -16,6 +16,7 @@
 // rendered as a segmented control under the title.
 // ═══════════════════════════════════════════════════════════════════
 import { Icon, IconName } from './Icon'
+import { useTheme } from './useTheme'
 
 export type SubRoute = { href: string; name: string }
 export type Destination = {
@@ -36,8 +37,13 @@ export const DESTINATIONS: Destination[] = [
       { href: '/ingredients', name: 'Recettes' },
     ],
   },
-  { href: '/audit', name: 'Caisse', short: 'Caisse', icon: 'drawer' },
-  { href: '/credits', name: 'Créances', short: 'Créances', icon: 'receipt' },
+  // Caisse = the shift closures (fond, compté, écart). That view used to be a top
+  // tab on the dashboard, behind a sideways scroll, while this slot pointed at
+  // /audit — the raw drawer-opening trail. The closure is what an owner checks
+  // daily, so it takes the destination outright. /audit is not in the navigation.
+  { href: '/caisse', name: 'Caisse', short: 'Caisse', icon: 'drawer' },
+  // "Crédit" not "Créances": the word on the till, and the word the owner uses.
+  { href: '/credits', name: 'Crédit', short: 'Crédit', icon: 'receipt' },
   // Établissement is deliberately absent: its settings move under Profil, so the
   // owner has one place for "me and my account" instead of two.
   { href: '/profil', name: 'Profil', short: 'Profil', icon: 'settings' },
@@ -60,14 +66,19 @@ const PALETTE = {
  */
 export function TabBar({
   active,
-  theme = 'light',
+  theme,
   badges,
 }: {
   active: string
+  /** Omit this. Left only as an escape hatch for a surface that must stay fixed
+   *  regardless of preference; it used to default to 'light', which pinned the bar
+   *  light on a dark page, and callers then hardcoded 'dark', which pinned it dark
+   *  on a light one. */
   theme?: 'dark' | 'light'
   badges?: Record<string, number>
 }) {
-  const c = PALETTE[theme]
+  const { theme: appTheme } = useTheme()
+  const c = PALETTE[theme ?? appTheme]
   const dest = destinationOf(active)
 
   return (

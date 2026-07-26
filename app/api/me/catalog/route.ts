@@ -41,6 +41,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
+import { serverError } from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -201,7 +202,7 @@ export async function GET(req: Request) {
 
     return cors(NextResponse.json({ ok: true, name: rows[0].name, count: products.length, products }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    return cors(NextResponse.json(serverError('me/catalog', e), { status: 500 }))
   }
 }
 
@@ -290,6 +291,6 @@ export async function POST(req: Request) {
       item: { item_id: itemId, item_name: name, item_emoji: emoji, cost, sell_price: sellPrice, quantity, category, barcode, tracked, low_threshold: lowThresh },
     }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    return cors(NextResponse.json(serverError('me/catalog', e), { status: 500 }))
   }
 }

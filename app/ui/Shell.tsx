@@ -28,6 +28,23 @@ import { useEffect, useState } from 'react'
 import './theme.css'
 import { Icon, IconName } from './Icon'
 import { DESTINATIONS } from './TabBar'
+import { useTheme } from './useTheme'
+
+/** Theme switch, present on every Shell page. Lives here rather than per-page so
+ *  there is exactly one control and it cannot drift out of sync. */
+export function ThemeToggle() {
+  const { dark, toggle } = useTheme()
+  return (
+    <button
+      className="btn btnGhost btnSm"
+      onClick={toggle}
+      title={dark ? 'Passer en clair' : 'Passer en sombre'}
+      aria-label={dark ? 'Passer en thème clair' : 'Passer en thème sombre'}
+    >
+      {dark ? 'Clair' : 'Sombre'}
+    </button>
+  )
+}
 
 export const API = process.env.NEXT_PUBLIC_API_URL || 'https://servio.tn'
 
@@ -203,7 +220,10 @@ export function Shell({
             <div className="topTitle">{title}</div>
             {subtitle && <div className="topSub">{subtitle}</div>}
           </div>
-          <div className="topRight">{actions}</div>
+          <div className="topRight">
+            {actions}
+            <ThemeToggle />
+          </div>
         </header>
 
         {tabs && tabs.filter(t => !hideTabs?.includes(t.href)).length > 1 && (
@@ -409,6 +429,122 @@ export function OwnerMark({ what = 'caisse' }: { what?: string }) {
   return (
     <span className="ownerMark" title={'Géré depuis la ' + what}>
       <Icon name="lock" size={12} label={'Géré depuis la ' + what} />
+    </span>
+  )
+}
+
+// ── Graphics ──────────────────────────────────────────────────────
+// Deliberately tiny. The point is that a number becomes a comparison without
+// the reader doing arithmetic. No chart library: these print, work offline and
+// add nothing to the bundle.
+
+/**
+ * Stock level against its reorder threshold.
+ *
+ * The scale is the important decision. A bar filled relative to "the biggest
+ * quantity I happen to have" tells you nothing, so the track here represents
+ * roughly three times the threshold — enough headroom to see a healthy stock as
+ * clearly full — and the notch marks the threshold itself. That way the answer
+ * to "do I order this?" is whether the fill has reached the notch.
+ */
+export function LevelMeter({
+  value,
+  threshold,
+  unit,
+  showCaption = true,
+}: {
+  value: number
+  threshold: number
+  unit?: string
+  showCaption?: boolean
+}) {
+  const v = Number(value) || 0
+  const th = Math.max(0, Number(threshold) || 0)
+  // With no threshold set there is nothing to compare against, so scale to the
+  // value and keep the bar neutral rather than implying a judgement.
+  const scale = th > 0 ? th * 3 : Math.max(v, 1)
+  const pct = Math.max(0, Math.min(100, (v / scale) * 100))
+  const markPct = th > 0 ? Math.min(100, (th / scale) * 100) : null
+
+  const tone =
+    th <= 0 ? 'muted' :
+    v <= th ? 'danger' :
+    v <= th * 1.5 ? 'warn' : 'ok'
+
+  return (
+    <div className="meterRow">
+      <div
+        className="meter"
+        role="meter"
+        aria-valuenow={v}
+        aria-valuemin={0}
+        aria-valuemax={scale}
+        aria-label={th > 0 ? `Stock ${v} ${unit || ''}, seuil ${th}` : `Stock ${v} ${unit || ''}`}
+      >
+        <div className="meterFill" data-tone={tone} style={{ width: pct + '%' }} />
+        {markPct != null && <div className="meterMark" style={{ left: markPct + '%' }} />}
+      </div>
+      {showCaption && (
+        <div className="meterCap">
+          <span className="num">{f3(v)} {unit || ''}</span>
+          {th > 0 ? <span className="num">seuil {f3(th)}</span> : <span>pas de seuil</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Ranked horizontal bars. Scaled to the largest row so the top item fills the
+ * track and the rest are read against it.
+ */
+export function BarList({
+  rows,
+  emptyText = 'Rien à afficher',
+  max = 8,
+}: {
+  rows: { label: string; value: number; display?: string; sub?: string; tone?: 'ok' | 'danger' | 'info' }[]
+  emptyText?: string
+  max?: number
+}) {
+  const top = [...rows].sort((a, b) => b.value - a.value).slice(0, max)
+  const peak = top.length ? Math.max(...top.map(r => Math.abs(r.value))) : 0
+  if (!top.length || peak <= 0) return <Empty text={emptyText} />
+  return (
+    <div className="barList">
+      {top.map((r, i) => (
+        <div className="barItem" key={r.label + i}>
+          <div className="barItemName" title={r.label}>{r.label}</div>
+          <div className="barItemVal num">{r.display ?? f3(r.value)}</div>
+          <div className="barItemTrack">
+            <div
+              className="barItemFill"
+              data-tone={r.tone}
+              style={{ width: Math.max(2, (Math.abs(r.value) / peak) * 100) + '%' }}
+            />
+          </div>
+          {r.sub ? <div className="barItemSub">{r.sub}</div> : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * "Days of cover": stock divided by the daily burn rate.
+ *
+ * This is the figure that actually drives a purchase, and it is only honest when
+ * a rate exists — so with no consumption recorded it says so instead of printing
+ * a confident infinity.
+ */
+export function DaysCover({ days }: { days: number | null }) {
+  if (days == null) return <span className="t12 cFaint">—</span>
+  if (!Number.isFinite(days)) return <span className="t12 cFaint">—</span>
+  const tone = days <= 2 ? 'cDanger' : days <= 5 ? 'cWarn' : 'cOk'
+  return (
+    <span className="cover">
+      <span className={'coverNum ' + tone}>{days < 1 ? '<1' : Math.floor(days)}</span>
+      <span className="coverUnit">j</span>
     </span>
   )
 }

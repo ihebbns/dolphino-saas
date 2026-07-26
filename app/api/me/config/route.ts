@@ -10,6 +10,7 @@
 
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
+import { serverError } from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -57,7 +58,7 @@ export async function GET(req: Request) {
       menu: r.menu_json || {},
     }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    return cors(NextResponse.json(serverError('me/config', e), { status: 500 }))
   }
 }
 
@@ -97,6 +98,6 @@ export async function POST(req: Request) {
 
     return cors(NextResponse.json({ ok: true, modules: nextConfig.modules || {} }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    return cors(NextResponse.json(serverError('me/config', e), { status: 500 }))
   }
 }

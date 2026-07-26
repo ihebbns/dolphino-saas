@@ -2,7 +2,10 @@
 // /api/me/ingredients — INGREDIENTS & RECIPES (web-owned)
 //
 // GET  ?key=API
-//   → { ingredients, recipes, products, totals }
+//   → { ingredients, recipes, products, totals, usage, movements }
+//     usage = 30-day consume/waste/receive per ingredient, plus the real number of
+//     days the ledger covers, so the page can show a burn rate and days of cover
+//     instead of a bare quantity.
 //     products = the caisse-owned menu, so a recipe can be attached to a real
 //     item and its computed cost compared against the real selling price.
 //
@@ -12,6 +15,9 @@
 //                              cost_per_stock_unit, quantity, low_threshold,
 //                              tracked }
 //   action 'deleteIngredient'{ ing_key }        → archives, and refuses if used
+//   action 'moveIngredient'  { ing_key, kind, qty, unit_cost?, reason? }
+//                            kind = receive | waste | adjust | count
+//                            → appends to the ledger; quantity stays derived
 //   action 'saveRecipe'      { item_id, item_name, cost_mode, cost_override,
 //                              enabled, yield_qty, lines:[{ing_key, qty}] }
 //   action 'deleteRecipe'    { item_id }
@@ -23,7 +29,11 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
-import { recipeCosts, cacheComputedCosts, ingredientCosts, ingredientLedgerReady } from '@/lib/ingredients'
+import {
+  recipeCosts, cacheComputedCosts, ingredientCosts, ingredientLedgerReady,
+  recordIngMovement, type IngKind,
+} from '@/lib/ingredients'
+import { serverError, isMissingSchema, notReadyPayload } from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -158,12 +168,51 @@ export async function GET(req: Request) {
              COUNT(*) FILTER (WHERE NOT archived AND cost_per_stock_unit = 0)::int AS nb_sans_cout
       FROM ingredient_stock WHERE restaurant_id = ${rid}`
 
+    // ── Movement summary, per ingredient, last 30 days ──────────────────
+    // This is what turns a quantity into a decision. "3 kg of cheese" means
+    // nothing on its own; "3 kg, you get through 1.2 kg a day" means order today.
+    // Kept in its own try/catch because the ledger is a SEPARATE migration from
+    // the ingredients tables — if it has not been run, the page must still load
+    // with quantities and simply show no rate.
+    let usage: any[] = []
+    let movements: any[] = []
+    if (await ingredientLedgerReady()) {
+      try {
+        usage = await sql`
+          SELECT ing_key,
+                 COALESCE(SUM(-delta) FILTER (WHERE kind = 'consume'), 0)::float AS consumed_30d,
+                 COALESCE(SUM(-delta) FILTER (WHERE kind = 'waste'),   0)::float AS wasted_30d,
+                 COALESCE(SUM(delta)  FILTER (WHERE kind = 'receive'), 0)::float AS received_30d,
+                 COALESCE(SUM(delta * unit_cost) FILTER (WHERE kind = 'receive' AND unit_cost IS NOT NULL), 0)::float AS spent_30d,
+                 MAX(client_ts) FILTER (WHERE kind = 'receive')                  AS last_receive_at,
+                 -- Days of history actually present: dividing by a flat 30 when
+                 -- the ledger is two days old would understate the burn rate by 15x.
+                 GREATEST(1, EXTRACT(DAY FROM (NOW() - MIN(client_ts))))::float  AS days_span
+          FROM ingredient_movements
+          WHERE restaurant_id = ${rid} AND client_ts > NOW() - INTERVAL '30 days'
+          GROUP BY ing_key`
+
+        movements = await sql`
+          SELECT m.id, m.ing_key, i.name, i.stock_unit, m.kind,
+                 m.delta::float, m.count_value::float, m.unit_cost::float,
+                 m.reason, m.actor, m.source, m.sale_num, m.client_ts
+          FROM ingredient_movements m
+          LEFT JOIN ingredients i
+                 ON i.restaurant_id = m.restaurant_id AND i.ing_key = m.ing_key
+          WHERE m.restaurant_id = ${rid}
+          ORDER BY m.client_ts DESC, m.id DESC
+          LIMIT 120`
+      } catch { usage = []; movements = [] }
+    }
+
     return cors(NextResponse.json({
       ok: true, ready: true, name: rest.name,
       ingredients, recipes: recipesFull, products, totals,
+      usage, movements, ledger: usage.length > 0 || movements.length > 0,
     }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    if (isMissingSchema(e)) return cors(NextResponse.json(notReadyPayload('migration-ingredients.sql', { ingredients: [], recipes: [], products: [], totals: null })))
+    return cors(NextResponse.json(serverError('me/ingredients', e), { status: 500 }))
   }
 }
 
@@ -236,6 +285,64 @@ export async function POST(req: Request) {
       return cors(NextResponse.json({ ok: true }))
     }
 
+    // ── Quantity movement ─────────────────────────────────────
+    // Updating stock used to mean opening the full ingredient form and typing
+    // over the quantity — an overwrite, with no record of what changed or why.
+    // This appends to the ledger instead, so a delivery, a loss and a count are
+    // three different, traceable facts and the quantity stays derived.
+    if (action === 'moveIngredient') {
+      const ingKey = clip(body.ing_key, 64)
+      if (!ingKey) return cors(NextResponse.json({ ok: false, error: 'ing_key requis' }, { status: 400 }))
+
+      const kind = clip(body.kind, 16) as IngKind
+      if (!['receive', 'waste', 'adjust', 'count'].includes(kind)) {
+        return cors(NextResponse.json({ ok: false, error: 'Type de mouvement invalide' }, { status: 400 }))
+      }
+
+      if (!(await ingredientLedgerReady())) {
+        return cors(NextResponse.json({
+          ok: false, error: 'Journal des ingrédients non initialisé — exécutez migration-ingredient-movements.sql',
+        }, { status: 409 }))
+      }
+
+      const [row] = await sql`
+        SELECT name FROM ingredients WHERE restaurant_id = ${rid} AND ing_key = ${ingKey} LIMIT 1`
+      if (!row) return cors(NextResponse.json({ ok: false, error: 'Ingrédient introuvable' }, { status: 404 }))
+
+      const qty = n4(body.qty)
+      // A count of zero is meaningful ("we are out"); a delivery of zero is not.
+      if (kind !== 'count' && !(qty > 0)) {
+        return cors(NextResponse.json({ ok: false, error: 'Quantité requise' }, { status: 400 }))
+      }
+      if (kind === 'count' && qty < 0) {
+        return cors(NextResponse.json({ ok: false, error: 'Un comptage ne peut pas être négatif' }, { status: 400 }))
+      }
+
+      // The caller states an intent, not a sign. Deriving the sign here is what
+      // stops a "perte" from being sent as +2 and silently adding stock.
+      const delta =
+        kind === 'receive' ? qty :
+        kind === 'waste'   ? -qty :
+        kind === 'adjust'  ? n4(body.qty) :   // signed on purpose
+        null
+
+      const newQty = await recordIngMovement(rid, {
+        ingKey,
+        kind,
+        delta: kind === 'count' ? null : delta,
+        countValue: kind === 'count' ? qty : null,
+        unitCost: kind === 'receive' ? n3(body.unit_cost) : null,
+        reason: clip(body.reason, 200),
+        actor: clip(body.actor, 80) || 'back-office',
+        source: 'web',
+      })
+
+      if (newQty === null) {
+        return cors(NextResponse.json({ ok: false, error: 'Mouvement non enregistré' }, { status: 409 }))
+      }
+      return cors(NextResponse.json({ ok: true, ing_key: ingKey, quantity: newQty }))
+    }
+
     // ── Recipe ────────────────────────────────────────────────
     if (action === 'saveRecipe') {
       const itemId = clip(body.item_id, 64)
@@ -291,6 +398,7 @@ export async function POST(req: Request) {
 
     return cors(NextResponse.json({ ok: false, error: 'Action inconnue' }, { status: 400 }))
   } catch (e: any) {
-    return cors(NextResponse.json({ ok: false, error: e.message }, { status: 500 }))
+    if (isMissingSchema(e)) return cors(NextResponse.json(notReadyPayload('migration-ingredients.sql', { ingredients: [], recipes: [], products: [], totals: null })))
+    return cors(NextResponse.json(serverError('me/ingredients', e), { status: 500 }))
   }
 }

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useTheme } from '../ui/useTheme'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
 const ADMIN_KEY = 'servio-admin-iheb-2026'
@@ -7,18 +8,14 @@ const ADMIN_KEY = 'servio-admin-iheb-2026'
 // ═══════════════ ADMIN PAGE ═══════════════
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false)
-  const [dark, setDark] = useState(true)
+
+  // Was a third theme key (`servio_admin_theme`), so admin disagreed with both the
+  // dashboard and the client pages. Same hook as everywhere else now.
+  const { dark, toggle: toggleTheme } = useTheme()
 
   useEffect(() => {
     if (sessionStorage.getItem('servio_admin') === '1') setAuthed(true)
-    const saved = localStorage.getItem('servio_admin_theme')
-    if (saved === 'light') setDark(false)
   }, [])
-
-  function toggleTheme() {
-    setDark(!dark)
-    localStorage.setItem('servio_admin_theme', dark ? 'light' : 'dark')
-  }
 
   if (!authed) return <Login dark={dark} toggleTheme={toggleTheme} onLogin={() => { sessionStorage.setItem('servio_admin','1'); setAuthed(true) }} />
   return <Panel dark={dark} toggleTheme={toggleTheme} onLogout={() => { sessionStorage.removeItem('servio_admin'); setAuthed(false) }} />

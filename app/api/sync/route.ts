@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
+import { serverError } from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -79,6 +80,6 @@ export async function POST(req: Request) {
     }
     return cors(NextResponse.json({ ok:true, num }))
   } catch(e:any) {
-    return cors(NextResponse.json({ ok:false, error:e.message }, { status:500 }))
+    return cors(NextResponse.json(serverError('sync', e), { status:500 }))
   }
 }

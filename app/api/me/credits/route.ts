@@ -26,6 +26,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
+import { isMissingSchema, serverError, notReadyPayload } from '@/lib/apiError'
 
 export const runtime = 'edge'
 
@@ -63,9 +64,19 @@ function slugKey(name: string): string {
   return ('c_' + (base || 'sans-nom')).slice(0, 64)
 }
 
+/** Both tables are needed, not just `credits` — checking one and then querying
+ *  the other is how a raw `relation does not exist` reaches the UI. */
 async function tablesReady(): Promise<boolean> {
-  try { await sql`SELECT 1 FROM credits LIMIT 1`; return true } catch { return false }
+  try {
+    await sql`SELECT 1 FROM credits LIMIT 1`
+    await sql`SELECT 1 FROM credit_movements LIMIT 1`
+    return true
+  } catch { return false }
 }
+
+const notReady = () => cors(NextResponse.json(
+  notReadyPayload('migration-credits.sql', { clients: [], movements: [], totals: null })
+))
 
 async function resolveRestaurant(key: string) {
   const rows = await sql`
@@ -170,7 +181,12 @@ export async function POST(req: Request) {
 
     return cors(NextResponse.json({ ok: true, ready: true, clients: upserted, movements: inserted, skipped }))
   } catch (err: any) {
-    return cors(NextResponse.json({ ok: false, error: err.message }, { status: 500 }))
+    // Acknowledge rather than 500: a till that gets an error here retries the
+    // same batch forever. Missing schema is our problem to fix, not the till's.
+    if (isMissingSchema(err)) {
+      return cors(NextResponse.json(notReadyPayload('migration-credits.sql', { clients: 0, movements: 0 })))
+    }
+    return cors(NextResponse.json(serverError('credits POST', err), { status: 500 }))
   }
 }
 
@@ -199,18 +215,38 @@ export async function GET(req: Request) {
     const limit = Math.min(1000, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 200))
 
     // Balances plus the drift between the till's cache and its own history.
+    //
+    // This is the same shape as the `credit_reconciliation` view but computed
+    // inline on purpose: a database that has the tables from an earlier run of
+    // the migration but not the view would otherwise throw a raw
+    // `relation does not exist` straight onto the owner's screen. The view stays
+    // in the migration for ad-hoc SQL; nothing in the app depends on it.
     const clients = await sql`
-      SELECT client_key, name, phone,
-             balance_pos::float      AS balance,
-             balance_derived::float  AS balance_derived,
-             drift::float            AS drift,
-             nb_credits, nb_payments,
-             total_pris::float       AS total_pris,
-             total_regle::float      AS total_regle,
-             last_movement_at, archived
-      FROM credit_reconciliation
-      WHERE restaurant_id = ${rid}
-      ORDER BY archived ASC, balance_pos DESC, name ASC`
+      SELECT c.client_key, c.name, c.phone,
+             c.balance::float                                AS balance,
+             COALESCE(m.derived, 0)::float                   AS balance_derived,
+             (c.balance - COALESCE(m.derived, 0))::float     AS drift,
+             COALESCE(m.nb_credits, 0)                       AS nb_credits,
+             COALESCE(m.nb_payments, 0)                      AS nb_payments,
+             COALESCE(m.total_credit, 0)::float              AS total_pris,
+             COALESCE(m.total_paid, 0)::float                AS total_regle,
+             m.last_movement_at,
+             c.archived
+      FROM credits c
+      LEFT JOIN (
+        SELECT restaurant_id, client_key,
+               SUM(delta)                                        AS derived,
+               COUNT(*) FILTER (WHERE kind = 'credit')::int       AS nb_credits,
+               COUNT(*) FILTER (WHERE kind = 'payment')::int      AS nb_payments,
+               COALESCE(SUM(delta) FILTER (WHERE delta > 0), 0)   AS total_credit,
+               COALESCE(SUM(-delta) FILTER (WHERE delta < 0), 0)  AS total_paid,
+               MAX(client_ts)                                     AS last_movement_at
+        FROM credit_movements
+        WHERE restaurant_id = ${rid}
+        GROUP BY restaurant_id, client_key
+      ) m ON m.restaurant_id = c.restaurant_id AND m.client_key = c.client_key
+      WHERE c.restaurant_id = ${rid}
+      ORDER BY c.archived ASC, c.balance DESC, c.name ASC`
 
     const movements = client
       ? await sql`
@@ -246,6 +282,7 @@ export async function GET(req: Request) {
       clients, movements, totals,
     }))
   } catch (err: any) {
-    return cors(NextResponse.json({ ok: false, error: err.message }, { status: 500 }))
+    if (isMissingSchema(err)) return notReady()
+    return cors(NextResponse.json(serverError('credits GET', err), { status: 500 }))
   }
 }

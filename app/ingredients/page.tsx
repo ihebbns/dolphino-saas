@@ -10,7 +10,10 @@
 // deducts nothing — you can cost your five biggest sellers and ignore the rest.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
-import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, num } from '../ui/Shell'
+import {
+  Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, num,
+  LevelMeter, BarList, DaysCover, dt,
+} from '../ui/Shell'
 
 type Ing = {
   ing_key: string; name: string; category: string
@@ -21,6 +24,38 @@ type Ing = {
   stock_value: number; is_low: boolean; used_in_recipes: number
 }
 type Product = { item_id: string; name: string; category: string; emoji: string; price: number }
+/** 30-day rollup per ingredient, from the movement ledger. */
+type Usage = {
+  ing_key: string
+  consumed_30d: number; wasted_30d: number; received_30d: number; spent_30d: number
+  last_receive_at: string | null
+  /** Days the ledger actually covers — dividing by a flat 30 would lie early on. */
+  days_span: number
+}
+type Movement = {
+  id: number; ing_key: string; name: string | null; stock_unit: string | null
+  kind: 'consume' | 'receive' | 'waste' | 'adjust' | 'count'
+  delta: number | null; count_value: number | null; unit_cost: number | null
+  reason: string | null; actor: string | null; source: string | null
+  sale_num: number | null; client_ts: string
+}
+
+/** An ingredient plus the two figures that turn its quantity into a decision. */
+type IngView = Ing & {
+  /** Stock units consumed per day, from real history. Null when unknown. */
+  rate: number | null
+  /** How many days the current quantity lasts at that rate. Null when unknown. */
+  daysLeft: number | null
+  usage: Usage | null
+}
+
+const MOVE_LABEL: Record<Movement['kind'], string> = {
+  consume: 'Vente',
+  receive: 'Livraison',
+  waste: 'Perte',
+  adjust: 'Correction',
+  count: 'Comptage',
+}
 type Recipe = {
   item_id: string; item_name: string; cost_mode: 'auto' | 'manual'
   cost_override: number | null; enabled: boolean; yield_qty: number
@@ -50,7 +85,9 @@ export default function IngredientsPage() {
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
   const [restName, setRestName] = useState('')
-  const [tab, setTab] = useState<'ing' | 'rec'>('ing')
+  // Opens on the buy list: "what do I need to order" is the question this page
+  // gets asked, and it was previously three clicks and a mental subtraction away.
+  const [tab, setTab] = useState<'buy' | 'ing' | 'rec' | 'log'>('buy')
   // Recipes are optional. When the module is off the page stops offering them
   // instead of showing tools nobody will maintain. Defaults to on.
   const [ingOn, setIngOn] = useState(true)
@@ -70,6 +107,10 @@ export default function IngredientsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [totals, setTotals] = useState<any>(null)
+  const [usage, setUsage] = useState<Usage[]>([])
+  const [movements, setMovements] = useState<Movement[]>([])
+  /** Quick quantity update, one ingredient at a time. */
+  const [moveIng, setMoveIng] = useState<Ing | null>(null)
 
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -92,6 +133,8 @@ export default function IngredientsPage() {
       setProducts(d.products || [])
       setRecipes(d.recipes || [])
       setTotals(d.totals || null)
+      setUsage(d.usage || [])
+      setMovements(d.movements || [])
     } else setMsg(d.error || 'Erreur de chargement')
     setLoading(false)
   }
@@ -101,19 +144,64 @@ export default function IngredientsPage() {
     setSaving(true); setMsg('')
     const d = await apiPost('/api/me/ingredients', { key, action, ...payload })
     setSaving(false)
-    if (d.ok) { setEditIng(null); setEditRec(null); await load(key) }
+    if (d.ok) { setEditIng(null); setEditRec(null); setMoveIng(null); await load(key) }
     else setMsg(d.error || 'Erreur')
     return d.ok
   }
 
+  const usageByKey = useMemo(() => {
+    const m: Record<string, Usage> = {}
+    for (const u of usage) m[u.ing_key] = u
+    return m
+  }, [usage])
+
+  /**
+   * Attach a burn rate and days of cover to every ingredient.
+   *
+   * The rate divides by the number of days the ledger ACTUALLY covers, not by a
+   * flat 30. A café that started tracking two days ago would otherwise see its
+   * consumption reported at a fifteenth of the truth and order nothing.
+   *
+   * Waste counts towards the rate: it leaves the building either way, so
+   * excluding it would under-order.
+   */
+  const views: IngView[] = useMemo(() => ings.map(i => {
+    const u = usageByKey[i.ing_key] || null
+    const out = u ? (u.consumed_30d + u.wasted_30d) : 0
+    const span = u ? Math.max(1, u.days_span) : 0
+    const rate = u && out > 0 ? out / span : null
+    const daysLeft = rate && rate > 0 ? i.quantity / rate : null
+    return { ...i, usage: u, rate, daysLeft }
+  }), [ings, usageByKey])
+
   const visibleIngs = useMemo(() => {
-    let out = ings.filter(i => (showArchived ? true : !i.archived))
+    let out = views.filter(i => (showArchived ? true : !i.archived))
     if (search) {
       const q = search.toLowerCase()
       out = out.filter(i => i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q))
     }
     return out
-  }, [ings, search, showArchived])
+  }, [views, search, showArchived])
+
+  /**
+   * The buy list. Two independent reasons to appear, because they catch
+   * different failures:
+   *   • below the manual threshold — the operator's own judgement
+   *   • under a week of cover      — measured, and catches an item whose
+   *                                 threshold was never set or set too low
+   * Sorted by urgency: whatever runs out first is at the top.
+   */
+  const toBuy = useMemo(() => {
+    const rows = views.filter(i =>
+      !i.archived && i.tracked &&
+      (i.is_low || (i.daysLeft != null && i.daysLeft <= 7))
+    )
+    return rows.sort((a, b) => {
+      const da = a.daysLeft ?? (a.is_low ? 0.5 : 999)
+      const db = b.daysLeft ?? (b.is_low ? 0.5 : 999)
+      return da - db
+    })
+  }, [views])
 
   const recByItem = useMemo(() => {
     const m: Record<string, Recipe> = {}
@@ -131,6 +219,13 @@ export default function IngredientsPage() {
   if (!key) return <LoginGate />
 
   const lowCount = ings.filter(i => i.is_low).length
+
+  // 30-day money figures. Waste is valued at the purchase price, which is what it
+  // actually cost to throw away.
+  const spent30 = usage.reduce((a, u) => a + (u.spent_30d || 0), 0)
+  const wasted30 = views.reduce(
+    (a, i) => a + ((i.usage?.wasted_30d || 0) * (i.cost_per_stock_unit || 0)), 0
+  )
 
   return (
     <Shell
@@ -182,21 +277,35 @@ export default function IngredientsPage() {
         </div>
       </div>
 
+      {/* KPIs ordered by what gets acted on, not by what is easiest to count.
+          "À commander" leads because it is the only one that implies a task
+          today; the inventory value and the data-quality warnings follow. */}
       {ready && (
         <div className="statGrid mb20">
           <div className="stat">
-            <div className="statLabel">Ingrédients</div>
-            <div className="statValue num">{totals?.nb_ingredients ?? 0}</div>
+            <div className="statLabel">À commander</div>
+            <div className="statValue num" style={{ color: toBuy.length ? 'var(--danger)' : 'var(--ok)' }}>
+              {toBuy.length}
+            </div>
+            <div className="statHint">
+              {toBuy.length
+                ? `dont ${toBuy.filter(i => (i.daysLeft ?? 9) <= 2).length} sous 2 jours`
+                : 'rien d’urgent'}
+            </div>
           </div>
           <div className="stat">
             <div className="statLabel">Valeur du stock</div>
             <div className="statValue num">{f3(totals?.stock_value)} DT</div>
-            <div className="statHint">quantité × prix d&apos;achat</div>
+            <div className="statHint">{totals?.nb_ingredients ?? 0} ingrédients</div>
           </div>
           <div className="stat">
-            <div className="statLabel">Stock bas</div>
-            <div className="statValue num" style={{ color: lowCount ? 'var(--danger)' : 'var(--ok)' }}>{lowCount}</div>
-            <div className="statHint">{lowCount ? 'à réapprovisionner' : 'tout est au-dessus du seuil'}</div>
+            <div className="statLabel">Acheté sur 30 j</div>
+            <div className="statValue num">{f3(spent30)} DT</div>
+            <div className="statHint">
+              {wasted30 > 0
+                ? <span className="cWarn">{f3(wasted30)} DT perdus</span>
+                : 'aucune perte enregistrée'}
+            </div>
           </div>
           <div className="stat">
             <div className="statLabel">Sans prix d&apos;achat</div>
@@ -214,12 +323,18 @@ export default function IngredientsPage() {
       )}
 
       <div className="toolbar">
-        <button className="chip" data-on={tab === 'ing'} onClick={() => setTab('ing')}>🥣 Ingrédients</button>
-        <button className="chip" data-on={tab === 'rec'} onClick={() => setTab('rec')}>📋 Recettes</button>
-        <input
-          className="input" style={{ maxWidth: 280, marginLeft: 8 }}
-          placeholder="🔍 Rechercher…" value={search} onChange={e => setSearch(e.target.value)}
-        />
+        <button className="chip" data-on={tab === 'buy'} onClick={() => setTab('buy')}>
+          À acheter{toBuy.length ? <span className="badge bDanger" style={{ marginLeft: 6 }}>{toBuy.length}</span> : null}
+        </button>
+        <button className="chip" data-on={tab === 'ing'} onClick={() => setTab('ing')}>Ingrédients</button>
+        <button className="chip" data-on={tab === 'rec'} onClick={() => setTab('rec')}>Recettes</button>
+        <button className="chip" data-on={tab === 'log'} onClick={() => setTab('log')}>Mouvements</button>
+        {tab !== 'log' && (
+          <input
+            className="input" style={{ maxWidth: 280, marginLeft: 8 }}
+            placeholder="Rechercher…" value={search} onChange={e => setSearch(e.target.value)}
+          />
+        )}
         {tab === 'ing' && (
           <label className="row t12 cMuted" style={{ cursor: 'pointer' }}>
             <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
@@ -227,6 +342,188 @@ export default function IngredientsPage() {
           </label>
         )}
       </div>
+
+      {/* ── À acheter ──────────────────────────────────────────────────
+          A list you can shop from: what is running out, how fast it goes, how
+          much to order, and one button to record the delivery when it arrives. */}
+      {tab === 'buy' && (
+        <>
+          {toBuy.length === 0 ? (
+            <Empty
+              icon="check"
+              text={
+                usage.length === 0
+                  ? "Rien à commander d'après les seuils. Les vitesses de consommation apparaîtront dès que des ventes auront été enregistrées."
+                  : 'Rien à commander : tout est au-dessus du seuil et couvre plus d’une semaine.'
+              }
+            />
+          ) : (
+            <div className="card">
+              <div className="tableWrap">
+                <table className="t">
+                  <thead>
+                    <tr>
+                      <th>Ingrédient</th>
+                      <th>Niveau</th>
+                      <th className="tr">Il reste</th>
+                      <th className="tr">Par jour</th>
+                      <th className="tr">À commander</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {toBuy.map(i => {
+                      // Suggest two weeks of cover, or twice the threshold when no
+                      // rate is known yet. Rounded up to something orderable — a
+                      // supplier does not deliver 3.472 kg.
+                      const target = i.rate && i.rate > 0 ? i.rate * 14 : Math.max(i.low_threshold * 2, 1)
+                      const suggest = Math.max(0, Math.ceil((target - i.quantity) * 10) / 10)
+                      return (
+                        <tr key={i.ing_key}>
+                          <td>
+                            <div className="strong">{i.name}</div>
+                            <div className="t11 cFaint">
+                              {i.category || '—'}
+                              {i.usage?.last_receive_at ? ` · dernière livraison ${dt(i.usage.last_receive_at)}` : ''}
+                            </div>
+                          </td>
+                          <td data-label="Niveau" style={{ minWidth: 130 }}>
+                            <LevelMeter value={i.quantity} threshold={i.low_threshold} unit={i.stock_unit} />
+                          </td>
+                          <td data-label="Il reste" className="tr nowrap">
+                            <DaysCover days={i.daysLeft} />
+                          </td>
+                          <td data-label="Par jour" className="tr num nowrap t12 cMuted">
+                            {i.rate ? `${f3(i.rate)} ${i.stock_unit}` : '—'}
+                          </td>
+                          <td data-label="À commander" className="tr num nowrap strong">
+                            {suggest > 0 ? `${f3(suggest)} ${i.stock_unit}` : '—'}
+                            {i.cost_per_stock_unit > 0 && suggest > 0 && (
+                              <div className="t11 cFaint">≈ {f3(suggest * i.cost_per_stock_unit)} DT</div>
+                            )}
+                          </td>
+                          <td className="tr nowrap">
+                            <button className="btn btnSm btnPrimary" onClick={() => setMoveIng(i)}>
+                              Reçu
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Where the money and the stock actually went, last 30 days. */}
+          {usage.length > 0 && (
+            <div className="grid2" style={{ marginTop: 14 }}>
+              <div className="card">
+                <div className="cardPad">
+                  <div className="cardTitle">
+                    Le plus consommé <small>30 derniers jours</small>
+                  </div>
+                  <BarList
+                    emptyText="Aucune consommation enregistrée."
+                    rows={views
+                      .filter(i => (usageByKey[i.ing_key]?.consumed_30d ?? 0) > 0)
+                      .map(i => {
+                        const u = usageByKey[i.ing_key]
+                        return {
+                          label: i.name,
+                          value: u.consumed_30d,
+                          display: `${f3(u.consumed_30d)} ${i.stock_unit}`,
+                          sub: u.wasted_30d > 0 ? `dont ${f3(u.wasted_30d)} ${i.stock_unit} de perte` : undefined,
+                          tone: 'info' as const,
+                        }
+                      })}
+                  />
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="cardPad">
+                  <div className="cardTitle">
+                    Le plus acheté <small>30 derniers jours</small>
+                  </div>
+                  <BarList
+                    emptyText="Aucune livraison enregistrée avec un prix."
+                    rows={views
+                      .filter(i => (usageByKey[i.ing_key]?.spent_30d ?? 0) > 0)
+                      .map(i => {
+                        const u = usageByKey[i.ing_key]
+                        return {
+                          label: i.name,
+                          value: u.spent_30d,
+                          display: `${f3(u.spent_30d)} DT`,
+                          sub: `${f3(u.received_30d)} ${i.stock_unit} reçus`,
+                          tone: 'ok' as const,
+                        }
+                      })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Mouvements ─────────────────────────────────────────────────
+          The audit trail. Quantities are derived from these rows, so this is the
+          explanation for every number elsewhere on the page. */}
+      {tab === 'log' && (
+        <div className="card">
+          <div className="tableWrap">
+            <table className="t">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Ingrédient</th>
+                  <th>Type</th>
+                  <th className="tr">Quantité</th>
+                  <th>Détail</th>
+                  <th>Par</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movements.length === 0 ? (
+                  <tr><td colSpan={6}>
+                    <Empty
+                      icon="clipboard"
+                      text="Aucun mouvement. Les ventes déduisent les ingrédients dès qu’une recette existe ; les livraisons et pertes se saisissent ici."
+                    />
+                  </td></tr>
+                ) : movements.map(m => (
+                  <tr key={m.id}>
+                    <td data-label="Date" className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
+                    <td data-label="Ingrédient" className="strong">{m.name || m.ing_key}</td>
+                    <td data-label="Type">
+                      <span className={
+                        m.kind === 'receive' ? 'badge bOk' :
+                        m.kind === 'waste' ? 'badge bDanger' :
+                        m.kind === 'count' ? 'badge bInfo' : 'badge bNeutral'
+                      }>{MOVE_LABEL[m.kind]}</span>
+                    </td>
+                    <td data-label="Quantité" className="tr num nowrap">
+                      {m.kind === 'count'
+                        ? <>= {f3(m.count_value)} <span className="t11 cFaint">{m.stock_unit}</span></>
+                        : <span className={(m.delta ?? 0) < 0 ? 'cDanger' : 'cOk'}>
+                            {(m.delta ?? 0) > 0 ? '+' : ''}{f3(m.delta)} <span className="t11 cFaint">{m.stock_unit}</span>
+                          </span>}
+                    </td>
+                    <td data-label="Détail" className="t12 cMuted">
+                      {m.sale_num ? `Ticket #${m.sale_num}` : (m.reason || '—')}
+                      {m.unit_cost ? ` · ${f3(m.unit_cost)} DT/${m.stock_unit}` : ''}
+                    </td>
+                    <td data-label="Par" className="t12 cMuted">{m.actor || m.source || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ── Ingredients ── */}
       {tab === 'ing' && (
@@ -239,8 +536,8 @@ export default function IngredientsPage() {
                   <th>Achat</th>
                   <th className="tr">Prix d&apos;achat</th>
                   <th className="tr">Coût unitaire</th>
-                  <th className="tr">En stock</th>
-                  <th className="tr">Seuil</th>
+                  <th>Niveau</th>
+                  <th className="tr">Il reste</th>
                   <th className="tr">Valeur</th>
                   <th className="tc">Recettes</th>
                   <th />
@@ -248,7 +545,7 @@ export default function IngredientsPage() {
               </thead>
               <tbody>
                 {visibleIngs.length === 0 ? (
-                  <tr><td colSpan={9}><Empty icon="🥣" text="Aucun ingrédient. Commencez par ceux qui coûtent le plus cher." /></td></tr>
+                  <tr><td colSpan={9}><Empty icon="flask" text="Aucun ingrédient. Commencez par ceux qui coûtent le plus cher." /></td></tr>
                 ) : visibleIngs.map(i => (
                   <tr key={i.ing_key} style={i.archived ? { opacity: .5 } : undefined}>
                     <td>
@@ -266,11 +563,18 @@ export default function IngredientsPage() {
                     <td data-label="Coût unitaire" className="tr num t12 cMuted nowrap">
                       {i.cost_per_recipe_unit > 0 ? `${i.cost_per_recipe_unit.toFixed(5)} / ${i.recipe_unit}` : '—'}
                     </td>
-                    <td data-label="En stock" className="tr num nowrap">
-                      <span className={i.is_low ? 'cDanger bold' : ''}>{f3(i.quantity)}</span>
-                      <span className="t11 cFaint"> {i.stock_unit}</span>
+                    {/* Quantity, threshold and judgement in one glyph. The old
+                        version printed three separate numbers and left the reader
+                        to compare them. */}
+                    <td data-label="Niveau" style={{ minWidth: 130 }}>
+                      {i.tracked
+                        ? <LevelMeter value={i.quantity} threshold={i.low_threshold} unit={i.stock_unit} />
+                        : <span className="t12 cFaint">non suivi · {f3(i.quantity)} {i.stock_unit}</span>}
                     </td>
-                    <td data-label="Seuil" className="tr num t12 cMuted">{i.tracked ? f3(i.low_threshold) : '—'}</td>
+                    <td data-label="Il reste" className="tr nowrap">
+                      <DaysCover days={i.daysLeft} />
+                      {i.rate ? <div className="t11 cFaint num">{f3(i.rate)} {i.stock_unit}/j</div> : null}
+                    </td>
                     <td data-label="Valeur" className="tr num nowrap">{f3(i.stock_value)} DT</td>
                     <td data-label="Recettes" className="tc">
                       {i.used_in_recipes > 0
@@ -278,6 +582,11 @@ export default function IngredientsPage() {
                         : <span className="t12 cFaint">—</span>}
                     </td>
                     <td className="tr nowrap">
+                      {!i.archived && (
+                        <button className="btn btnSm btnPrimary" style={{ marginRight: 6 }} onClick={() => setMoveIng(i)}>
+                          Stock
+                        </button>
+                      )}
                       <button className="btn btnSm" onClick={() => setEditIng(i)}>Modifier</button>
                       {!i.archived && (
                         <button
@@ -374,6 +683,13 @@ export default function IngredientsPage() {
         </div>
       )}
 
+      {moveIng && (
+        <MoveModal
+          ing={moveIng} saving={saving}
+          onClose={() => setMoveIng(null)}
+          onSave={v => save('moveIngredient', v)}
+        />
+      )}
       {editIng && (
         <IngredientModal
           value={editIng} saving={saving}
@@ -391,6 +707,131 @@ export default function IngredientsPage() {
         />
       )}
     </Shell>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+/**
+ * Quick stock update — the same three actions as the till, deliberately.
+ *
+ *   Livraison  +  stock arrived, optionally with the price paid
+ *   Perte      −  spoiled, dropped, spilled
+ *   Comptage   =  I physically counted, this is the truth
+ *
+ * Three verbs instead of one editable number, because "set quantity to 4" hides
+ * WHY it changed, and the why is what a stock report is for. Each one appends a
+ * movement; nothing here overwrites anything.
+ *
+ * The price field only appears on a delivery, since that is the only case where a
+ * price means something — it feeds the weighted average cost used by recipes.
+ */
+function MoveModal({ ing, saving, onClose, onSave }: {
+  ing: Ing
+  saving: boolean
+  onClose: () => void
+  onSave: (v: any) => void
+}) {
+  const [kind, setKind] = useState<'receive' | 'waste' | 'count'>('receive')
+  const [qty, setQty] = useState('')
+  const [unitCost, setUnitCost] = useState(
+    ing.cost_per_stock_unit > 0 ? String(ing.cost_per_stock_unit) : ''
+  )
+  const [reason, setReason] = useState('')
+
+  const q = num(qty)
+  const valid = kind === 'count' ? qty !== '' && q >= 0 : q > 0
+
+  // Show the resulting quantity before committing. Mental arithmetic at the end
+  // of a shift is where counting mistakes come from.
+  const after =
+    kind === 'receive' ? ing.quantity + q :
+    kind === 'waste'   ? ing.quantity - q :
+    q
+
+  const submit = () => {
+    if (!valid) return
+    onSave({
+      ing_key: ing.ing_key,
+      kind,
+      qty: q,
+      unit_cost: kind === 'receive' ? num(unitCost) : undefined,
+      reason: reason.trim() || undefined,
+    })
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div
+        className="modal" style={{ maxWidth: 460 }}
+        onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={`Stock — ${ing.name}`}
+      >
+        <div className="modalHead">
+          <div>
+            <div className="modalTitle">{ing.name}</div>
+            <div className="t12 cMuted num">
+              en stock : {f3(ing.quantity)} {ing.stock_unit}
+            </div>
+          </div>
+          <button className="btn btnGhost btnSm spacer" onClick={onClose} aria-label="Fermer">✕</button>
+        </div>
+
+        <div className="modalBody col" style={{ gap: 14 }}>
+          <div className="toolbar mb14">
+            <button className="chip" data-on={kind === 'receive'} onClick={() => setKind('receive')}>+ Livraison</button>
+            <button className="chip" data-on={kind === 'waste'} onClick={() => setKind('waste')}>− Perte</button>
+            <button className="chip" data-on={kind === 'count'} onClick={() => setKind('count')}>= Comptage</button>
+          </div>
+
+          <div className="field mb14">
+            <label className="label" htmlFor="mqty">
+              {kind === 'receive' ? 'Quantité reçue' : kind === 'waste' ? 'Quantité perdue' : 'Quantité comptée'}
+              {' '}({ing.stock_unit})
+            </label>
+            <input
+              id="mqty" className="input" type="number" step="any" min="0"
+              value={qty} onChange={e => setQty(e.target.value)} autoFocus
+              onKeyDown={e => { if (e.key === 'Enter' && valid && !saving) submit() }}
+            />
+            <span className="help">
+              {kind === 'count'
+                ? 'Remplace la quantité. L’écart avec le stock théorique est enregistré.'
+                : `Nouveau stock : ${f3(after)} ${ing.stock_unit}`}
+            </span>
+          </div>
+
+          {kind === 'receive' && (
+            <div className="field mb14">
+              <label className="label" htmlFor="mcost">Prix payé par {ing.stock_unit} (optionnel)</label>
+              <input
+                id="mcost" className="input" type="number" step="any" min="0"
+                value={unitCost} onChange={e => setUnitCost(e.target.value)}
+              />
+              <span className="help">
+                Alimente le coût moyen pondéré utilisé par les recettes. Laissez vide si le prix n’a pas changé.
+              </span>
+            </div>
+          )}
+
+          {kind !== 'receive' && (
+            <div className="field mb14">
+              <label className="label" htmlFor="mreason">Motif (optionnel)</label>
+              <input
+                id="mreason" className="input" value={reason} onChange={e => setReason(e.target.value)}
+                placeholder={kind === 'waste' ? 'périmé, cassé, renversé…' : 'inventaire de fin de mois…'}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="modalFoot">
+          <button className="btn" onClick={onClose}>Annuler</button>
+          <button className="btn btnPrimary" disabled={!valid || saving} onClick={submit}>
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
