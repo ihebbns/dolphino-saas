@@ -68,7 +68,7 @@ export default function StockPage() {
   const [movements, setMovements] = useState<Movement[]>([])
   const [ecarts, setEcarts] = useState<Ecart[]>([])
   const [totals, setTotals] = useState<any>(null)
-  const [thresholds, setThresholds] = useState<Record<string, { low: number; tracked: boolean }>>({})
+  const [thresholds, setThresholds] = useState<Record<string, { low: number; tracked: boolean; mode: string }>>({})
   /** Products counted by the unit. Recipe-built ones are managed on /ingredients. */
   const [unitTracked, setUnitTracked] = useState<Set<string>>(new Set())
 
@@ -91,6 +91,10 @@ export default function StockPage() {
   // not changeable from this page — only admin toggles modules.
   const [stockOn, setStockOn] = useState(true)
   const [stockBusy, setStockBusy] = useState(false)
+  // Rupture (86 / out-of-stock) state per item_id. True = en rupture.
+  // Loaded from is_available on the stock rows returned by GET /api/stock.
+  const [rupture, setRupture] = useState<Record<string, boolean>>({})
+  const [ruptureBusy, setRuptureBusy] = useState<Record<string, boolean>>({})
   const mods = useModules(key)
 
   useEffect(() => {
@@ -128,8 +132,8 @@ export default function StockPage() {
       // offering those actions here would be a button that returns an error.
       const unit = new Set<string>()
       for (const p of cat.products || []) {
-        t[p.item_id] = { low: parseInt(String(p.low_threshold)) || 0, tracked: p.tracked !== false }
         const mode = String(p.track_mode || 'stock')
+        t[p.item_id] = { low: parseInt(String(p.low_threshold)) || 0, tracked: p.tracked !== false, mode }
         if (mode === 'stock') unit.add(String(p.item_id))
       }
       setThresholds(t)
@@ -147,6 +151,21 @@ export default function StockPage() {
       if (ing.ok && ing.ready !== false) {
         setIngs((ing.ingredients || []).filter((i: any) => !i.archived))
         setIngReady(true)
+      }
+    } catch {}
+
+    // Load rupture state from the stock endpoint (is_available column).
+    // The migration may not have run yet — tolerate absence of the field.
+    try {
+      const stockRows = await apiGet('/api/stock', k)
+      if (stockRows.ok && Array.isArray(stockRows.stock)) {
+        const r: Record<string, boolean> = {}
+        for (const row of stockRows.stock) {
+          if (row && row.item_id != null && row.is_available === false) {
+            r[String(row.item_id)] = true
+          }
+        }
+        setRupture(r)
       }
     } catch {}
 
@@ -186,6 +205,37 @@ export default function StockPage() {
         ? '📦 Module stock activé — la prochaine synchro caisse l\'appliquera'
         : '📦 Module stock désactivé — la caisse n\'affichera plus le stock')
     } else setMsg(d.error || 'Erreur')
+  }
+
+  /** Mark / unmark a product as out of stock from the web dashboard.
+   *  No lock check — availability is always editable, regardless of posStockLocked.
+   *  The POS picks up the new state on its next pullCloudCosts poll (30 min max,
+   *  or immediately on reconnect). Last-write-wins with safety bias on the server:
+   *  a near-simultaneous POS "rupture" beats a web "restore". */
+  async function toggleRupture(itemId: string, itemName: string) {
+    if (!key) return
+    const isOut = !!rupture[itemId]
+    setRuptureBusy(b => ({ ...b, [itemId]: true }))
+    const d = await apiPost('/api/stock', {
+      key,
+      mode: 'rupture',
+      actor: 'web',
+      items: [{ item_id: itemId, state: isOut ? 'in' : 'out', ts: new Date().toISOString() }],
+    })
+    setRuptureBusy(b => ({ ...b, [itemId]: false }))
+    if (d.ok) {
+      setRupture(r => {
+        const next = { ...r }
+        if (isOut) delete next[itemId]
+        else next[itemId] = true
+        return next
+      })
+      setMsg(isOut
+        ? `✓ ${itemName} remis en vente`
+        : `⛔ ${itemName} marqué en rupture — la caisse bloquera la vente`)
+    } else {
+      setMsg(d.error || 'Erreur lors du changement de disponibilité')
+    }
   }
 
   async function submitMovement(payload: any) {
@@ -419,6 +469,7 @@ export default function StockPage() {
               <thead>
                 <tr>
                   <th>Produit</th>
+                  <th>Suivi du stock</th>
                   <th className="tr">En stock</th>
                   <th className="tr">Seuil</th>
                   <th className="tr">Valeur</th>
@@ -429,15 +480,38 @@ export default function StockPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={7}><Empty icon="📦" text="Aucun produit suivi. Définissez une quantité depuis la caisse ou faites un inventaire." /></td></tr>
+                  <tr><td colSpan={8}><Empty icon="📦" text="Aucun produit suivi. Définissez une quantité depuis la caisse ou faites un inventaire." /></td></tr>
                 ) : filtered.map(v => {
                   const t = thresholds[v.item_id]
                   const low = isLow(v)
+                  const isRupture = !!rupture[v.item_id]
+                  const trackMode = t?.mode || 'stock'
+                  const modeLabel  = trackMode === 'recipe' ? 'Par recette' : trackMode === 'none' ? 'Non suivi' : 'À l\'unité'
+                  const modeClass  = trackMode === 'recipe' ? 'bInfo' : trackMode === 'none' ? 'bNeutral' : 'bOk'
                   return (
-                    <tr key={v.item_id}>
+                    <tr key={v.item_id} style={isRupture ? { background: 'var(--danger-bg, #fff1f1)' } : undefined}>
                       <td>
                         <div className="strong">{v.item_name || v.item_id}</div>
                         <div className="t11 cFaint">{v.category || '—'}</div>
+                        {isRupture && (
+                          <span className="badge bDanger" style={{ marginTop: 3, display: 'inline-block' }}>
+                            ⛔ rupture
+                          </span>
+                        )}
+                      </td>
+                      {/* Suivi du stock — mirrors /catalog so the two pages agree */}
+                      <td data-label="Suivi du stock">
+                        <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+                          <span className={'badge ' + modeClass} style={{ fontSize: 11 }}>{modeLabel}</span>
+                          {trackMode === 'stock' && (
+                            <span
+                              className={'badge ' + (low ? 'bDanger' : 'bOk')}
+                              style={{ fontSize: 11 }}
+                            >
+                              {low ? 'stock bas' : 'stockOK'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td data-label="En stock" className="tr num nowrap">
                         <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{qtyTrim(v.theorique)}</span>
@@ -461,6 +535,19 @@ export default function StockPage() {
                         </button>
                         <button className="btn btnSm" title="Casse, périmé, offert" onClick={() => setMove({ item: v, kind: 'waste' })}>
                           <Icon name="trash" size={14} /> Perte
+                        </button>
+                        {/* Rupture toggle — no lock check, always available.
+                            Manager can mark something out of stock remotely
+                            (e.g. milk delivery didn't arrive). POS picks it up
+                            on next pullCloudCosts poll. */}
+                        <button
+                          className={'btn btnSm' + (isRupture ? ' btnDanger' : '')}
+                          style={isRupture ? { background: 'var(--danger)', color: '#fff', borderColor: 'var(--danger)' } : undefined}
+                          title={isRupture ? 'Remettre en vente' : 'Marquer en rupture — bloque la vente sur la caisse'}
+                          disabled={!!ruptureBusy[v.item_id]}
+                          onClick={() => toggleRupture(v.item_id, v.item_name || v.item_id)}
+                        >
+                          {ruptureBusy[v.item_id] ? '…' : (isRupture ? '✓ Remettre en vente' : '⛔ Rupture')}
                         </button>
                         <button className="btn btnSm btnPrimary" onClick={() => setMove({ item: v, kind: 'count' })}>
                           <Icon name="clipboard" size={14} /> Inventaire

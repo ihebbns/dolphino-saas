@@ -11,6 +11,10 @@
 //                              DELTAS: the checkpoint is left alone.
 // POST ?key=XXX  body={mode:'track_mode', actor, items:[{item_id,track_mode,uid?,ts?}]}
 //                            → switch unit tracking on/off from the till (traced).
+// POST ?key=XXX  body={mode:'rupture', actor, items:[{item_id, state:'out'|'in', ts?}]}
+//                            → mark/unmark items as out of stock. No lock check —
+//                              availability is always editable from both POS and web.
+//                              Last-write-wins via client ts; 'out' wins ties (safety).
 // PATCH ?key=XXX body={sold:[{item_id, qty, uid?, ts?}], actor?, terminalId?, sessionId?, saleNum?}
 //                            → record a sale's stock consumption (called by EXE)
 //
@@ -58,22 +62,32 @@ export async function GET(req: Request) {
   const rid = rows[0].id
 
   // track_mode rides along so the till knows which products it may count at all.
-  // Tolerant of the column being absent so this deploy does not have to wait for
-  // migration-product-tracking.sql.
+  // is_available / rupture_at ride along too so the POS can apply web-side
+  // rupture changes on its next poll. Tolerant of missing columns so this
+  // deploy does not have to wait for migration-rupture.sql.
   let stock: any[]
   try {
     stock = await sql`
       SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price,
-             track_mode, updated_at
+             track_mode, is_available, rupture_at, rupture_by, rupture_ts, updated_at
       FROM stock
       WHERE restaurant_id = ${rid}
       ORDER BY category ASC, item_name ASC`
   } catch {
-    stock = await sql`
-      SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at
-      FROM stock
-      WHERE restaurant_id = ${rid}
-      ORDER BY category ASC, item_name ASC`
+    try {
+      stock = await sql`
+        SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price,
+               track_mode, updated_at
+        FROM stock
+        WHERE restaurant_id = ${rid}
+        ORDER BY category ASC, item_name ASC`
+    } catch {
+      stock = await sql`
+        SELECT item_id, item_name, item_emoji, quantity, barcode, cost, category, sell_price, updated_at
+        FROM stock
+        WHERE restaurant_id = ${rid}
+        ORDER BY category ASC, item_name ASC`
+    }
   }
   // The POS already polls this route for costs, so the lock rides along on a
   // call it makes anyway — no extra request, and it caches the answer so the
@@ -270,6 +284,95 @@ async function handleTrackModeChange(rid: number, body: any, locked: boolean) {
   return cors(NextResponse.json({ ok:true, applied, rejected }))
 }
 
+// ── Rupture (availability) toggle — no lock, always allowed ────────────────
+// POST /api/stock?key=…
+// { mode:'rupture', actor, items:[{ item_id, state:'out'|'in', ts? }] }
+//
+// Design decisions:
+//   • NO posStockLocked check. Availability ("86") is separate from quantity
+//     management. Square, Toast and Lightspeed all draw this line: a cashier
+//     can always mark something unavailable, regardless of who owns the counts.
+//   • Last-write-wins via the client-supplied `ts`. If two actors write within
+//     RUPTURE_GRACE_MS of each other and one says "out", "out" wins (safety).
+//   • Tolerant of the columns being absent (migration not run yet): degrades
+//     silently so POS-only clients keep working unchanged.
+const RUPTURE_GRACE_MS = 10_000 // 10 s: POS 'out' beats web 'in' within this window
+
+async function handleRupture(rid: number, body: any) {
+  const list: any[] = Array.isArray(body.items) ? body.items : []
+  if (!list.length) return cors(NextResponse.json({ ok: false, error: 'No items provided' }, { status: 400 }))
+
+  const actor = String(body.actor ?? '').slice(0, 80)
+  // We accept anonymous rupture toggles from the POS — the cashier may not have
+  // a named account. But we do record whoever is given.
+
+  let applied = 0
+  const rejected: string[] = []
+
+  for (const it of list.slice(0, 500)) {
+    const id    = String(it.item_id ?? '').slice(0, 64)
+    const state = String(it.state ?? '').toLowerCase()   // 'out' | 'in'
+    if (!id || !['out', 'in'].includes(state)) { rejected.push(id || '?'); continue }
+
+    const isOut      = state === 'out'
+    const clientTs   = it.ts ? new Date(it.ts) : new Date()
+    const clientTsIso = clientTs.toISOString()
+
+    try {
+      // Read the current rupture_ts so we can apply the LWW + safety rule.
+      const cur = await sql`
+        SELECT is_available, rupture_ts FROM stock
+        WHERE restaurant_id = ${rid} AND item_id = ${id}
+        LIMIT 1`
+
+      if (cur.length) {
+        const existingTs: Date | null = cur[0].rupture_ts ? new Date(cur[0].rupture_ts) : null
+        const currentlyOut = cur[0].is_available === false
+
+        // Conflict resolution: if both sides wrote within RUPTURE_GRACE_MS and
+        // one says 'out', keep 'out' (safety-first). In all other cases the
+        // newest timestamp wins.
+        if (existingTs) {
+          const diff = Math.abs(clientTs.getTime() - existingTs.getTime())
+          if (diff <= RUPTURE_GRACE_MS && currentlyOut && !isOut) {
+            // Web says 'in' but POS recently said 'out' — keep 'out'.
+            // The web can override only with a timestamp strictly after the grace.
+            applied++ // acknowledged but not changed — POS 'out' wins
+            continue
+          }
+          // Standard LWW: if stored ts is newer, ignore this write.
+          if (existingTs > clientTs) { applied++; continue }
+        }
+
+        await sql`
+          UPDATE stock
+          SET is_available = ${!isOut},
+              rupture_at   = ${isOut ? clientTsIso : null},
+              rupture_by   = ${actor},
+              rupture_ts   = ${clientTsIso},
+              updated_at   = NOW()
+          WHERE restaurant_id = ${rid} AND item_id = ${id}`
+      } else {
+        // Product not yet known to the server — create a minimal row.
+        await sql`
+          INSERT INTO stock (restaurant_id, item_id, item_name, item_emoji, quantity,
+                             is_available, rupture_at, rupture_by, rupture_ts, updated_at)
+          VALUES (${rid}, ${id}, ${id}, '📦', 0,
+                  ${!isOut}, ${isOut ? clientTsIso : null}, ${actor}, ${clientTsIso}, NOW())
+          ON CONFLICT (restaurant_id, item_id) DO NOTHING`
+      }
+      applied++
+    } catch {
+      // If the migration columns don't exist yet, silently skip rather than
+      // crashing — a POS-only client that hasn't run migration-rupture.sql yet
+      // should not get errors from the server.
+      rejected.push(id)
+    }
+  }
+
+  return cors(NextResponse.json({ ok: true, applied, rejected }))
+}
+
 // ── POST — full catalog sync (retail POS sends entire product list with current quantities) ──
 export async function POST(req: Request) {
   const key = getApiKey(req)
@@ -297,6 +400,11 @@ export async function POST(req: Request) {
 
   if (String(body.mode ?? '').toLowerCase() === 'track_mode') {
     return handleTrackModeChange(rid, body, locked)
+  }
+
+  if (String(body.mode ?? '').toLowerCase() === 'rupture') {
+    // No lock check — availability is always writable, from both POS and web.
+    return handleRupture(rid, body)
   }
 
   const items: {
