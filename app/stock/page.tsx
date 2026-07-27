@@ -126,7 +126,7 @@ export default function StockPage() {
     } else setMsg(log.error || 'Erreur de chargement')
 
     if (cat.ok) {
-      const t: Record<string, { low: number; tracked: boolean }> = {}
+      const t: Record<string, { low: number; tracked: boolean; mode: string }> = {}
       // Products counted by the unit. Anything built from a recipe belongs on
       // /ingredients — the server refuses counts and deliveries on it, so
       // offering those actions here would be a button that returns an error.
