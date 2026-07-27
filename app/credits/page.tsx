@@ -74,6 +74,17 @@ export default function CreditsPage() {
     setFicheRows(null)
   }
 
+  async function deleteFiche(c: Client) {
+    if (!key) return
+    if (!confirm(`Supprimer définitivement la fiche de ${c.name} ? Cette action est irréversible.`)) return
+    setMsg('')
+    const d = await apiPost('/api/me/credits', { key, action: 'delete', client_key: c.client_key })
+    if (d.ok) {
+      setMsg('✓ Fiche supprimée')
+      await load(key)
+    } else setMsg(d.error || 'Erreur')
+  }
+
   async function load(k: string) {
     setLoading(true); setMsg('')
     const d = await apiGet('/api/me/credits', k)
@@ -230,7 +241,11 @@ export default function CreditsPage() {
                     {/* actionCell makes this a full-width button row on a phone
                         instead of a cramped strip pinned to the right edge. */}
                     <td className="tr actionCell">
-                      <button className="btn btnSm" onClick={() => openFiche(c)}>Fiche</button>
+                      {c.archived ? (
+                        <button className="btn btnSm" style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', color: 'var(--red)' }} onClick={() => deleteFiche(c)}>Supprimer</button>
+                      ) : (
+                        <button className="btn btnSm" onClick={() => openFiche(c)}>Fiche</button>
+                      )}
                     </td>
                   </tr>
                 )

@@ -118,6 +118,35 @@ export async function POST(req: Request) {
   const key = getKey(req, body)
   if (!key) return cors(NextResponse.json({ ok: false, error: 'Clé manquante' }, { status: 400 }))
 
+  // Handle delete action for archived fiches
+  if (body.action === 'delete' && body.client_key) {
+    try {
+      const rest = await resolveRestaurant(key)
+      if (!rest) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 403 }))
+      const rid = rest.id
+
+      const gaps = await missingTables()
+      if (gaps.length) return notReady(gaps)
+
+      const clientKey = clip(body.client_key, 64)
+      await sql`
+        DELETE FROM credit_movements
+        WHERE restaurant_id = ${rid} AND client_key = ${clientKey}
+      `
+      await sql`
+        DELETE FROM credits
+        WHERE restaurant_id = ${rid} AND client_key = ${clientKey}
+      `
+      return cors(NextResponse.json({ ok: true, deleted: true }))
+    } catch (err: any) {
+      if (isMissingSchema(err)) {
+        const gaps = await missingTables()
+        return cors(NextResponse.json(notReadyPayload('migration-credits.sql', { deleted: false }, gaps)))
+      }
+      return cors(NextResponse.json(serverError('credits DELETE', err), { status: 500 }))
+    }
+  }
+
   const clients: any[] = Array.isArray(body.clients) ? body.clients : []
   const movements: any[] = Array.isArray(body.movements) ? body.movements : []
   if (!clients.length && !movements.length) return cors(NextResponse.json({ ok: true, clients: 0, movements: 0 }))
