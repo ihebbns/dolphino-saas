@@ -90,6 +90,11 @@ export async function POST(req: Request) {
     // Default (absent / false) leaves the POS free, because clients who buy the
     // EXE alone never open this dashboard and must stay fully functional.
     if (body.posStockLocked !== undefined)    nextConfig.posStockLocked = !!body.posStockLocked
+    // Module stock ON/OFF — operational toggle from /stock, same trust model as
+    // posStockLocked: the owner decides whether this establishment counts stock.
+    if (body.stockTracking !== undefined) {
+      nextConfig.modules = { ...(nextConfig.modules && typeof nextConfig.modules === 'object' ? nextConfig.modules : {}), stockTracking: !!body.stockTracking }
+    }
 
     await sql`UPDATE restaurants SET config = ${JSON.stringify(nextConfig)}::jsonb WHERE api_key = ${key}`
 

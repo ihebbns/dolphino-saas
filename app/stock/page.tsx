@@ -90,6 +90,7 @@ export default function StockPage() {
   // Whether this establishment uses stock at all. Read from the server config,
   // not changeable from this page — only admin toggles modules.
   const [stockOn, setStockOn] = useState(true)
+  const [stockBusy, setStockBusy] = useState(false)
   const mods = useModules(key)
 
   useEffect(() => {
@@ -171,6 +172,22 @@ export default function StockPage() {
     } else setMsg(d.error || 'Erreur')
   }
 
+  /** Enable/disable the stock module for this establishment. POS polls
+   *  /api/stock and caches the answer — no EXE rebuild needed. */
+  async function toggleStockModule() {
+    if (!key) return
+    const next = !stockOn
+    setStockBusy(true); setMsg('')
+    const d = await apiPost('/api/me/config', { key, stockTracking: next })
+    setStockBusy(false)
+    if (d.ok) {
+      setStockOn(next)
+      setMsg(next
+        ? '📦 Module stock activé — la prochaine synchro caisse l\'appliquera'
+        : '📦 Module stock désactivé — la caisse n\'affichera plus le stock')
+    } else setMsg(d.error || 'Erreur')
+  }
+
   async function submitMovement(payload: any) {
     if (!key) return
     setSaving(true); setMsg('')
@@ -243,6 +260,15 @@ export default function StockPage() {
         <>
           <button
             className="btn"
+            onClick={toggleStockModule}
+            disabled={stockBusy}
+            style={stockOn ? undefined : { opacity: 0.65 }}
+            title={stockOn ? 'Désactiver le module stock sur la caisse' : 'Activer le module stock sur la caisse'}
+          >
+            {stockBusy ? '…' : <>📦 Module stock {stockOn ? 'ON' : 'OFF'}</>}
+          </button>
+          <button
+            className="btn"
             onClick={toggleLock}
             disabled={lockBusy || !stockOn}
             title={posLocked
@@ -269,7 +295,15 @@ export default function StockPage() {
 
 {/* Was a five-line paragraph explaining the lock. It is a state, not a
           lesson, so it is now a pill: the fact, and nothing else. */}
-      {posLocked && (
+      {!stockOn && (
+        <div className="mb14">
+          <span className="pill p-warn">
+            📦 Module stock désactivé — la caisse n&apos;affiche ni ne décompte le stock
+          </span>
+        </div>
+      )}
+
+      {posLocked && stockOn && (
         <div className="mb14">
           <span className="pill p-warn">
             <Icon name="lock" size={13} />

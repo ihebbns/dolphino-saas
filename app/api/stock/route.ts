@@ -9,6 +9,8 @@
 // POST ?key=XXX  body={mode:'movement', actor, movements:[{item_id,kind,qty,reason?}]}
 //                            → delivery / loss / correction booked at the till.
 //                              DELTAS: the checkpoint is left alone.
+// POST ?key=XXX  body={mode:'track_mode', actor, items:[{item_id,track_mode,uid?,ts?}]}
+//                            → switch unit tracking on/off from the till (traced).
 // PATCH ?key=XXX body={sold:[{item_id, qty, uid?, ts?}], actor?, terminalId?, sessionId?, saleNum?}
 //                            → record a sale's stock consumption (called by EXE)
 //
@@ -220,6 +222,54 @@ async function handleMovements(rid: number, body: any, locked: boolean) {
   }))
 }
 
+async function handleTrackModeChange(rid: number, body: any, locked: boolean) {
+  if (locked) return stockLockedResponse()
+
+  const list: any[] = Array.isArray(body.items) ? body.items : []
+  if (!list.length) return cors(NextResponse.json({ ok:false, error:'No items provided' }, { status:400 }))
+
+  const actor = String(body.actor ?? '').slice(0,80)
+  if (!actor) return cors(NextResponse.json(
+    { ok:false, error:"Un changement de mode doit être attribué : 'actor' est obligatoire." },
+    { status:400 },
+  ))
+
+  let applied = 0
+  const rejected: string[] = []
+
+  for (const it of list.slice(0, 200)) {
+    const id   = String(it.item_id ?? '').slice(0,64)
+    const mode = String(it.track_mode ?? '').toLowerCase()
+    if (!id || !['stock','none'].includes(mode)) { rejected.push(id || '?'); continue }
+
+    const cur = await sql`SELECT track_mode FROM stock WHERE restaurant_id=${rid} AND item_id=${id} LIMIT 1`
+    if (cur.length && cur[0].track_mode === 'recipe') { rejected.push(id); continue }
+
+    await sql`
+      INSERT INTO stock (restaurant_id, item_id, item_name, item_emoji, quantity, track_mode, updated_at)
+      VALUES (${rid}, ${id}, ${String(it.item_name ?? id).slice(0,100)},
+              ${String(it.item_emoji ?? '📦').slice(0,10)}, 0, ${mode}, NOW())
+      ON CONFLICT (restaurant_id, item_id)
+      DO UPDATE SET track_mode = ${mode}, updated_at = NOW()
+    `
+
+    if (await ledgerReady()) {
+      await recordMovement(rid, {
+        itemId: id, kind: 'adjust', delta: 0,
+        reason: `Mode stock → ${mode === 'stock' ? 'à l\u2019unité' : 'non suivi'}`,
+        actor, source: 'pos',
+        terminalId: String(body.terminalId ?? '').slice(0,64),
+        sessionId: String(body.sessionId ?? '').slice(0,64),
+        clientTs: it.ts ?? null,
+        clientUid: it.uid ?? '',
+      })
+    }
+    applied++
+  }
+
+  return cors(NextResponse.json({ ok:true, applied, rejected }))
+}
+
 // ── POST — full catalog sync (retail POS sends entire product list with current quantities) ──
 export async function POST(req: Request) {
   const key = getApiKey(req)
@@ -243,6 +293,10 @@ export async function POST(req: Request) {
   // exists, becomes meaningless. Only 'count' may move the checkpoint.
   if (String(body.mode ?? '').toLowerCase() === 'movement') {
     return handleMovements(rid, body, locked)
+  }
+
+  if (String(body.mode ?? '').toLowerCase() === 'track_mode') {
+    return handleTrackModeChange(rid, body, locked)
   }
 
   const items: {
