@@ -62,7 +62,7 @@ export default function StockPage() {
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
   const [restName, setRestName] = useState('')
-  const [tab, setTab] = useState<'levels' | 'ingredients' | 'moves' | 'ecarts'>('levels')
+  const [tab, setTab] = useState<'levels' | 'recipe' | 'ingredients' | 'moves' | 'ecarts'>('levels')
 
   const [variance, setVariance] = useState<Variance[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
@@ -71,6 +71,11 @@ export default function StockPage() {
   const [thresholds, setThresholds] = useState<Record<string, { low: number; tracked: boolean; mode: string }>>({})
   /** Products counted by the unit. Recipe-built ones are managed on /ingredients. */
   const [unitTracked, setUnitTracked] = useState<Set<string>>(new Set())
+  /** Recipe products loaded from catalog (track_mode='recipe'). */
+  type RecipeProduct = { item_id: string; name: string; emoji: string; category: string; has_recipe: boolean }
+  const [recipeProducts, setRecipeProducts] = useState<RecipeProduct[]>([])
+  /** can_make: how many portions of each recipe product can be made right now. */
+  const [canMake, setCanMake] = useState<Record<string, number>>({})
 
   const [search, setSearch] = useState('')
   const [onlyLow, setOnlyLow] = useState(false)
@@ -131,13 +136,22 @@ export default function StockPage() {
       // /ingredients — the server refuses counts and deliveries on it, so
       // offering those actions here would be a button that returns an error.
       const unit = new Set<string>()
+      const rp: RecipeProduct[] = []
       for (const p of cat.products || []) {
         const mode = String(p.track_mode || 'stock')
         t[p.item_id] = { low: parseInt(String(p.low_threshold)) || 0, tracked: p.tracked !== false, mode }
         if (mode === 'stock') unit.add(String(p.item_id))
+        if (mode === 'recipe') rp.push({
+          item_id: p.item_id,
+          name: p.name || p.item_id,
+          emoji: p.emoji || '🍽️',
+          category: p.category || '',
+          has_recipe: !!p.has_recipe,
+        })
       }
       setThresholds(t)
       setUnitTracked(unit)
+      setRecipeProducts(rp)
     }
     // Load suppliers for the receive modal
     try {
@@ -154,8 +168,8 @@ export default function StockPage() {
       }
     } catch {}
 
-    // Load rupture state from the stock endpoint (is_available column).
-    // The migration may not have run yet — tolerate absence of the field.
+    // Load rupture state and can_make from the stock endpoint.
+    // The migration may not have run yet — tolerate absence of the fields.
     try {
       const stockRows = await apiGet('/api/stock', k)
       if (stockRows.ok && Array.isArray(stockRows.stock)) {
@@ -166,6 +180,9 @@ export default function StockPage() {
           }
         }
         setRupture(r)
+      }
+      if (stockRows.ok && stockRows.can_make && typeof stockRows.can_make === 'object') {
+        setCanMake(stockRows.can_make as Record<string, number>)
       }
     } catch {}
 
@@ -427,6 +444,14 @@ export default function StockPage() {
         <button className="chip" data-on={tab === 'levels'} onClick={() => setTab('levels')}>
           🥤 Stock produits <span className="t11 cMuted">(unité)</span>
         </button>
+        <button className="chip" data-on={tab === 'recipe'} onClick={() => setTab('recipe')}>
+          🧪 Par recette
+          {recipeProducts.filter(p => (canMake[p.item_id] ?? 1) === 0).length > 0 && (
+            <span className="badge bDanger" style={{ marginLeft: 6 }}>
+              {recipeProducts.filter(p => (canMake[p.item_id] ?? 1) === 0).length}
+            </span>
+          )}
+        </button>
         <button className="chip" data-on={tab === 'ingredients'} onClick={() => setTab('ingredients')}>
           🧀 Stock ingrédients <span className="t11 cMuted">(kg, L…)</span>
           {ingReady && ings.filter(i => i.is_low).length > 0 && (
@@ -461,6 +486,90 @@ export default function StockPage() {
         </div>
       )}
 
+
+      {/* ── Par recette ── */}
+      {tab === 'recipe' && (
+        <div className="card">
+          <div className="tableWrap">
+            <table className="t">
+              <thead>
+                <tr>
+                  <th>Produit</th>
+                  <th>Suivi</th>
+                  <th className="tr">Portions faisables</th>
+                  <th className="tr">Statut</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {recipeProducts.length === 0 ? (
+                  <tr><td colSpan={5}>
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Aucun produit en mode &quot;Par recette&quot;.{' '}
+                      <a href="/catalog">Configurer sur /catalog →</a>
+                    </div>
+                  </td></tr>
+                ) : recipeProducts
+                    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.category.toLowerCase().includes(search.toLowerCase()))
+                    .map(p => {
+                      const q     = canMake[p.item_id] ?? null
+                      const isOut = !!rupture[p.item_id]
+                      const empty = q === 0
+                      const low   = q !== null && q > 0 && q <= 3
+                      const statusCls = isOut ? 'bDanger' : empty ? 'bDanger' : low ? 'bWarn' : q === null ? 'bNeutral' : 'bOk'
+                      const statusTxt = isOut ? '⛔ Rupture' : empty ? '0 faisable' : low ? `⚠ ${q} restant` : q === null ? 'non calculé' : `✓ ${q} possible`
+                      return (
+                        <tr key={p.item_id} style={isOut ? { background: 'var(--danger-bg, #fff1f1)' } : undefined}>
+                          <td>
+                            <div className="row" style={{ gap: 8 }}>
+                              <span style={{ fontSize: 17 }}>{p.emoji}</span>
+                              <div>
+                                <div className="strong">{p.name}</div>
+                                <div className="t11 cFaint">{p.category || '—'}</div>
+                                {isOut && <span className="badge bDanger" style={{ marginTop: 3, display: 'inline-block' }}>⛔ rupture</span>}
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="row" style={{ gap: 4 }}>
+                              <span className="badge bInfo" style={{ fontSize: 11 }}>🧪 Par recette</span>
+                              {!p.has_recipe && <span className="badge bWarn" style={{ fontSize: 11 }}>⚠ sans recette</span>}
+                            </div>
+                          </td>
+                          <td className="tr num nowrap">
+                            <span style={{ fontSize: 20, fontWeight: 700, color: (empty || isOut) ? 'var(--danger)' : low ? 'var(--warn)' : 'var(--ok)' }}>
+                              {q === null ? '—' : q}
+                            </span>
+                          </td>
+                          <td className="tr nowrap">
+                            <span className={'badge ' + statusCls} style={{ fontSize: 11 }}>{statusTxt}</span>
+                          </td>
+                          <td className="tr nowrap actionCell">
+                            <button
+                              className="btn btnSm"
+                              style={isOut
+                                ? { background: 'var(--ok)', color: '#fff', borderColor: 'var(--ok)' }
+                                : { borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                              disabled={!!ruptureBusy[p.item_id]}
+                              onClick={() => toggleRupture(p.item_id, p.name)}
+                            >
+                              {ruptureBusy[p.item_id] ? '...' : isOut ? '✓ Remettre en vente' : '⛔ Rupture'}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+              </tbody>
+            </table>
+          </div>
+          {recipeProducts.length > 0 && (
+            <div className="t11 cMuted" style={{ padding: '8px 12px' }}>
+              Portions calculees depuis les niveaux d&apos;ingredients actuels.{' '}
+              <a href="/ingredients">Voir les ingredients →</a>
+            </div>
+          )}
+        </div>
+      )}
       {/* ── Levels ── */}
       {tab === 'levels' && (
         <div className="card">

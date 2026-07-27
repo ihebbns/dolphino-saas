@@ -89,12 +89,54 @@ export async function GET(req: Request) {
         ORDER BY category ASC, item_name ASC`
     }
   }
+
+  // ── can_make: how many portions of each recipe-based product can still be made ──
+  // Inverse of consumeForSale:
+  //   canMakeFromIngredient = floor(ingredient.quantity × factor / line.qty × yield)
+  //   canMake[item] = min(canMakeFromIngredient) across all recipe lines
+  // Tolerant of absent tables — returns empty map if recipes not migrated.
+  const can_make: Record<string, number> = {}
+  try {
+    const recipeLines = await sql`
+      SELECT rl.item_id,
+             rl.ing_key,
+             rl.qty::float          AS line_qty,
+             r.yield_qty::float     AS yield_qty,
+             i.conversion_factor::float AS factor,
+             COALESCE(id.quantity, i.quantity, 0)::float AS ing_qty
+      FROM recipe_lines rl
+      JOIN recipes     r  ON r.restaurant_id = rl.restaurant_id AND r.item_id = rl.item_id
+      JOIN ingredients i  ON i.restaurant_id = rl.restaurant_id AND i.ing_key  = rl.ing_key
+      LEFT JOIN ingredient_derived id
+                          ON id.restaurant_id = rl.restaurant_id AND id.ing_key = rl.ing_key
+      WHERE rl.restaurant_id = ${rid}
+        AND r.enabled
+        AND i.tracked
+        AND NOT i.archived
+        AND rl.qty > 0`
+
+    // Group by item and compute min across lines
+    const perItem: Record<string, number[]> = {}
+    for (const rl of recipeLines) {
+      const factor   = rl.factor   > 0 ? rl.factor   : 1
+      const yieldQty = rl.yield_qty > 0 ? rl.yield_qty : 1
+      // portions this ingredient can supply = (qty_available × factor) / (line_qty / yieldQty)
+      const portions = Math.floor((rl.ing_qty * factor) / (rl.line_qty / yieldQty))
+      if (!perItem[rl.item_id]) perItem[rl.item_id] = []
+      perItem[rl.item_id].push(Math.max(0, portions))
+    }
+    for (const [itemId, vals] of Object.entries(perItem)) {
+      can_make[itemId] = Math.min(...vals)
+    }
+  } catch { /* recipes not migrated — return empty */ }
+
   // The POS already polls this route for costs, so the lock rides along on a
   // call it makes anyway — no extra request, and it caches the answer so the
   // till still knows the rule while offline.
   return cors(NextResponse.json({
     ok: true,
     stock,
+    can_make,
     posStockLocked: isStockLocked(rows[0].config),
     stockTracking: isStockTracking(rows[0].config),
   }))
