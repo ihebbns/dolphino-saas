@@ -46,7 +46,7 @@ export async function PUT(req: Request) {
   try { body = await req.json() } catch { return NextResponse.json({ ok:false, error:'Bad JSON' }, { status:400 }) }
   if (!checkAdmin(body)) return NextResponse.json({ ok:false, error:'Unauthorized' }, { status:401 })
 
-  const { name, email, password, api_key, city='', phone='', modules } = body
+  const { name, email, password, api_key, city='', phone='', modules, config_extra } = body
   if (!name || !email || !password || !api_key) {
     return NextResponse.json({ ok:false, error:'Missing required fields' }, { status:400 })
   }
@@ -62,6 +62,14 @@ export async function PUT(req: Request) {
       if (typeof v === 'boolean') config.modules[k] = v
     }
   }
+  // config_extra carries branding + zone config set by the admin wizard
+  // (tagline, logo, zone1Label, zone2Label, zone1Cats, zone2Cats).
+  // Merged at the top level of config so /api/check can return them to the EXE.
+  if (config_extra && typeof config_extra === 'object') {
+    for (const [k, v] of Object.entries(config_extra)) {
+      if (v !== undefined && v !== null) config[k] = v
+    }
+  }
 
   try {
     await sql`
@@ -70,7 +78,15 @@ export async function PUT(req: Request) {
     `
     return NextResponse.json({ ok:true })
   } catch(e: any) {
-    return NextResponse.json(serverError('admin/clients', e), { status:500 })
+    // Admin sees the real cause — duplicate key, missing column, etc.
+    const msg = String(e?.message || e)
+    const isDupe = msg.toLowerCase().includes('unique') || msg.includes('duplicate') || msg.includes('23505')
+    if (isDupe) {
+      const field = msg.includes('api_key') ? 'api_key' : msg.includes('email') ? 'email' : 'clé API ou email'
+      return NextResponse.json({ ok:false, error: `Ce ${field} existe déjà — choisissez une valeur unique` }, { status:409 })
+    }
+    console.error('[admin/clients PUT]', e?.code, msg)
+    return NextResponse.json({ ok:false, error: `Erreur DB: ${msg.slice(0, 200)}` }, { status:500 })
   }
 }
 

@@ -1,5 +1,5 @@
-'use client'
-import { useState, useEffect } from 'react'
+﻿'use client'
+import React, { useState, useEffect } from 'react'
 import { useTheme } from '../ui/useTheme'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
@@ -400,149 +400,228 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
 
 // ═══════════════ ADD CLIENT FORM ═══════════════
+
 const MODULES_LIST = [
-  { id: 'stockTracking', label: '📦 Stock produits', desc: 'Comptage par unité, seuils, livraisons' },
-  { id: 'ingredients', label: '🧪 Ingrédients & recettes', desc: 'Coût auto, déduction sur vente' },
-  { id: 'credits', label: '📒 Crédit client', desc: 'Ardoises / créances' },
-  { id: 'sessions', label: '🔒 Clôtures caisse', desc: 'Fond, compté, écart' },
-  { id: 'delivery', label: '🛵 Livraison', desc: 'Type de commande + livraison' },
-  { id: 'tables', label: '🪑 Plan de salle', desc: 'Tables, zones' },
+  { id:'stockTracking',  label:'📦 Stock produits',        desc:"Comptage à l'unité, seuils, livraisons" },
+  { id:'ingredients',    label:'🧪 Ingrédients & recettes', desc:'Coût auto, déduction sur vente' },
+  { id:'credits',        label:'📒 Crédit client',          desc:'Ardoises / créances' },
+  { id:'sessions',       label:'🔒 Clôtures caisse',        desc:'Fond, compté, écart' },
+  { id:'delivery',       label:'🛵 Livraison',              desc:'Type de commande + livraison' },
+  { id:'tables',         label:'🪑 Plan de salle',          desc:'Tables, zones' },
+  { id:'kitchenTickets', label:'🧑‍🍳 Tickets cuisine',        desc:'2 zones configurables' },
+  { id:'barcode',        label:'⎸⎸ Code-barres',           desc:'Scanner USB, recherche' },
+  { id:'printEnabled',   label:'🖨️ Impression tickets',     desc:'Ticket thermique 80mm' },
+  { id:'dashboard',      label:'📊 Dashboard distant',      desc:'Accès web en temps réel' },
 ]
 
-function AddClientForm({
-  adminKey, onDone, onError,
-}: {
-  adminKey: string
-  onDone: () => void
-  onError: (msg: string) => void
-}) {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [pass, setPass] = useState('')
-  const [city, setCity] = useState('')
-  const [phone, setPhone] = useState('')
-  const [apiKey, setApiKey] = useState(() => {
-    // Generate a random key like SRVO-XXXXX-001
-    const r = Math.random().toString(36).substring(2, 7).toUpperCase()
-    return `SRVO-${r}-001`
-  })
-  const [modules, setModules] = useState<Record<string, boolean>>({
-    stockTracking: true,
-    sessions: true,
-  })
-  const [saving, setSaving] = useState(false)
+const PRESETS: Record<string, { label:string; emoji:string; modules:string[]; zone1:string; zone2:string; zone1Cats:string; zone2Cats:string }> = {
+  cafe:     { label:'Café / Salon de thé',    emoji:'☕', modules:['sessions','credits','kitchenTickets','printEnabled','dashboard'], zone1:'BAR — Boissons', zone2:'CUISINE — Pâtisserie', zone1Cats:'Café,Thé,Jus,Boisson', zone2Cats:'Pâtisserie,Sandwich' },
+  fastfood: { label:'Fast Food / Restaurant', emoji:'🍔', modules:['sessions','credits','delivery','kitchenTickets','printEnabled','dashboard'], zone1:'CUISINE — Plats chauds', zone2:'BAR — Boissons', zone1Cats:'Pizza,Plat,Sandwich,Tacos', zone2Cats:'Boisson,Jus' },
+  retail:   { label:'Superette / Boutique',   emoji:'🏪', modules:['stockTracking','sessions','barcode','printEnabled','dashboard'], zone1:'', zone2:'', zone1Cats:'', zone2Cats:'' },
+  pharma:   { label:'Parapharmacie',          emoji:'💊', modules:['stockTracking','sessions','barcode','printEnabled','dashboard'], zone1:'', zone2:'', zone1Cats:'', zone2Cats:'' },
+  custom:   { label:'Personnalisé',           emoji:'⚙️', modules:['sessions','printEnabled'], zone1:'', zone2:'', zone1Cats:'', zone2Cats:'' },
+}
 
-  const toggle = (id: string) => setModules(m => ({ ...m, [id]: !m[id] }))
+function AddClientForm({ adminKey, onDone, onError }: { adminKey:string; onDone:()=>void; onError:(m:string)=>void }) {
+  const [step, setStep]          = useState(1)
+  const [preset, setPreset]      = useState('')
+  const [name, setName]          = useState('')
+  const [tagline, setTagline]    = useState('')
+  const [logo, setLogo]          = useState('☕')
+  const [city, setCity]          = useState('')
+  const [phone, setPhone]        = useState('')
+  const [email, setEmail]        = useState('')
+  const [pass, setPass]          = useState('')
+  const [apiKey, setApiKey]      = useState(()=>'SRVO-'+Math.random().toString(36).substring(2,7).toUpperCase()+'-001')
+  const [mgrName, setMgrName]    = useState('Manager')
+  const [mgrPin,  setMgrPin]     = useState('1234')
+  const [cshName, setCshName]    = useState('Caissier')
+  const [cshPin,  setCshPin]     = useState('0000')
+  const [z1l, setZ1l]            = useState('')
+  const [z2l, setZ2l]            = useState('')
+  const [z1c, setZ1c]            = useState('')
+  const [z2c, setZ2c]            = useState('')
+  const [mods, setMods]          = useState<Record<string,boolean>>({ sessions:true, printEnabled:true })
+  const [saving, setSaving]      = useState(false)
+  const [done, setDone]          = useState<any>(null)
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim() || !email.trim() || !pass.trim() || !apiKey.trim()) {
-      onError('Nom, email, mot de passe et clé API sont obligatoires')
-      return
-    }
+  const toggleMod = (id:string) => setMods(m=>({...m,[id]:!m[id]}))
+  const genKey    = () => setApiKey('SRVO-'+Math.random().toString(36).substring(2,7).toUpperCase()+'-001')
+
+  function applyPreset(id:string){
+    const p=PRESETS[id]; if(!p) return
+    setPreset(id); setLogo(p.emoji); setZ1l(p.zone1); setZ2l(p.zone2); setZ1c(p.zone1Cats); setZ2c(p.zone2Cats)
+    const m:Record<string,boolean>={}
+    MODULES_LIST.forEach(mod=>{ m[mod.id]=p.modules.includes(mod.id) })
+    setMods(m); setStep(2)
+  }
+
+  async function submit(){
+    if(!name||!email||!pass||!apiKey){ onError('Nom, email, mot de passe et clé API obligatoires'); return }
     setSaving(true)
     try {
-      const res = await fetch(`${API}/api/admin/clients`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_key: adminKey,
-          name: name.trim(),
-          email: email.trim(),
-          password: pass,
-          api_key: apiKey.trim(),
-          city: city.trim(),
-          phone: phone.trim(),
-          modules,
+      const res = await fetch('/api/admin/clients',{
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ admin_key:adminKey, name:name.trim(), email:email.trim(), password:pass,
+          api_key:apiKey.trim(), city:city.trim(), phone:phone.trim(), modules:mods,
+          config_extra:{ tagline:tagline||name, logo, zone1Label:z1l, zone2Label:z2l,
+            zone1Cats:z1c?z1c.split(',').map((s:string)=>s.trim()).filter(Boolean):undefined,
+            zone2Cats:z2c?z2c.split(',').map((s:string)=>s.trim()).filter(Boolean):undefined,
+          },
         }),
       })
       const data = await res.json()
-      if (data.ok) onDone()
-      else onError(data.error || 'Erreur lors de la création')
-    } catch {
-      onError('Impossible de contacter le serveur')
-    }
+      if(data.ok){ setDone({ name:name.trim(), apiKey:apiKey.trim(), email:email.trim(), mgrPin, cshPin, mgrName, cshName, logo, tagline:tagline||name, city, phone, z1l, z2l, z1c, z2c }); setStep(5); onDone() }
+      else onError(data.error||'Erreur lors de la création')
+    } catch { onError('Impossible de contacter le serveur') }
     setSaving(false)
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', background: 'var(--card)', border: '1.5px solid var(--div)',
-    borderRadius: '8px', padding: '11px 14px', color: 'var(--txt)', fontSize: '14px',
-    outline: 'none', boxSizing: 'border-box',
-  }
-  const labelStyle: React.CSSProperties = {
-    fontSize: '11px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px',
-    textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block',
+  const iS:React.CSSProperties = { width:'100%', background:'var(--card)', border:'1.5px solid var(--div)', borderRadius:'8px', padding:'11px 14px', color:'var(--txt)', fontSize:'14px', outline:'none', boxSizing:'border-box' }
+  const lS:React.CSSProperties = { fontSize:'11px', color:'var(--muted)', fontWeight:600, marginBottom:'4px', textTransform:'uppercase' as const, letterSpacing:'0.5px', display:'block' }
+  const g2:React.CSSProperties = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'14px', marginBottom:'14px' }
+  const bN:React.CSSProperties = { padding:'14px', border:'none', borderRadius:'10px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', color:'#fff', fontSize:'15px', fontWeight:700, cursor:'pointer', width:'100%', marginBottom:'8px' }
+  const bB:React.CSSProperties = { padding:'12px', border:'1px solid var(--div)', borderRadius:'10px', background:'var(--card)', color:'var(--muted)', fontSize:'13px', fontWeight:600, cursor:'pointer', width:'100%', marginBottom:'8px' }
+  const wrap:React.CSSProperties = { background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', marginBottom:'20px' }
+  const sNames = ['Type','Identité','Utilisateurs','Modules','Prêt']
+
+  // ── Step 5: success + build instructions ───────────────────────────
+  if(step===5 && done){
+    const folder = done.name.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,'')
+    const cfg = `  name:        '${done.name.toUpperCase()}',\n  tagline:     '${done.tagline}',\n  logo:        '${done.logo}',\n  logoLetter:  '${done.name.charAt(0).toUpperCase()}',\n  city:        '${done.city||'Tunisie'}',\n  phone:       '${done.phone||'+216 XX XXX XXX'}',\n  currency:    'DT',\n  syncEnabled: true,\n  syncUrl:     'https://servio.tn/api/sync',\n  syncKey:     '${done.apiKey}',\n  posStockLocked: false,\n  managerName: '${done.mgrName}',\n  managerPin:  '${done.mgrPin}',\n  cashierName: '${done.cshName}',\n  cashierPin:  '${done.cshPin}',\n  zone1Cats:   [${(done.z1c||'').split(',').filter((s:string)=>s.trim()).map((s:string)=>`'${s.trim()}'`).join(',')}],\n  zone2Cats:   [${(done.z2c||'').split(',').filter((s:string)=>s.trim()).map((s:string)=>`'${s.trim()}'`).join(',')}],\n  boissonCats: [],\n  zone1Label:  '${done.z1l||'BAR'}',\n  zone2Label:  '${done.z2l||'CUISINE'}',`
+    const pre:React.CSSProperties = { background:'#0A0704', color:'#E8A84C', padding:'12px', borderRadius:'8px', fontSize:'11px', overflowX:'auto' as const, margin:0, whiteSpace:'pre-wrap' as const, wordBreak:'break-all' as const, fontFamily:'Consolas,monospace', border:'1px solid var(--div)' }
+    return (
+      <div style={wrap}>
+        <div style={{ textAlign:'center', marginBottom:'24px' }}>
+          <div style={{ fontSize:'48px' }}>✅</div>
+          <div style={{ fontSize:'20px', fontWeight:800, color:'var(--green)', marginTop:'8px' }}>{done.name} créé avec succès !</div>
+          <div style={{ fontSize:'13px', color:'var(--muted)', marginTop:'4px' }}>Base de données provisionnée · Clé API active</div>
+        </div>
+        <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'12px', padding:'16px', marginBottom:'16px' }}>
+          <div style={{ fontSize:'12px', fontWeight:700, color:'var(--gold-l)', marginBottom:'10px', textTransform:'uppercase' as const }}>📋 Informations à transmettre au client</div>
+          {[['Dashboard URL','https://servio.tn'],['Email',done.email],['Clé API / syncKey',done.apiKey],['PIN Manager',done.mgrPin],['PIN Caissier',done.cshPin]].map(([l,v])=>(
+            <div key={l} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid var(--div)', fontSize:'13px' }}>
+              <span style={{ color:'var(--muted)' }}>{l}</span>
+              <strong style={{ fontFamily:'monospace' }}>{v}</strong>
+            </div>
+          ))}
+        </div>
+        <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'12px', padding:'16px', marginBottom:'16px' }}>
+          <div style={{ fontSize:'12px', fontWeight:700, color:'var(--gold-l)', marginBottom:'12px', textTransform:'uppercase' as const }}>🔨 Construire l'EXE (à faire en local)</div>
+          {[
+            {n:'1',t:'Créer le dossier client',c:`mkdir servio-pos-package\\clients\\${folder}`},
+            {n:'2',t:'Copier le template Cafeina',c:`copy servio-pos-package\\clients\\Cafeina\\index.html servio-pos-package\\clients\\${folder}\\index.html`},
+            {n:'3',t:'Remplacer dans CLIENT_CONFIG :',c:`const CLIENT_CONFIG = {\n${cfg}\n};`},
+            {n:'4',t:'Construire (~3 min)',c:`cd servio-pos-package\nnode _build-client.js ${folder}`},
+            {n:'5',t:'Fichiers livrables',c:`dist_clients\\${folder}\\${folder}_Setup.exe\ndist_clients\\${folder}\\${folder}_Portable.exe`},
+          ].map(({n,t,c})=>(
+            <div key={n} style={{ marginBottom:'14px' }}>
+              <div style={{ fontSize:'12px', color:'var(--muted)', marginBottom:'6px' }}>
+                <span style={{ display:'inline-block', width:'20px', height:'20px', borderRadius:'50%', background:'var(--gold-dim)', color:'var(--gold-l)', fontSize:'11px', fontWeight:700, textAlign:'center' as const, lineHeight:'20px', marginRight:'6px' }}>{n}</span>{t}
+              </div>
+              <pre style={pre}>{c}</pre>
+            </div>
+          ))}
+        </div>
+        <button onClick={()=>{ setStep(1);setDone(null);setName('');setEmail('');setPass('');setApiKey('SRVO-'+Math.random().toString(36).substring(2,7).toUpperCase()+'-001');setPreset('') }} style={bN}>+ Créer un autre client</button>
+      </div>
+    )
   }
 
   return (
-    <form onSubmit={submit} style={{
-      background: 'var(--panel)', border: '1px solid var(--div)', borderRadius: '12px',
-      padding: '24px', marginBottom: '20px',
-    }}>
-      <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '18px', color: 'var(--gold-l)' }}>
-        Nouveau client
+    <div style={wrap}>
+      {/* Step indicator */}
+      <div style={{ display:'flex', gap:'6px', marginBottom:'24px', alignItems:'center' }}>
+        {sNames.map((s,i)=>(
+          <React.Fragment key={s}>
+            <div style={{ fontSize:'11px', fontWeight:700, padding:'5px 10px', borderRadius:'20px', whiteSpace:'nowrap' as const,
+              background:step===i+1?'var(--gold-dim)':step>i+1?'var(--green-dim)':'var(--card)',
+              color:step===i+1?'var(--gold-l)':step>i+1?'var(--green)':'var(--muted)',
+              border:`1px solid ${step===i+1?'var(--gold)':step>i+1?'rgba(61,184,122,.3)':'var(--div)'}`,
+            }}>{step>i+1?'✓ ':''}{s}</div>
+            {i<sNames.length-1&&<div style={{ flex:1, height:'1px', background:'var(--div)' }}/>}
+          </React.Fragment>
+        ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
+      {/* STEP 1 — Type */}
+      {step===1&&(
         <div>
-          <label style={labelStyle}>Nom du commerce *</label>
-          <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Café Central" required />
+          <div style={{ fontSize:'16px', fontWeight:700, color:'var(--gold-l)', marginBottom:'16px' }}>Choisir le type d'activité</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:'10px' }}>
+            {Object.entries(PRESETS).map(([id,p])=>(
+              <button key={id} type="button" onClick={()=>applyPreset(id)} style={{ padding:'18px 12px', borderRadius:'12px', textAlign:'center' as const, cursor:'pointer',
+                background:preset===id?'var(--gold-dim)':'var(--card)', border:`2px solid ${preset===id?'var(--gold)':'var(--div)'}`,
+                color:preset===id?'var(--gold-l)':'var(--txt)', transition:'all .12s' }}>
+                <div style={{ fontSize:'28px', marginBottom:'8px' }}>{p.emoji}</div>
+                <div style={{ fontSize:'12px', fontWeight:700 }}>{p.label}</div>
+              </button>
+            ))}
+          </div>
         </div>
-        <div>
-          <label style={labelStyle}>Ville</label>
-          <input style={inputStyle} value={city} onChange={e => setCity(e.target.value)} placeholder="Tunis" />
-        </div>
-        <div>
-          <label style={labelStyle}>Email *</label>
-          <input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="gerant@email.com" required />
-        </div>
-        <div>
-          <label style={labelStyle}>Téléphone</label>
-          <input style={inputStyle} value={phone} onChange={e => setPhone(e.target.value)} placeholder="XX XXX XXX" />
-        </div>
-        <div>
-          <label style={labelStyle}>Mot de passe *</label>
-          <input style={inputStyle} value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" required />
-        </div>
-        <div>
-          <label style={labelStyle}>Clé API (licence) *</label>
-          <input style={inputStyle} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="SRVO-XXXXX-001" required />
-        </div>
-      </div>
+      )}
 
-      {/* Module selection */}
-      <div style={{ marginBottom: '18px' }}>
-        <label style={labelStyle}>Modules activés</label>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', marginTop: '8px' }}>
-          {MODULES_LIST.map(m => (
-            <button
-              key={m.id} type="button"
-              onClick={() => toggle(m.id)}
-              style={{
-                display: 'flex', flexDirection: 'column', gap: '2px',
-                padding: '12px', borderRadius: '10px', textAlign: 'left', cursor: 'pointer',
-                background: modules[m.id] ? 'var(--gold-dim)' : 'var(--card)',
-                border: `1.5px solid ${modules[m.id] ? 'var(--gold)' : 'var(--div)'}`,
-                color: modules[m.id] ? 'var(--gold-l)' : 'var(--muted)',
-                transition: 'all .12s',
-              }}
-            >
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>{m.label}</span>
-              <span style={{ fontSize: '10px', opacity: 0.8 }}>{m.desc}</span>
-            </button>
-          ))}
+      {/* STEP 2 — Identity */}
+      {step===2&&(
+        <div>
+          <div style={{ fontSize:'16px', fontWeight:700, color:'var(--gold-l)', marginBottom:'16px' }}>Identité du commerce</div>
+          <div style={g2}>
+            <div><label style={lS}>Nom du commerce *</label><input style={iS} value={name} onChange={e=>setName(e.target.value)} placeholder="Café Central" autoFocus/></div>
+            <div><label style={lS}>Emoji logo</label><input style={{...iS,fontSize:'24px',textAlign:'center'}} value={logo} onChange={e=>setLogo(e.target.value)} maxLength={4}/></div>
+            <div><label style={lS}>Tagline</label><input style={iS} value={tagline} onChange={e=>setTagline(e.target.value)} placeholder="Café & Lounge — Tunis"/></div>
+            <div><label style={lS}>Ville</label><input style={iS} value={city} onChange={e=>setCity(e.target.value)} placeholder="Tunis"/></div>
+            <div><label style={lS}>Email propriétaire *</label><input style={iS} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="gerant@email.com"/></div>
+            <div><label style={lS}>Téléphone</label><input style={iS} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+216 XX XXX XXX"/></div>
+            <div><label style={lS}>Mot de passe dashboard *</label><input style={iS} value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••"/></div>
+            <div><label style={lS}>Clé API (syncKey) *</label>
+              <div style={{ display:'flex', gap:'6px' }}><input style={{...iS,fontFamily:'monospace',fontSize:'12px'}} value={apiKey} onChange={e=>setApiKey(e.target.value)}/><button type="button" onClick={genKey} style={{ padding:'0 12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--muted)', cursor:'pointer', fontSize:'18px', flexShrink:0 }}>⟳</button></div>
+            </div>
+          </div>
+          <div style={g2}>
+            <div><label style={lS}>Zone 1 label cuisine</label><input style={iS} value={z1l} onChange={e=>setZ1l(e.target.value)} placeholder="BAR — Boissons"/></div>
+            <div><label style={lS}>Zone 1 catégories (virgule)</label><input style={iS} value={z1c} onChange={e=>setZ1c(e.target.value)} placeholder="Café,Thé,Jus"/></div>
+            <div><label style={lS}>Zone 2 label cuisine</label><input style={iS} value={z2l} onChange={e=>setZ2l(e.target.value)} placeholder="CUISINE — Pâtisserie"/></div>
+            <div><label style={lS}>Zone 2 catégories (virgule)</label><input style={iS} value={z2c} onChange={e=>setZ2c(e.target.value)} placeholder="Pâtisserie,Sandwich"/></div>
+          </div>
+          <button onClick={()=>setStep(3)} disabled={!name||!email||!pass||!apiKey} style={{...bN,opacity:(!name||!email||!pass||!apiKey)?.5:1}}>Suivant →</button>
+          <button onClick={()=>setStep(1)} style={bB}>← Retour</button>
         </div>
-      </div>
+      )}
 
-      <button type="submit" disabled={saving} style={{
-        width: '100%', padding: '14px', border: 'none', borderRadius: '10px',
-        background: 'linear-gradient(135deg,var(--gold),var(--gold-l))',
-        color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer',
-        opacity: saving ? 0.6 : 1,
-      }}>
-        {saving ? 'Création en cours…' : '⚡ Créer le client'}
-      </button>
-    </form>
+      {/* STEP 3 — Users */}
+      {step===3&&(
+        <div>
+          <div style={{ fontSize:'16px', fontWeight:700, color:'var(--gold-l)', marginBottom:'16px' }}>Utilisateurs & PINs</div>
+          <div style={g2}>
+            <div><label style={lS}>Nom Manager</label><input style={iS} value={mgrName} onChange={e=>setMgrName(e.target.value)}/></div>
+            <div><label style={lS}>PIN Manager (4 chiffres)</label><input style={iS} value={mgrPin} onChange={e=>setMgrPin(e.target.value.slice(0,4))} placeholder="1234" maxLength={4} type="password"/></div>
+            <div><label style={lS}>Nom Caissier</label><input style={iS} value={cshName} onChange={e=>setCshName(e.target.value)}/></div>
+            <div><label style={lS}>PIN Caissier (4 chiffres)</label><input style={iS} value={cshPin} onChange={e=>setCshPin(e.target.value.slice(0,4))} placeholder="0000" maxLength={4} type="password"/></div>
+          </div>
+          <div style={{ background:'var(--gold-dim)', border:'1px solid var(--gold)', borderRadius:'10px', padding:'12px 16px', fontSize:'12px', color:'var(--gold-l)', marginBottom:'16px' }}>💡 Ces PINs sont incorporés dans l'EXE lors du build. Modifiables depuis la caisse après installation.</div>
+          <button onClick={()=>setStep(4)} style={bN}>Suivant →</button>
+          <button onClick={()=>setStep(2)} style={bB}>← Retour</button>
+        </div>
+      )}
+
+      {/* STEP 4 — Modules */}
+      {step===4&&(
+        <div>
+          <div style={{ fontSize:'16px', fontWeight:700, color:'var(--gold-l)', marginBottom:'16px' }}>Modules activés</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:'10px', marginBottom:'20px' }}>
+            {MODULES_LIST.map(m=>(
+              <button key={m.id} type="button" onClick={()=>toggleMod(m.id)} style={{ display:'flex', flexDirection:'column', gap:'3px', padding:'14px', borderRadius:'10px', textAlign:'left' as const, cursor:'pointer',
+                background:mods[m.id]?'var(--gold-dim)':'var(--card)', border:`1.5px solid ${mods[m.id]?'var(--gold)':'var(--div)'}`,
+                color:mods[m.id]?'var(--gold-l)':'var(--muted)', transition:'all .12s' }}>
+                <span style={{ fontSize:'13px', fontWeight:700 }}>{m.label}</span>
+                <span style={{ fontSize:'11px', opacity:.8 }}>{m.desc}</span>
+              </button>
+            ))}
+          </div>
+          <button onClick={submit} disabled={saving} style={{...bN,opacity:saving?.6:1}}>{saving?'⏳ Création en cours…':'⚡ Créer le client'}</button>
+          <button onClick={()=>setStep(3)} style={bB}>← Retour</button>
+        </div>
+      )}
+    </div>
   )
 }
