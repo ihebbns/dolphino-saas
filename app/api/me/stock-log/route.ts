@@ -217,6 +217,7 @@ export async function POST(req: Request) {
       unitCost: kind === 'receive' ? unitCost || null : null,
       supplierId,
       paymentMethod: paymentMethod as any,
+      dueAt: kind === 'receive' && paymentMethod === 'credit' ? (String(body.due_at ?? '').slice(0, 10) || null) : null,
     })
 
     if (quantity === null) {

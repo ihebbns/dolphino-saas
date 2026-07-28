@@ -1,6 +1,26 @@
 import { sql } from '@/lib/db'
 
 /**
+ * Compute how urgent a due date is, relative to now.
+ *
+ * Returns:
+ *   'late'  — due date is in the past (overdue)
+ *   'soon'  — due in 0–3 days (this week warning)
+ *   'ok'    — due in more than 3 days
+ *   null    — no due date, or balance already zero
+ *
+ * Never stored in the DB — always computed at read time so it stays
+ * accurate without any background job.
+ */
+export function computeUrgency(dueAt: string | null, balance: number): 'ok' | 'soon' | 'late' | null {
+  if (!dueAt || balance <= 0) return null
+  const days = Math.ceil((new Date(dueAt).getTime() - Date.now()) / 86400000)
+  if (days < 0)  return 'late'
+  if (days <= 3) return 'soon'
+  return 'ok'
+}
+
+/**
  * Rebuild the cached amount owed to one supplier from immutable deliveries and
  * payments. Both product and ingredient deliveries feed the same balance.
  */

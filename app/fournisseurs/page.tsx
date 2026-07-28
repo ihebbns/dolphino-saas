@@ -27,6 +27,8 @@ type Delivery = {
   delta: number; unit_cost: number | null; payment_method: string | null
   reason: string | null; actor: string | null; client_ts: string
   line_total: number
+  due_at: string | null
+  urgency: 'ok' | 'soon' | 'late' | null
 }
 type Payment = {
   id: number; amount: number; method: string; reference: string
@@ -149,6 +151,20 @@ export default function FournisseursPage() {
           <div className="statLabel">Fournisseurs à payer</div>
           <div className="statValue num">{totals?.nb_with_debt ?? 0}</div>
           <div className="statHint">sur {totals?.nb_suppliers ?? 0} fournisseurs</div>
+        </div>
+        <div className="stat">
+          <div className="statLabel">Échéances en retard</div>
+          <div className="statValue num" style={{ color: (totals?.late_count ?? 0) > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+            {totals?.late_count ?? 0}
+          </div>
+          <div className="statHint">fournisseurs en retard</div>
+        </div>
+        <div className="stat">
+          <div className="statLabel">Cette semaine</div>
+          <div className="statValue num" style={{ color: (totals?.soon_count ?? 0) > 0 ? 'var(--warn)' : undefined }}>
+            {totals?.soon_count ?? 0}
+          </div>
+          <div className="statHint">échéances dans 3 jours</div>
         </div>
       </div>
 
@@ -284,6 +300,11 @@ export default function FournisseursPage() {
                               <span className={'badge ' + (d.payment_method === 'credit' ? 'bDanger' : 'bOk')}>
                                 {d.payment_method === 'credit' ? 'Crédit' : 'Comptant'}
                               </span>
+                              {d.due_at && d.payment_method === 'credit' && (
+                                <div className={'t11 mt2 ' + (d.urgency === 'late' ? 'cDanger bold' : d.urgency === 'soon' ? 'cWarn' : 'cMuted')}>
+                                  {d.urgency === 'late' ? '⚠ Échue' : '📅'} {dt(d.due_at)}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}

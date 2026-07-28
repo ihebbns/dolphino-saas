@@ -482,6 +482,7 @@ export async function POST(req: Request) {
         source: 'web',
         supplierId,
         paymentMethod,
+        dueAt: kind === 'receive' && paymentMethod === 'credit' ? (clip(body.due_at, 10) || null) : null,
       })
 
       if (newQty === null) {

@@ -137,6 +137,9 @@ export type MovementInput = {
   supplierId?: number | null
   /** How the delivery was paid: 'comptant' | 'credit'. Drives supplier balance. */
   paymentMethod?: 'comptant' | 'credit' | null
+  /** Payment due date (YYYY-MM-DD). Only for credit deliveries.
+   *  If omitted, defaults to today + 30 days server-side. */
+  dueAt?: string | null
 }
 
 const n3 = (v: any): number => {
@@ -244,17 +247,21 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
   const unitCost = m.kind === 'receive' && m.unitCost != null && n3(m.unitCost) > 0 ? n3(m.unitCost) : null
   const supplierId = m.kind === 'receive' && m.supplierId ? m.supplierId : null
   const paymentMethod = m.kind === 'receive' && m.paymentMethod ? clip(m.paymentMethod, 20) : null
+  // due_at: only for credit deliveries. Supplied value wins; fall back to today+30d.
+  const dueAt: string | null = (m.kind === 'receive' && paymentMethod === 'credit')
+    ? (m.dueAt ? clip(m.dueAt, 10) : new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10))
+    : null
 
   try {
     if (clientUid) {
       await sql`
         INSERT INTO stock_movements
           (restaurant_id, item_id, kind, delta, count_value, expected_value,
-           unit_cost, supplier_id, payment_method,
+           unit_cost, supplier_id, payment_method, due_at,
            reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
         VALUES
           (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
-           ${unitCost}, ${supplierId}, ${paymentMethod},
+           ${unitCost}, ${supplierId}, ${paymentMethod}, ${dueAt},
            ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
            ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
@@ -264,11 +271,11 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
       await sql`
         INSERT INTO stock_movements
           (restaurant_id, item_id, kind, delta, count_value, expected_value,
-           unit_cost, supplier_id, payment_method,
+           unit_cost, supplier_id, payment_method, due_at,
            reason, actor, source, terminal_id, session_id, sale_num, client_ts, client_uid)
         VALUES
           (${rid}, ${itemId}, ${m.kind}, ${delta}, ${countValue}, ${expected},
-           ${unitCost}, ${supplierId}, ${paymentMethod},
+           ${unitCost}, ${supplierId}, ${paymentMethod}, ${dueAt},
            ${clip(m.reason, 200)}, ${clip(m.actor, 80)}, ${m.source === 'web' ? 'web' : 'pos'},
            ${clip(m.terminalId, 64)}, ${clip(m.sessionId, 64)},
            ${Number.isFinite(m.saleNum as any) ? m.saleNum : null},
@@ -281,7 +288,7 @@ export async function recordMovement(rid: number, m: MovementInput): Promise<num
     const code = String(e?.code || '')
     const msg = String(e?.message || '')
     const isSupplierCol = (code === '42703' || /does not exist|undefined_column/i.test(msg))
-      && /supplier_id|payment_method/i.test(msg)
+      && /supplier_id|payment_method|due_at/i.test(msg)
 
     if (isSupplierCol) {
       try {

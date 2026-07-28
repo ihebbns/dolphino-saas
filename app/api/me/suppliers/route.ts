@@ -19,7 +19,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
-import { refreshSupplierBalance } from '@/lib/suppliers'
+import { refreshSupplierBalance, computeUrgency } from '@/lib/suppliers'
 import { serverError, isMissingSchema, notReadyPayload, missingRelations, dbIdentity } from '@/lib/apiError'
 
 export const runtime = 'edge'
@@ -82,7 +82,51 @@ export async function GET(req: Request) {
       FROM suppliers
       WHERE restaurant_id = ${rid}`
 
-    return cors(NextResponse.json({ ok: true, ready: true, name: rest.name, suppliers, totals }))
+    // late_count / soon_count: suppliers with at least one overdue / soon-due
+    // credit delivery. Computed from the ledger, never stored.
+    // Tolerant of due_at column being absent (migration not yet run).
+    let late_count = 0, soon_count = 0
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const soonDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
+
+      const lateRows = await sql`
+        SELECT COUNT(DISTINCT supplier_id)::int AS cnt
+        FROM (
+          SELECT supplier_id FROM stock_movements
+          WHERE restaurant_id = ${rid} AND kind = 'receive'
+            AND payment_method = 'credit' AND due_at IS NOT NULL AND due_at < ${today}
+            AND supplier_id IS NOT NULL
+          UNION
+          SELECT supplier_id FROM ingredient_movements
+          WHERE restaurant_id = ${rid} AND kind = 'receive'
+            AND payment_method = 'credit' AND due_at IS NOT NULL AND due_at < ${today}
+            AND supplier_id IS NOT NULL
+        ) t`
+      late_count = lateRows[0]?.cnt ?? 0
+
+      const soonRows = await sql`
+        SELECT COUNT(DISTINCT supplier_id)::int AS cnt
+        FROM (
+          SELECT supplier_id FROM stock_movements
+          WHERE restaurant_id = ${rid} AND kind = 'receive'
+            AND payment_method = 'credit' AND due_at IS NOT NULL
+            AND due_at >= ${today} AND due_at <= ${soonDate}
+            AND supplier_id IS NOT NULL
+          UNION
+          SELECT supplier_id FROM ingredient_movements
+          WHERE restaurant_id = ${rid} AND kind = 'receive'
+            AND payment_method = 'credit' AND due_at IS NOT NULL
+            AND due_at >= ${today} AND due_at <= ${soonDate}
+            AND supplier_id IS NOT NULL
+        ) t`
+      soon_count = soonRows[0]?.cnt ?? 0
+    } catch { /* due_at column not yet added — migration-due-at.sql not run */ }
+
+    return cors(NextResponse.json({
+      ok: true, ready: true, name: rest.name, suppliers,
+      totals: { ...totals, late_count, soon_count },
+    }))
   } catch (e: any) {
     if (isMissingSchema(e)) {
       return cors(NextResponse.json(
@@ -185,13 +229,28 @@ export async function POST(req: Request) {
           SELECT m.id, 'stock' AS source, m.item_id, s.item_name, s.item_emoji,
                  m.delta::float, m.unit_cost::float, m.payment_method,
                  m.reason, m.actor, m.client_ts,
+                 m.due_at::text,
                  (ABS(m.delta) * COALESCE(m.unit_cost, 0))::float AS line_total
           FROM stock_movements m
           LEFT JOIN stock s ON s.restaurant_id = m.restaurant_id AND s.item_id = m.item_id
           WHERE m.restaurant_id = ${rid} AND m.supplier_id = ${supplierId} AND m.kind = 'receive'
           ORDER BY m.client_ts DESC
           LIMIT ${limit}`
-      } catch { /* table may not have supplier_id column yet */ }
+      } catch {
+        // Fallback without due_at in case migration-due-at.sql not run
+        try {
+          stockDel = await sql`
+            SELECT m.id, 'stock' AS source, m.item_id, s.item_name, s.item_emoji,
+                   m.delta::float, m.unit_cost::float, m.payment_method,
+                   m.reason, m.actor, m.client_ts, NULL::text AS due_at,
+                   (ABS(m.delta) * COALESCE(m.unit_cost, 0))::float AS line_total
+            FROM stock_movements m
+            LEFT JOIN stock s ON s.restaurant_id = m.restaurant_id AND s.item_id = m.item_id
+            WHERE m.restaurant_id = ${rid} AND m.supplier_id = ${supplierId} AND m.kind = 'receive'
+            ORDER BY m.client_ts DESC
+            LIMIT ${limit}`
+        } catch { /* table may not have supplier_id column yet */ }
+      }
 
       // Ingredient deliveries
       let ingDel: any[] = []
@@ -200,13 +259,27 @@ export async function POST(req: Request) {
           SELECT m.id, 'ingredient' AS source, m.ing_key AS item_id, i.name AS item_name, NULL AS item_emoji,
                  m.delta::float, m.unit_cost::float, m.payment_method,
                  m.reason, m.actor, m.client_ts,
+                 m.due_at::text,
                  (ABS(m.delta) * COALESCE(m.unit_cost, 0))::float AS line_total
           FROM ingredient_movements m
           LEFT JOIN ingredients i ON i.restaurant_id = m.restaurant_id AND i.ing_key = m.ing_key
           WHERE m.restaurant_id = ${rid} AND m.supplier_id = ${supplierId} AND m.kind = 'receive'
           ORDER BY m.client_ts DESC
           LIMIT ${limit}`
-      } catch { /* table may not have supplier_id column yet */ }
+      } catch {
+        try {
+          ingDel = await sql`
+            SELECT m.id, 'ingredient' AS source, m.ing_key AS item_id, i.name AS item_name, NULL AS item_emoji,
+                   m.delta::float, m.unit_cost::float, m.payment_method,
+                   m.reason, m.actor, m.client_ts, NULL::text AS due_at,
+                   (ABS(m.delta) * COALESCE(m.unit_cost, 0))::float AS line_total
+            FROM ingredient_movements m
+            LEFT JOIN ingredients i ON i.restaurant_id = m.restaurant_id AND i.ing_key = m.ing_key
+            WHERE m.restaurant_id = ${rid} AND m.supplier_id = ${supplierId} AND m.kind = 'receive'
+            ORDER BY m.client_ts DESC
+            LIMIT ${limit}`
+        } catch { /* table may not have supplier_id column yet */ }
+      }
 
       // Payments
       const payments = await sql`
@@ -216,10 +289,19 @@ export async function POST(req: Request) {
         ORDER BY client_ts DESC
         LIMIT ${limit}`
 
-      // Merge and sort
-      const deliveries = [...stockDel, ...ingDel].sort((a, b) =>
-        new Date(b.client_ts).getTime() - new Date(a.client_ts).getTime()
-      )
+      // Merge, sort, and annotate each delivery with computed urgency.
+      // balance is the supplier's current balance — used by computeUrgency
+      // to suppress the badge once fully paid. We pass the supplier balance
+      // as a proxy: any positive balance means there is still something owed.
+      const [sup] = await sql`SELECT balance::float FROM suppliers WHERE id = ${supplierId} LIMIT 1`
+      const supplierBalance = sup?.balance ?? 0
+
+      const deliveries = [...stockDel, ...ingDel]
+        .sort((a, b) => new Date(b.client_ts).getTime() - new Date(a.client_ts).getTime())
+        .map(d => ({
+          ...d,
+          urgency: computeUrgency(d.due_at ?? null, supplierBalance),
+        }))
 
       return cors(NextResponse.json({ ok: true, deliveries, payments }))
     }

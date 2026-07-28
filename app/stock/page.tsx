@@ -845,6 +845,7 @@ function IngredientMovementModal({ ingredient, saving, suppliers, onClose, onSub
   const [reason, setReason] = useState('')
   const [supplierId, setSupplierId] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<'comptant' | 'credit'>('comptant')
+  const [dueDate, setDueDate] = useState('')
   const q = num(qty)
   const valid = kind === 'count' ? qty !== '' && q >= 0 : q > 0
   const after = kind === 'count' ? q : kind === 'receive' ? num(ingredient.quantity) + q : num(ingredient.quantity) - q
@@ -855,6 +856,7 @@ function IngredientMovementModal({ ingredient, saving, suppliers, onClose, onSub
     ...(reason.trim() ? { reason: reason.trim() } : {}),
     ...(kind === 'receive' && supplierId ? { supplier_id: supplierId } : {}),
     ...(kind === 'receive' ? { payment_method: paymentMethod } : {}),
+    ...(kind === 'receive' && paymentMethod === 'credit' ? { due_at: dueDate || null } : {}),
   })
 
   return <div className="overlay" onClick={onClose}>
@@ -867,7 +869,7 @@ function IngredientMovementModal({ ingredient, saving, suppliers, onClose, onSub
           <button className="chip" data-on={kind === 'count'} onClick={() => setKind('count')}>📋 Inventaire</button>
         </div>
         <div className="field"><label className="label">{kind === 'count' ? 'Quantité comptée' : 'Quantité'} ({ingredient.stock_unit})</label><input className="input inputNum" type="number" step="0.001" min="0" autoFocus value={qty} onChange={e => setQty(e.target.value)} /><span className="help">{kind === 'count' ? 'Le comptage fixe le nouveau stock.' : `Stock après : ${qtyTrim(after)} ${ingredient.stock_unit}`}</span></div>
-        {kind === 'receive' && <><div className="field"><label className="label">Prix payé par {ingredient.stock_unit} (optionnel)</label><input className="input inputNum" type="number" step="0.001" min="0" value={unitCost} onChange={e => setUnitCost(e.target.value)} /></div><div className="field"><label className="label">Fournisseur</label><select className="input" value={supplierId ?? ''} onChange={e => setSupplierId(e.target.value ? parseInt(e.target.value) : null)}><option value="">Passager (pas de fiche)</option>{suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div><div className="row" style={{ gap: 6 }}><button className="chip" data-on={paymentMethod === 'comptant'} onClick={() => setPaymentMethod('comptant')}>Comptant</button><button className="chip" data-on={paymentMethod === 'credit'} onClick={() => setPaymentMethod('credit')}>À crédit</button></div></>}
+        {kind === 'receive' && <><div className="field"><label className="label">Prix payé par {ingredient.stock_unit} (optionnel)</label><input className="input inputNum" type="number" step="0.001" min="0" value={unitCost} onChange={e => setUnitCost(e.target.value)} /></div><div className="field"><label className="label">Fournisseur</label><select className="input" value={supplierId ?? ''} onChange={e => setSupplierId(e.target.value ? parseInt(e.target.value) : null)}><option value="">Passager (pas de fiche)</option>{suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div><div className="row" style={{ gap: 6 }}><button className="chip" data-on={paymentMethod === 'comptant'} onClick={() => setPaymentMethod('comptant')}>Comptant</button><button className="chip" data-on={paymentMethod === 'credit'} onClick={() => setPaymentMethod('credit')}>À crédit</button></div>{paymentMethod === 'credit' && <div className="field"><label className="label">Échéance</label><input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} min={new Date().toISOString().slice(0,10)} /><span className="help">Par défaut 30 jours si laissé vide</span></div>}</>}
         {kind !== 'receive' && <div className="field"><label className="label">Motif (optionnel)</label><input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder={kind === 'waste' ? 'Périmé, cassé…' : 'Inventaire'} /></div>}
       </div>
       <div className="modalFoot"><button className="btn" onClick={onClose}>Annuler</button><button className="btn btnPrimary" disabled={!valid || saving} onClick={submit}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button></div>
@@ -884,6 +886,7 @@ function MovementModal({ item, kind: initialKind, saving, suppliers, onClose, on
   const [supplierId, setSupplierId] = useState<number | null>(null)
   const [supplierName, setSupplierName] = useState('')
   const [payMethod, setPayMethod] = useState<'comptant' | 'credit'>('comptant')
+  const [dueDate, setDueDate] = useState('')
 
   const isCount = kind === 'count'
   const isReceive = kind === 'receive'
@@ -986,6 +989,17 @@ function MovementModal({ item, kind: initialKind, saving, suppliers, onClose, on
                     : 'Payé immédiatement — aucune dette créée.'}
                 </span>
               </div>
+              {payMethod === 'credit' && (
+                <div className="field">
+                  <label className="label">Échéance</label>
+                  <input
+                    className="input" type="date"
+                    value={dueDate} onChange={e => setDueDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                  />
+                  <span className="help">Par défaut 30 jours si laissé vide</span>
+                </div>
+              )}
             </>
           )}
 
@@ -1022,6 +1036,7 @@ function MovementModal({ item, kind: initialKind, saving, suppliers, onClose, on
               ...(isReceive && num(unitCost) > 0 ? { unit_cost: num(unitCost) } : {}),
               ...(isReceive && supplierId ? { supplier_id: supplierId } : {}),
               ...(isReceive ? { payment_method: payMethod } : {}),
+              ...(isReceive && payMethod === 'credit' ? { due_at: dueDate || null } : {}),
             })}
           >{saving ? '…' : 'Enregistrer'}</button>
         </div>

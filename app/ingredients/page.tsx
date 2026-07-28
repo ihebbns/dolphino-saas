@@ -844,6 +844,7 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
   const [reason, setReason] = useState('')
   const [supplierId, setSupplierId] = useState<number | null>(null)
   const [payMethod, setPayMethod] = useState<'comptant' | 'credit'>('comptant')
+  const [dueDate, setDueDate] = useState('')
 
   const q = num(qty)
   const creditNeedsDetails = kind === 'receive' && payMethod === 'credit'
@@ -867,6 +868,7 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
       reason: reason.trim() || undefined,
       supplier_id: kind === 'receive' && supplierId ? supplierId : undefined,
       payment_method: kind === 'receive' ? payMethod : undefined,
+      due_at: kind === 'receive' && payMethod === 'credit' ? (dueDate || null) : undefined,
     })
   }
 
@@ -952,6 +954,17 @@ function MoveModal({ ing, saving, suppliers, onClose, onSave }: {
                     : 'Payé — pas de dette.'}
                 </span>
               </div>
+              {payMethod === 'credit' && (
+                <div className="field mb14">
+                  <label className="label">Échéance</label>
+                  <input
+                    className="input" type="date"
+                    value={dueDate} onChange={e => setDueDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                  />
+                  <span className="help">Par défaut 30 jours si laissé vide</span>
+                </div>
+              )}
             </>
           )}
 
