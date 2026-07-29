@@ -212,6 +212,11 @@ button,.pc,.cat-btn,.pin-btn,.user-card,.pb,.db,.ot-btn,.tbl-card,[onclick]{-web
 
 /* ── MODALS ── */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 16px;-webkit-overflow-scrolling:touch;animation:fadeIn .15s ease;pointer-events:none;}
+/* dash-modal (and anything else) can be opened from the table floor plan
+   overlay (#tbl-overlay, z-index:150) via the "Tableau de bord" button in
+   its header — it must sit above that overlay or it renders invisibly
+   behind it until the floor plan is dismissed. */
+#dash-modal{z-index:160;}
 .ov[style*="display: flex"],.ov[style*="display:flex"]{pointer-events:all;backdrop-filter:blur(6px);}
 .mb{background:var(--panel);border:1px solid var(--div);border-radius:16px;padding:24px;width:90vw;max-width:380px;max-height:calc(100vh - 48px);overflow-y:auto;-webkit-overflow-scrolling:touch;margin:auto;box-shadow:0 24px 60px rgba(0,0,0,.4);animation:scaleIn .2s cubic-bezier(.2,.85,.3,1.05);}
 .mb::-webkit-scrollbar{width:3px;}
@@ -657,6 +662,23 @@ button,.pc,.cat-btn,.pin-btn,.user-card,.pb,.db,.ot-btn,.tbl-card,[onclick]{-web
       <span id="tbl-total-hdr" style="font-size:12px;color:var(--gold-l);font-weight:700"></span>
       <button onclick="tblAddTableModal()" style="background:var(--gold-dim);border:1px solid var(--gold);border-radius:7px;padding:6px 12px;color:var(--gold-l);font-size:11px;font-weight:700;cursor:pointer">+ Table</button>
       <button onclick="hideTblOverlay()" style="background:var(--card);border:1px solid var(--div);border-radius:7px;padding:6px 12px;color:var(--muted);font-size:11px;cursor:pointer">🥡 Sans table (emporter/livraison)</button>
+      <div class="hdr-menu-wrap">
+        <button onclick="toggleTblHdrMenu(event)" title="Menu" style="background:var(--card);border:1px solid var(--div);border-radius:7px;padding:6px 10px;color:var(--txt);font-size:15px;cursor:pointer;line-height:1">☰</button>
+        <div class="hdr-menu" id="tbl-hdr-menu">
+          <button class="hdr-menu-item" onclick="closeTblHdrMenu();showCreditManager()">📒 Crédits</button>
+          <button class="hdr-menu-item" onclick="closeTblHdrMenu();showHistorique()">📋 Historique</button>
+          <div class="hdr-menu-sep"></div>
+          <button class="hdr-menu-item" id="tbl-btn-menu-manage" onclick="closeTblHdrMenu();showMenuManage()" style="display:none">🛠️ Gérer le menu</button>
+          <button class="hdr-menu-item" id="tbl-btn-ajout-fond" onclick="closeTblHdrMenu();showAjoutFond()" style="display:none">💰 Mouvements de caisse</button>
+          <button class="hdr-menu-item" id="tbl-btn-pins" onclick="closeTblHdrMenu();showUserManager()" style="display:none">👥 Utilisateurs</button>
+          <button class="hdr-menu-item" onclick="closeTblHdrMenu();showPoleConfig()">🖥️ Afficheur client</button>
+          <button class="hdr-menu-item" onclick="closeTblHdrMenu();showPrinterConfig()">🖨️ Imprimantes cuisine</button>
+          <button class="hdr-menu-item" onclick="closeTblHdrMenu();toggleTheme()">🌙 Mode clair/sombre</button>
+          <button class="hdr-menu-item danger" id="tbl-btn-cloturer" onclick="closeTblHdrMenu();cloturerJournee()" style="display:none">🔒 Clôturer la journée</button>
+          <div class="hdr-menu-sep"></div>
+          <button class="hdr-menu-item danger" onclick="closeTblHdrMenu();logout()">⏻ Déconnexion</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="tbl-secs">
@@ -702,6 +724,13 @@ const CLIENT_CONFIG = {
   // Counts, deliveries and losses are managed only in Servio Web.
   // Sales still sync, so web stock and recipe consumption stay live.
   posStockLocked: false,
+  // This is the ONLY client build with demoMode:true. It seeds fake stock/
+  // ingredient/recipe numbers client-side (see DEMO_STOCK / DEMO_INGREDIENTS /
+  // DEMO_CANMAKE below) purely so a visitor's Tableau de bord isn't empty —
+  // no network call, no real restaurant's data involved. Every real client
+  // build must leave this unset (falsy), which keeps loadStock() /
+  // fetchIngredientsForCount() / canMakeOf() on their normal cloud-synced path.
+  demoMode: true,
 
   // ── Users / PINs ──────────────────────────────────────
   managerName: 'Manager',
@@ -711,7 +740,7 @@ const CLIENT_CONFIG = {
 
   // ── Kitchen zones ─────────────────────────────────────
   zone1Cats:   ['Cafe','The','Boissons','Jus'],
-  zone2Cats:   ['Plats','Sandwichs','Desserts'],
+  zone2Cats:   ['Plats','Sandwichs','Desserts','Viennoiserie'],
   boissonCats: ['Boissons','Jus'],
   zone1Label:  'BAR — Cafe / The / Boissons',
   zone2Label:  'CUISINE — Plats / Sandwichs',
@@ -731,7 +760,10 @@ let MENU={
     {id:"cf3",name:"Cafe Creme",e:"☕",p:2.4,tracked:false},
     {id:"cf4",name:"Noisette",e:"☕",p:2.3,tracked:false},
     {id:"cf5",name:"Americain",e:"☕",p:2,tracked:false},
-    {id:"cf6",name:"Direct",e:"☕",p:1.5,tracked:false}
+    {id:"cf6",name:"Direct",e:"☕",p:1.5,tracked:false},
+    {id:"cf7",name:"Cafe Turc",e:"☕",p:2.2,tracked:false},
+    {id:"cf8",name:"Latte",e:"☕",p:3,tracked:false},
+    {id:"cf9",name:"Frappe",e:"🧊",p:3.5,tracked:false}
   ]},
   "The":{icon:"🍵",items:[
     {id:"th1",name:"The Vert",e:"🍵",p:2,tracked:false},
@@ -758,18 +790,28 @@ let MENU={
   "Plats":{icon:"🍽️",items:[
     {id:"pl1",name:"Plat du jour",e:"🍽️",p:9,tracked:false},
     {id:"pl2",name:"Salade Cesar",e:"🥗",p:8,tracked:false},
-    {id:"pl3",name:"Omelette",e:"🍳",p:5,tracked:false},
-    {id:"pl4",name:"Pizza",e:"🍕",p:9.5,tracked:false}
+    {id:"pl3",name:"Omelette",e:"🍳",p:5,trackMode:"recipe"},
+    {id:"pl4",name:"Pizza",e:"🍕",p:9.5,trackMode:"recipe"},
+    {id:"pl5",name:"Couscous",e:"🍲",p:8.5,tracked:false},
+    {id:"pl6",name:"Makloub",e:"🌯",p:4,trackMode:"recipe"}
   ]},
   "Sandwichs":{icon:"🥪",items:[
-    {id:"sw1",name:"Sandwich Poulet",e:"🥪",p:5},
-    {id:"sw2",name:"Sandwich Thon",e:"🥪",p:4.5},
-    {id:"sw3",name:"Fricasse",e:"🥪",p:3}
+    {id:"sw1",name:"Sandwich Poulet",e:"🥪",p:5,trackMode:"recipe"},
+    {id:"sw2",name:"Sandwich Thon",e:"🥪",p:4.5,trackMode:"recipe"},
+    {id:"sw3",name:"Fricasse",e:"🥪",p:3},
+    {id:"sw4",name:"Sandwich Escalope",e:"🥪",p:5.5,trackMode:"recipe"},
+    {id:"sw5",name:"Sandwich Merguez",e:"🌭",p:4.5,trackMode:"recipe"}
+  ]},
+  "Viennoiserie":{icon:"🥐",items:[
+    {id:"vn1",name:"Croissant",e:"🥐",p:1.8,trackMode:"recipe"},
+    {id:"vn2",name:"Pain au Chocolat",e:"🍫",p:2,trackMode:"recipe"},
+    {id:"vn3",name:"Msemen",e:"🫓",p:1.5,tracked:false}
   ]},
   "Desserts":{icon:"🍰",items:[
     {id:"ds1",name:"Tiramisu",e:"🍰",p:4.5,tracked:false},
     {id:"ds2",name:"Gateau Choc",e:"🎂",p:4,tracked:false},
-    {id:"ds3",name:"Glace boule",e:"🍦",p:2.5}
+    {id:"ds3",name:"Glace boule",e:"🍦",p:2.5},
+    {id:"ds4",name:"Salade de Fruits",e:"🍓",p:4,tracked:false}
   ]},
   "Tirroir":{icon:"🗄️",items:[]}
 };
@@ -845,11 +887,54 @@ function isDrinkItem(it){
   return mode === 'stock' || mode === 'recipe';
 }
 
+// Demo-only seed data — see CLIENT_CONFIG.demoMode comment above.
+const DEMO_STOCK = {b1:34,b2:18,b3:26,b4:40,ju1:12,ju2:9,ju3:14,ju4:11,ds3:22};
+const DEMO_INGREDIENTS = [
+  {ing_key:'ing_cafe',   name:'Café en grain',    quantity:4.2,  stock_unit:'kg',    category:'Boissons'},
+  {ing_key:'ing_lait',   name:'Lait',              quantity:18,   stock_unit:'L',     category:'Boissons'},
+  {ing_key:'ing_pain',   name:'Pain sandwich',     quantity:42,   stock_unit:'unité', category:'Sandwichs'},
+  {ing_key:'ing_poulet', name:'Poulet',            quantity:6.5,  stock_unit:'kg',    category:'Sandwichs'},
+  {ing_key:'ing_thon',   name:'Thon',              quantity:3.1,  stock_unit:'kg',    category:'Sandwichs'},
+  {ing_key:'ing_fromage',name:'Fromage',           quantity:5.4,  stock_unit:'kg',    category:'Sandwichs'},
+  {ing_key:'ing_tomate', name:'Tomate',            quantity:9,    stock_unit:'kg',    category:'Plats'},
+  {ing_key:'ing_oeufs',  name:'Oeufs',             quantity:60,   stock_unit:'unité', category:'Plats'},
+  {ing_key:'ing_farine', name:'Farine',            quantity:15,   stock_unit:'kg',    category:'Viennoiserie'},
+  {ing_key:'ing_beurre', name:'Beurre',            quantity:4.8,  stock_unit:'kg',    category:'Viennoiserie'}
+];
+// Recipe = ingredient quantity consumed per portion sold. "Combien puis-je
+// faire" is derived FROM these live ingredient quantities (whichever is
+// scarcest caps it), not a made-up number — so counting an ingredient in the
+// "Ingrédients" panel immediately moves the matching recipe product's count.
+const DEMO_RECIPES = {
+  pl3:{ing_oeufs:3},
+  pl4:{ing_farine:0.25,ing_fromage:0.15,ing_tomate:0.1},
+  pl6:{ing_farine:0.2,ing_oeufs:1},
+  sw1:{ing_pain:1,ing_poulet:0.12},
+  sw2:{ing_pain:1,ing_thon:0.1},
+  sw4:{ing_pain:1,ing_poulet:0.15},
+  sw5:{ing_pain:1},
+  vn1:{ing_farine:0.08,ing_beurre:0.03},
+  vn2:{ing_farine:0.09,ing_beurre:0.03}
+};
+function computeDemoCanMake(id){
+  const recipe = DEMO_RECIPES[id];
+  if(!recipe) return null;
+  const table = (_ingCache && _ingCache.length) ? _ingCache : DEMO_INGREDIENTS;
+  let min = Infinity;
+  for(const key in recipe){
+    const ing = table.find(i => i.ing_key === key);
+    if(!ing || ing.quantity == null) return null;
+    min = Math.min(min, Math.floor(ing.quantity / recipe[key]));
+  }
+  return isFinite(min) ? min : null;
+}
+
 function loadStock(){
   try{
     const raw=localStorage.getItem(STOCK_KEY);
-    return raw?JSON.parse(raw):{};
-  }catch(e){return {};}
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return CLIENT_CONFIG.demoMode ? Object.assign({}, DEMO_STOCK) : {};
 }
 function saveStock(stock){
   localStorage.setItem(STOCK_KEY,JSON.stringify(stock));
@@ -1061,7 +1146,9 @@ function loadRecipeCanMake(){
 }
 function canMakeOf(id){
   const v = CLOUD_STOCK_RECIPE[id];
-  return (v != null && isFinite(v)) ? v : null;
+  if(v != null && isFinite(v)) return v;
+  if(CLIENT_CONFIG.demoMode){ const d = computeDemoCanMake(id); if(d != null) return d; }
+  return null;
 }
 function costOf(id){
   if(CLOUD_COST[id] != null) return CLOUD_COST[id];
@@ -1204,6 +1291,7 @@ async function pullCloudCosts(){
 let _ingCache = null;
 function ingEsc(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 async function fetchIngredientsForCount(){
+  if(CLIENT_CONFIG.demoMode) return DEMO_INGREDIENTS;
   if(!SYNC_ENABLED) return [];
   try{
     const res = await fetch(SYNC_API_URL.replace('/api/sync','/api/me/ingredients') + '?key=' + SYNC_API_KEY, {
@@ -1263,6 +1351,17 @@ async function confirmIngCount(ingKey, name){
   const qty = parseFloat(el?.value);
   if(!(qty >= 0)){ flash('Quantité invalide'); return; }
   const actor = (currentUser && USERS[currentUser]) ? USERS[currentUser].name : '';
+  if(CLIENT_CONFIG.demoMode){
+    destroySessionModal();
+    flash('✓ '+name+' — compté '+qty);
+    const row = (_ingCache||[]).find(i => i.ing_key === ingKey);
+    if(row) row.quantity = qty;
+    // Recount changes the ingredient's quantity, which may change how many
+    // portions the recipe-tracked products can still make — refresh the
+    // whole dashboard (not just the ingredients grid) so both stay in sync.
+    showDash();
+    return;
+  }
   try{
     const res = await fetch(SYNC_API_URL.replace('/api/sync','/api/me/ingredients') + '?key=' + SYNC_API_KEY, {
       method: 'POST',
@@ -2828,6 +2927,10 @@ async function loginSuccess(role){
   if(tblBadge) tblBadge.textContent = u.name;
   const tblDashBtn = document.getElementById('tbl-btn-dash');
   if(tblDashBtn) tblDashBtn.style.display = u.isManager ? '' : 'none';
+  const tblMenuManage = document.getElementById('tbl-btn-menu-manage');
+  const tblAjoutFond  = document.getElementById('tbl-btn-ajout-fond');
+  const tblPins       = document.getElementById('tbl-btn-pins');
+  const tblCloturer   = document.getElementById('tbl-btn-cloturer');
   if(u.isManager){
     document.getElementById('btn-dash').style.display='';
     document.getElementById('btn-menu-manage').style.display='';
@@ -2835,6 +2938,10 @@ async function loginSuccess(role){
     document.getElementById('btn-ajout-fond').style.display='none';
     document.getElementById('btn-pins').style.display='';
     document.getElementById('btn-pole').style.display='';
+    if(tblMenuManage) tblMenuManage.style.display='';
+    if(tblAjoutFond)  tblAjoutFond.style.display='none';
+    if(tblPins)       tblPins.style.display='';
+    if(tblCloturer)   tblCloturer.style.display='';
   }else{
     document.getElementById('btn-dash').style.display='none';
     document.getElementById('btn-menu-manage').style.display='none';
@@ -2842,6 +2949,10 @@ async function loginSuccess(role){
     document.getElementById('btn-ajout-fond').style.display='none';
     document.getElementById('btn-pins').style.display='none';
     document.getElementById('btn-pole').style.display='none';
+    if(tblMenuManage) tblMenuManage.style.display='none';
+    if(tblAjoutFond)  tblAjoutFond.style.display='none';
+    if(tblPins)       tblPins.style.display='none';
+    if(tblCloturer)   tblCloturer.style.display='';
   }
   // Reset session badge
   document.getElementById('session-badge-hdr').style.display='none';
@@ -4785,7 +4896,11 @@ document.addEventListener('focusin', function(e){
 // ── Header overflow menu (avatar dropdown) ──
 function toggleHdrMenu(e){ if(e)e.stopPropagation(); const m=document.getElementById('hdr-menu'); if(m) m.classList.toggle('open'); }
 function closeHdrMenu(){ const m=document.getElementById('hdr-menu'); if(m) m.classList.remove('open'); }
-document.addEventListener('click', function(e){ if(!e.target.closest('.hdr-menu-wrap')) closeHdrMenu(); });
+// ── Table floor plan overflow menu (same items, own dropdown — the floor
+// plan overlay covers #hdr, so it needs its own trigger/dropdown pair) ──
+function toggleTblHdrMenu(e){ if(e)e.stopPropagation(); const m=document.getElementById('tbl-hdr-menu'); if(m) m.classList.toggle('open'); }
+function closeTblHdrMenu(){ const m=document.getElementById('tbl-hdr-menu'); if(m) m.classList.remove('open'); }
+document.addEventListener('click', function(e){ if(!e.target.closest('.hdr-menu-wrap')) { closeHdrMenu(); closeTblHdrMenu(); } });
 
 // ═══════════════ KEYBOARD PIN INPUT ═══════════════
 document.addEventListener('keydown', function(e){
@@ -5092,6 +5207,9 @@ document.addEventListener('DOMContentLoaded', function(){
           _activeTable = null;
           updateTblBar();
           document.getElementById('btn-tables') && (document.getElementById('btn-tables').style.outline='none');
+          // Table paid — go back to the floor plan instead of leaving the
+          // cashier stuck on the now-empty order screen.
+          if(typeof showTblOverlay==='function') showTblOverlay();
         }
       };
     }
@@ -5106,6 +5224,7 @@ document.addEventListener('DOMContentLoaded', function(){
           _activeTable = null;
           updateTblBar();
           document.getElementById('btn-tables') && (document.getElementById('btn-tables').style.outline='none');
+          if(typeof showTblOverlay==='function') showTblOverlay();
         }
       };
     }
