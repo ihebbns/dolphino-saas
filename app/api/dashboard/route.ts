@@ -259,6 +259,22 @@ export async function GET(req: Request) {
       ORDER BY category ASC, item_name ASC`
   }
 
+  // A product with no 'count' movement ever recorded has a quantity of 0 by
+  // default, not because it's actually out — it just means nobody has done a
+  // physical inventory yet. Without this, every uncounted product (which on a
+  // fresh account is most of them) shows up as "needs restocking" on the very
+  // first screen an owner sees, which is exactly the kind of false alarm that
+  // trains people to stop reading alerts.
+  let everCounted = new Set<string>()
+  let movementsAvailable = false
+  try {
+    const rows = await sql`
+      SELECT DISTINCT item_id FROM stock_movements
+      WHERE restaurant_id = ${rid} AND kind = 'count'`
+    everCounted = new Set(rows.map((r: any) => r.item_id))
+    movementsAvailable = true
+  } catch { /* stock_movements not migrated yet — degrade to the old behaviour */ }
+
   // ═══ Valorisation du stock + alertes stock bas ═══
   // totalValue = SUM(quantity * cost) at CURRENT cost (this is a live snapshot,
   // not a historical figure). lowStock = tracked items at/under their threshold.
@@ -270,7 +286,8 @@ export async function GET(req: Request) {
     stockTotalValue += qty * cost
     const tracked = (it.tracked === undefined || it.tracked === null) ? true : !!it.tracked
     const threshold = (it.low_threshold === undefined || it.low_threshold === null) ? 5 : (parseInt(String(it.low_threshold)) || 0)
-    if (tracked && qty <= threshold) {
+    const neverCounted = movementsAvailable && !everCounted.has(it.item_id)
+    if (tracked && qty <= threshold && !neverCounted) {
       lowStock.push({
         item_id: it.item_id,
         item_name: it.item_name,

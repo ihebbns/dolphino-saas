@@ -79,6 +79,7 @@ export default function StockPage() {
 
   const [search, setSearch] = useState('')
   const [onlyLow, setOnlyLow] = useState(false)
+  const [category, setCategory] = useState<string | null>(null)
   const [move, setMove] = useState<{ item: Variance; kind: string } | null>(null)
   const [saving, setSaving] = useState(false)
   /** Suppliers for the receive modal dropdown. Loaded once. */
@@ -273,9 +274,16 @@ export default function StockPage() {
     else setMsg(d.error || 'Erreur')
   }
 
+  // A product with no last_count_at has never had a physical inventory —
+  // theorique is pure deltas from an assumed zero, so a negative number here
+  // means "never counted", not "oversold". Treating it as a real low-stock
+  // alert would show the owner a bare negative quantity that looks broken.
+  const isNeverCounted = (v: Variance) => !v.last_count_at
+
   const isLow = (v: Variance) => {
     const t = thresholds[v.item_id]
     if (!t || !t.tracked) return false
+    if (isNeverCounted(v)) return false
     return v.theorique <= t.low
   }
 
@@ -296,16 +304,38 @@ export default function StockPage() {
   const filtered = useMemo(() => {
     let out = variance.filter(v => isUnit(v.item_id))
     if (onlyLow) out = out.filter(isLow)
+    if (category) out = out.filter(v => (v.category || 'Autre') === category)
     if (search) {
       const q = search.toLowerCase()
       out = out.filter(v => (v.item_name || '').toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q))
     }
-    return out
-  }, [variance, search, onlyLow, thresholds, unitTracked])
+    // Low stock and never-counted first — like a POS category grid, but the
+    // thing that needs attention should never be scrolled past.
+    return [...out].sort((a, b) => {
+      const rank = (v: Variance) => (isLow(v) ? 0 : isNeverCounted(v) ? 1 : 2)
+      return rank(a) - rank(b)
+    })
+  }, [variance, search, onlyLow, category, thresholds, unitTracked])
+
+  /** Categories present among unit-tracked products, for the filter pills. */
+  const categories = useMemo(() => {
+    const set = new Set<string>()
+    variance.filter(v => isUnit(v.item_id)).forEach(v => set.add(v.category || 'Autre'))
+    return [...set].sort()
+  }, [variance, unitTracked])
 
   const unitVariance = useMemo(() => variance.filter(v => isUnit(v.item_id)), [variance, unitTracked])
   const lowList = unitVariance.filter(isLow)
-  const stockValue = unitVariance.reduce((a, v) => a + v.theorique * num(v.cost), 0)
+  // Tracked products with no baseline count yet — distinct from a real
+  // low-stock alert, and calmer: there's nothing wrong, just an action to take.
+  const neverCountedList = unitVariance.filter(v => {
+    const t = thresholds[v.item_id]
+    return !!t?.tracked && isNeverCounted(v)
+  })
+  // Never-counted products carry a meaningless negative theorique (see
+  // isNeverCounted above) — including them here would show a nonsensical
+  // negative total stock value for a café that hasn't lost any money.
+  const stockValue = unitVariance.reduce((a, v) => a + (isNeverCounted(v) ? 0 : v.theorique * num(v.cost)), 0)
   /** Products excluded because they are built from ingredients. */
   const recipeCount = variance.length - unitVariance.length
 
@@ -424,6 +454,29 @@ export default function StockPage() {
         </div>
       </div>
 
+      {unitVariance.length > 0 && (() => {
+        const lowN = lowList.length
+        const neverN = neverCountedList.length
+        const okN = Math.max(0, unitVariance.length - lowN - neverN)
+        const total = unitVariance.length
+        const pct = (n: number) => (n / total) * 100
+        return (
+          <div className="stat mb20">
+            <div className="statLabel">État du stock — {total} produit(s) suivi(s)</div>
+            <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', margin: '10px 0 8px', background: 'var(--border)' }}>
+              {okN > 0 && <div style={{ width: pct(okN) + '%', background: 'var(--ok)' }} title={okN + ' OK'} />}
+              {lowN > 0 && <div style={{ width: pct(lowN) + '%', background: 'var(--danger)' }} title={lowN + ' stock bas'} />}
+              {neverN > 0 && <div style={{ width: pct(neverN) + '%', background: 'var(--info-line, #93c5fd)' }} title={neverN + ' jamais compté'} />}
+            </div>
+            <div className="row" style={{ gap: 14, flexWrap: 'wrap', fontSize: 12 }}>
+              <span><span style={{ color: 'var(--ok)' }}>●</span> {okN} OK</span>
+              <span><span style={{ color: 'var(--danger)' }}>●</span> {lowN} stock bas</span>
+              <span><span style={{ color: 'var(--info-line, #93c5fd)' }}>●</span> {neverN} jamais compté</span>
+            </div>
+          </div>
+        )
+      })()}
+
       {lowList.length > 0 && (
         <div className="notice nWarn">
           <span className="noticeIcon">📦</span>
@@ -436,6 +489,20 @@ export default function StockPage() {
               </div>
             ))}
             {lowList.length > 8 && <div className="cMuted">…et {lowList.length - 8} autre(s)</div>}
+          </div>
+        </div>
+      )}
+
+      {neverCountedList.length > 0 && (
+        <div className="notice nInfo">
+          <span className="noticeIcon">🔢</span>
+          <div>
+            <div className="noticeTitle">{neverCountedList.length} produit(s) jamais compté(s)</div>
+            <div className="t12">Rien d&apos;anormal — faites un premier inventaire pour activer les alertes de stock bas sur ces produits.</div>
+            {neverCountedList.slice(0, 8).map(v => (
+              <div key={v.item_id}>• {v.item_emoji} {v.item_name}</div>
+            ))}
+            {neverCountedList.length > 8 && <div className="cMuted">…et {neverCountedList.length - 8} autre(s)</div>}
           </div>
         </div>
       )}
@@ -470,6 +537,15 @@ export default function StockPage() {
           <button className="chip spacer" data-on={onlyLow} onClick={() => setOnlyLow(!onlyLow)}>Stock bas seulement</button>
         )}
       </div>
+
+      {tab === 'levels' && categories.length > 1 && (
+        <div className="toolbar" style={{ marginTop: -8 }}>
+          <button className="chip" data-on={category === null} onClick={() => setCategory(null)}>Toutes catégories</button>
+          {categories.map(c => (
+            <button key={c} className="chip" data-on={category === c} onClick={() => setCategory(category === c ? null : c)}>{c}</button>
+          ))}
+        </div>
+      )}
 
       {/* Products are counted by the unit OR built from ingredients, never both.
           Say where the missing ones went, otherwise this page just looks like it
@@ -593,6 +669,7 @@ export default function StockPage() {
                 ) : filtered.map(v => {
                   const t = thresholds[v.item_id]
                   const low = isLow(v)
+                  const neverCounted = isNeverCounted(v)
                   const isRupture = !!rupture[v.item_id]
                   const trackMode = t?.mode || 'stock'
                   const modeLabel  = trackMode === 'recipe' ? 'Par recette' : trackMode === 'none' ? 'Non suivi' : 'À l\'unité'
@@ -614,20 +691,24 @@ export default function StockPage() {
                           <span className={'badge ' + modeClass} style={{ fontSize: 11 }}>{modeLabel}</span>
                           {trackMode === 'stock' && (
                             <span
-                              className={'badge ' + (low ? 'bDanger' : 'bOk')}
+                              className={'badge ' + (neverCounted ? 'bNeutral' : low ? 'bDanger' : 'bOk')}
                               style={{ fontSize: 11 }}
                             >
-                              {low ? 'stock bas' : 'stockOK'}
+                              {neverCounted ? 'jamais compté' : low ? 'stock bas' : 'stockOK'}
                             </span>
                           )}
                         </div>
                       </td>
                       <td data-label="En stock" className="tr num nowrap">
-                        <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{qtyTrim(v.theorique)}</span>
-                        {low && <span className="badge bDanger" style={{ marginLeft: 6 }}>stock bas</span>}
+                        {neverCounted ? (
+                          <span className="cMuted" style={{ fontSize: 13 }}>non compté</span>
+                        ) : (
+                          <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{qtyTrim(v.theorique)}</span>
+                        )}
+                        {low && !neverCounted && <span className="badge bDanger" style={{ marginLeft: 6 }}>stock bas</span>}
                       </td>
                       <td data-label="Seuil" className="tr num t13 cMuted">{t?.tracked ? t.low : '—'}</td>
-                      <td data-label="Valeur" className="tr num nowrap">{f3(v.theorique * num(v.cost))} DT</td>
+                      <td data-label="Valeur" className="tr num nowrap">{neverCounted ? '—' : f3(v.theorique * num(v.cost)) + ' DT'}</td>
                       <td data-label="Depuis l'inventaire" className="t12 cMuted nowrap">
                         {v.vendu_depuis > 0 && <span>vendu −{qtyTrim(v.vendu_depuis)} </span>}
                         {v.recu_depuis > 0 && <span className="cOk">reçu +{qtyTrim(v.recu_depuis)} </span>}
