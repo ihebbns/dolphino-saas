@@ -97,6 +97,34 @@ export default function CatalogPage() {
     setDirty(d => ({ ...d, [id]: true }))
   }
 
+  /** Switching a product TO "à l'unité" must never leave it "jamais compté" —
+   *  ask for the real quantity right now and record it as the first physical
+   *  count, the same guard the POS's "Gérer le menu" applies. Saved directly
+   *  (track_mode, then the count) rather than through the deferred saveRow()
+   *  flow: a count posted before track_mode='stock' is actually persisted
+   *  server-side gets silently skipped (see /api/stock's skippedCounts), so
+   *  the order here has to be real writes, not local state + "save later". */
+  async function activateStockMode(p: Product) {
+    if (!key) return
+    const input = window.prompt(`Quantité actuelle de "${p.name}" ?\nCe nombre devient le premier inventaire.`, '0')
+    if (input === null) return
+    const n = parseInt(input, 10)
+    if (!Number.isFinite(n) || n < 0) { setMsg('Quantité invalide'); return }
+    const modeRes = await apiPost('/api/stock', {
+      key, mode: 'track_mode', actor: 'web',
+      items: [{ item_id: p.item_id, item_name: p.name, item_emoji: p.emoji, track_mode: 'stock' }],
+    })
+    if (!modeRes.ok) { setMsg(modeRes.error || 'Erreur'); return }
+    const countRes = await apiPost('/api/stock', {
+      key, mode: 'count', actor: 'web', reason: 'Inventaire initial (activation du suivi)',
+      items: [{ item_id: p.item_id, item_name: p.name, item_emoji: p.emoji, quantity: n, ts: new Date().toISOString() }],
+    })
+    setMsg(countRes.ok
+      ? `✓ Suivi activé — "${p.name}" : ${n} en stock`
+      : (countRes.error || 'Erreur lors de l\'inventaire initial'))
+    await load(key)
+  }
+
   async function saveRow(p: Product) {
     if (!key) return
     setSavingId(p.item_id); setMsg('')
@@ -338,7 +366,9 @@ export default function CatalogPage() {
                             className="chip chipSm"
                             data-on={p.track_mode === m.id}
                             title={m.hint}
-                            onClick={() => edit(p.item_id, 'track_mode', m.id)}
+                            onClick={() => (m.id === 'stock' && p.track_mode !== 'stock')
+                              ? activateStockMode(p)
+                              : edit(p.item_id, 'track_mode', m.id)}
                           >{m.label}</button>
                         ))}
                       </div>
