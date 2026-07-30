@@ -1327,41 +1327,68 @@ function renderDashIngredients(){
       <div style="font-size:11px;color:var(--muted);margin-bottom:4px">🧀 ${i.name}</div>
       <div style="font-size:24px;font-weight:700;color:var(--txt);line-height:1.1">${i.quantity != null ? qtyRound(i.quantity) : '—'}</div>
       <div style="font-size:10px;color:var(--muted);margin-bottom:8px">${i.stock_unit||'unité'}${i.category?' · '+i.category:''}</div>
-      <button onclick="openIngCountInput('${ingEsc(i.ing_key)}','${ingEsc(i.name)}','${ingEsc(i.stock_unit||'')}')"
-        style="display:block;width:100%;padding:7px 4px;background:var(--gold);border:none;border-radius:5px;color:#080604;font-size:10px;font-weight:700;cursor:pointer">
-        🔢 Compter
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
+        <button onclick="ingredientAction('${ingEsc(i.ing_key)}','${ingEsc(i.name)}','${ingEsc(i.stock_unit||'')}','receive')" style="flex:1;min-width:52px;padding:6px 4px;background:var(--gold);border:none;border-radius:5px;color:#080604;font-size:10px;font-weight:700;cursor:pointer">+ Livraison</button>
+        <button onclick="ingredientAction('${ingEsc(i.ing_key)}','${ingEsc(i.name)}','${ingEsc(i.stock_unit||'')}','waste')" style="flex:1;min-width:44px;padding:6px 4px;background:var(--card);border:1px solid var(--div);border-radius:5px;color:var(--txt);font-size:10px;font-weight:700;cursor:pointer">− Perte</button>
+      </div>
+      <button onclick="ingredientAction('${ingEsc(i.ing_key)}','${ingEsc(i.name)}','${ingEsc(i.stock_unit||'')}','count')"
+        style="display:block;width:100%;padding:7px 4px;background:var(--card);border:1px solid var(--div);border-radius:5px;color:var(--txt);font-size:10px;font-weight:700;cursor:pointer">
+        = Inventaire
       </button>
     </div>`).join('');
 }
 function qtyRound(n){ const v = Math.round((Number(n)||0)*100)/100; return v; }
-function openIngCountInput(ingKey, name, unit){
+
+// Same three-action pattern as unit stock (stockAction/STOCK_ACTIONS above):
+// receive/waste/count, no free text, the button IS the reason. The backend
+// already accepts all three kinds for ingredients (see /api/me/ingredients
+// action 'moveIngredient') — this UI just never offered receive/waste before.
+const ING_ACTIONS = {
+  receive: { label:'Livraison',  field:'Quantité reçue',   icon:'📥' },
+  waste:   { label:'Perte',      field:'Quantité perdue',  icon:'🗑️' },
+  count:   { label:'Inventaire', field:'Quantité comptée', icon:'🔢' },
+};
+function ingredientAction(ingKey, name, unit, kind){
+  const a = ING_ACTIONS[kind]; if(!a) return;
   createSessionModal(`
-    <div class="session-icon">🔢</div>
-    <div class="session-title" style="font-size:15px">${name}</div>
-    <div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:10px">Comptez ce qui est réellement présent, en ${unit||'unité'}.</div>
+    <div class="session-icon">${a.icon}</div>
+    <div class="session-title" style="font-size:15px">${a.label} — ${name}</div>
+    <div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:10px">
+      ${kind==='count'
+        ? 'Comptez ce qui est réellement présent, en '+(unit||'unité')+'.'
+        : 'Ce nombre sera '+(kind==='receive'?'ajouté au':'retiré du')+' stock, en '+(unit||'unité')+'.'}
+    </div>
     <div class="session-input-row">
-      <label>Quantité comptée</label>
-      <input class="session-inp" type="number" id="ing-count-qty" min="0" step="0.001" inputmode="decimal" autocomplete="off" placeholder="0">
+      <label>${a.field}</label>
+      <input class="session-inp" type="number" id="ing-act-qty" min="0" step="0.001" inputmode="decimal" autocomplete="off" placeholder="0">
     </div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="mcancel" style="flex:1;margin:0;padding:10px" onclick="destroySessionModal()">Annuler</button>
-      <button class="btn-session-open" style="flex:1;margin:0;padding:10px" onclick="confirmIngCount('${ingEsc(ingKey)}','${ingEsc(name)}')">✓ Enregistrer</button>
+      <button class="btn-session-open" style="flex:1;margin:0;padding:10px" onclick="confirmIngredientAction('${ingEsc(ingKey)}','${ingEsc(name)}','${kind}')">✓ Enregistrer</button>
     </div>`);
-  setTimeout(()=>{ const i=document.getElementById('ing-count-qty'); if(i) i.focus(); },100);
+  setTimeout(()=>{ const i=document.getElementById('ing-act-qty'); if(i) i.focus(); },100);
 }
-async function confirmIngCount(ingKey, name){
-  const el = document.getElementById('ing-count-qty');
+async function confirmIngredientAction(ingKey, name, kind){
+  const a = ING_ACTIONS[kind]; if(!a) return;
+  const el = document.getElementById('ing-act-qty');
   const qty = parseFloat(el?.value);
-  if(!(qty >= 0)){ flash('Quantité invalide'); return; }
+  const valid = kind==='count' ? (qty>=0) : (qty>0);
+  if(!valid){ flash(kind==='count' ? 'Quantité invalide' : 'Quantité requise'); return; }
   const actor = (currentUser && USERS[currentUser]) ? USERS[currentUser].name : '';
+  const reason = kind==='receive' ? 'Livraison (caisse)' : kind==='waste' ? 'Perte (caisse)' : 'Inventaire (caisse)';
+  const applyLocally = (row) => {
+    if(!row) return;
+    if(kind==='count') row.quantity = qty;
+    else if(kind==='receive') row.quantity = (row.quantity||0) + qty;
+    else row.quantity = Math.max(0, (row.quantity||0) - qty);
+  };
   if(CLIENT_CONFIG.demoMode){
     destroySessionModal();
-    flash('✓ '+name+' — compté '+qty);
-    const row = (_ingCache||[]).find(i => i.ing_key === ingKey);
-    if(row) row.quantity = qty;
-    // Recount changes the ingredient's quantity, which may change how many
-    // portions the recipe-tracked products can still make — refresh the
-    // whole dashboard (not just the ingredients grid) so both stay in sync.
+    applyLocally((_ingCache||[]).find(i => i.ing_key === ingKey));
+    flash('✓ '+name+' — '+a.label.toLowerCase()+' enregistrée');
+    // Changing an ingredient's quantity may change how many portions the
+    // recipe-tracked products can still make — refresh the whole dashboard
+    // (not just the ingredients grid) so both stay in sync.
     showDash();
     return;
   }
@@ -1369,15 +1396,14 @@ async function confirmIngCount(ingKey, name){
     const res = await fetch(SYNC_API_URL.replace('/api/sync','/api/me/ingredients') + '?key=' + SYNC_API_KEY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Api-Key': SYNC_API_KEY },
-      body: JSON.stringify({ key: SYNC_API_KEY, action: 'moveIngredient', ing_key: ingKey, kind: 'count', qty, actor, reason: 'Inventaire (caisse)' })
+      body: JSON.stringify({ key: SYNC_API_KEY, action: 'moveIngredient', ing_key: ingKey, kind, qty, actor, reason })
     });
     const data = await res.json();
     if(data && data.ok){
       destroySessionModal();
-      flash('✓ '+name+' — compté '+qty);
-      // Reflect the new quantity in the dashboard grid without a full refetch.
+      flash('✓ '+name+' — '+a.label.toLowerCase()+' enregistrée');
       const row = (_ingCache||[]).find(i => i.ing_key === ingKey);
-      if(row) row.quantity = data.quantity != null ? data.quantity : qty;
+      if(row) row.quantity = data.quantity != null ? data.quantity : row.quantity;
       renderDashIngredients();
     } else {
       flash('⚠ '+(data?.error || 'Échec de l\'enregistrement'));
