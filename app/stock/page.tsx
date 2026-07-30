@@ -718,15 +718,16 @@ export default function StockPage() {
                         </div>
                       </td>
                       <td data-label="En stock" className="tr num nowrap">
-                        {neverCounted ? (
-                          <span className="cMuted" style={{ fontSize: 13 }}>non compté</span>
-                        ) : (
-                          <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{qtyTrim(v.theorique)}</span>
-                        )}
+                        <span className={low ? 'bold cDanger' : 'bold'} style={{ fontSize: 15 }}>{qtyTrim(v.theorique)}</span>
                         {low && !neverCounted && <span className="badge bDanger" style={{ marginLeft: 6 }}>stock bas</span>}
+                        {/* The number above IS real (receive/waste/sale deltas from
+                            the ledger) — it's just never been verified against a
+                            physical count, so a low-stock ALERT stays suppressed
+                            (see isLow) even though the figure itself is shown. */}
+                        {neverCounted && <div className="t11 cFaint" style={{ marginTop: 2 }}>estimé — jamais vérifié</div>}
                       </td>
                       <td data-label="Seuil" className="tr num t13 cMuted">{t?.tracked ? t.low : '—'}</td>
-                      <td data-label="Valeur" className="tr num nowrap">{neverCounted ? '—' : f3(v.theorique * num(v.cost)) + ' DT'}</td>
+                      <td data-label="Valeur" className="tr num nowrap">{f3(v.theorique * num(v.cost)) + ' DT'}</td>
                       <td data-label="Depuis l'inventaire" className="t12 cMuted nowrap">
                         {v.vendu_depuis > 0 && <span>vendu −{qtyTrim(v.vendu_depuis)} </span>}
                         {v.recu_depuis > 0 && <span className="cOk">reçu +{qtyTrim(v.recu_depuis)} </span>}
