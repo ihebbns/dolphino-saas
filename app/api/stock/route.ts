@@ -57,9 +57,24 @@ export async function GET(req: Request) {
   const key = getApiKey(req)
   if (!key) return cors(NextResponse.json({ ok: false, error: 'API key required' }, { status: 401 }))
 
-  const rows = await sql`SELECT id, config FROM restaurants WHERE api_key=${key} AND plan!='suspended' LIMIT 1`
+  const rows = await sql`SELECT id, config, menu_json FROM restaurants WHERE api_key=${key} AND plan!='suspended' LIMIT 1`
   if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Invalid key' }, { status: 403 }))
   const rid = rows[0].id
+
+  // Current POS menu's product ids — lets the dashboard tell "still sold at
+  // the till" apart from "orphaned stock row" (e.g. removed from the menu),
+  // which is what decides whether the delete action is offered for a row.
+  const menuItemIds = new Set<string>()
+  const menu = (rows[0].menu_json && typeof rows[0].menu_json === 'object') ? rows[0].menu_json : {}
+  for (const catVal of Object.values<any>(menu)) {
+    const menuItems = Array.isArray(catVal) ? catVal : (catVal && Array.isArray(catVal.items) ? catVal.items : [])
+    for (const it of menuItems) {
+      const rawId = it?.id ?? it?._id ?? it?.item_id
+      if (rawId !== undefined && rawId !== null && String(rawId).trim() !== '') {
+        menuItemIds.add(String(rawId).trim().slice(0, 64))
+      }
+    }
+  }
 
   // track_mode rides along so the till knows which products it may count at all.
   // is_available / rupture_at ride along too so the POS can apply web-side
@@ -137,6 +152,7 @@ export async function GET(req: Request) {
     ok: true,
     stock,
     can_make,
+    menu_item_ids: Array.from(menuItemIds),
     posStockLocked: isStockLocked(rows[0].config),
     stockTracking: isStockTracking(rows[0].config),
   }))
@@ -415,6 +431,25 @@ async function handleRupture(rid: number, body: any) {
   return cors(NextResponse.json({ ok: true, applied, rejected }))
 }
 
+// ── Delete a stock row — explicit, manual, never automatic ─────────────────
+// POST /api/stock?key=…  { mode:'delete', item_id }
+//
+// Deliberately NOT automatic (e.g. "hide anything not in the POS menu"):
+// several clients manage their catalog purely from the web with no POS to
+// cross-check against, so a product missing from a POS menu doesn't mean it's
+// invalid — only the owner knows that. This only removes the CURRENT quantity
+// row; the historical movement ledger for that item_id is left alone, so past
+// écarts and reports still add up.
+async function handleDelete(rid: number, body: any) {
+  const itemId = String(body.item_id ?? '').slice(0, 64)
+  if (!itemId) return cors(NextResponse.json({ ok: false, error: 'item_id requis' }, { status: 400 }))
+  const deleted = await sql`
+    DELETE FROM stock WHERE restaurant_id = ${rid} AND item_id = ${itemId}
+    RETURNING item_id`
+  if (!deleted.length) return cors(NextResponse.json({ ok: false, error: 'Produit introuvable' }, { status: 404 }))
+  return cors(NextResponse.json({ ok: true }))
+}
+
 // ── POST — full catalog sync (retail POS sends entire product list with current quantities) ──
 export async function POST(req: Request) {
   const key = getApiKey(req)
@@ -447,6 +482,14 @@ export async function POST(req: Request) {
   if (String(body.mode ?? '').toLowerCase() === 'rupture') {
     // No lock check — availability is always writable, from both POS and web.
     return handleRupture(rid, body)
+  }
+
+  if (String(body.mode ?? '').toLowerCase() === 'delete') {
+    // Web-only cleanup action — there is no POS control that calls this, so
+    // posStockLocked (which governs quantity edits at the till) doesn't apply.
+    // Typical use: a product was renamed/removed from the POS menu and its old
+    // stock row is now an orphan the owner wants gone from the dashboard.
+    return handleDelete(rid, body)
   }
 
   const items: {

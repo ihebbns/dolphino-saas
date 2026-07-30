@@ -76,6 +76,10 @@ export default function StockPage() {
   const [recipeProducts, setRecipeProducts] = useState<RecipeProduct[]>([])
   /** can_make: how many portions of each recipe product can be made right now. */
   const [canMake, setCanMake] = useState<Record<string, number>>({})
+  /** item_ids currently in the POS menu. Delete is only offered for a stock
+   *  row whose id is missing from this set — i.e. removed from the menu —
+   *  so an active, currently-sold product can't be deleted by mistake. */
+  const [menuItemIds, setMenuItemIds] = useState<Set<string>>(new Set())
 
   const [search, setSearch] = useState('')
   const [onlyLow, setOnlyLow] = useState(false)
@@ -185,6 +189,9 @@ export default function StockPage() {
       if (stockRows.ok && stockRows.can_make && typeof stockRows.can_make === 'object') {
         setCanMake(stockRows.can_make as Record<string, number>)
       }
+      if (stockRows.ok && Array.isArray(stockRows.menu_item_ids)) {
+        setMenuItemIds(new Set(stockRows.menu_item_ids.map(String)))
+      }
     } catch {}
 
     setLoading(false)
@@ -254,6 +261,17 @@ export default function StockPage() {
     } else {
       setMsg(d.error || 'Erreur lors du changement de disponibilité')
     }
+  }
+
+  /** Remove a stock row entirely — e.g. a product that no longer exists in the
+   *  POS menu. Manual and explicit on purpose: see handleDelete in the API
+   *  route for why this isn't automatic. */
+  async function deleteStockItem(itemId: string, itemName: string) {
+    if (!key) return
+    if (!window.confirm(`Supprimer "${itemName}" du stock ? Cette action ne peut pas être annulée.`)) return
+    const d = await apiPost('/api/stock', { key, mode: 'delete', item_id: itemId })
+    if (d.ok) { await load(key); setMsg(`✓ ${itemName} supprimé du stock`) }
+    else setMsg(d.error || 'Erreur lors de la suppression')
   }
 
   async function submitMovement(payload: any) {
@@ -742,6 +760,17 @@ export default function StockPage() {
                         <button className="btn btnSm btnPrimary" onClick={() => setMove({ item: v, kind: 'count' })}>
                           <Icon name="clipboard" size={14} /> Inventaire
                         </button>
+                        {/* Only offered for a product no longer in the POS menu —
+                            never for one still actively sold at the till. */}
+                        {menuItemIds.size > 0 && !menuItemIds.has(v.item_id) && (
+                          <button
+                            className="btn btnSm btnDanger"
+                            title="Retiré du menu de la caisse — supprimer cette fiche de stock orpheline"
+                            onClick={() => deleteStockItem(v.item_id, v.item_name || v.item_id)}
+                          >
+                            <Icon name="trash" size={14} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )
