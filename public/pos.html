@@ -698,6 +698,7 @@ button,.pc,.cat-btn,.pin-btn,.user-card,.pb,.db,.ot-btn,.tbl-card,[onclick]{-web
 <div id="tbl-bar">
   <button class="tbl-bar-btn" onclick="tblSendKitchen()" style="background:var(--green);color:#fff">🍳 Envoyer</button>
   <button class="tbl-bar-btn" onclick="tblPrintAddition()" style="background:var(--orange);color:#fff">📄 Addition</button>
+  <button class="tbl-bar-btn" onclick="showSplitBill()" style="background:var(--card);border-top:1px solid var(--div);color:var(--muted)">➗ Diviser</button>
   <button class="tbl-bar-btn" onclick="window.tblStartTransfer()" style="background:var(--card);border-top:1px solid var(--div);color:var(--muted)">🔄 Transférer</button>
   <button class="tbl-bar-btn" onclick="showTblOverlay()" style="background:var(--card);border-top:1px solid var(--div);color:var(--muted)">🍽️ Tables</button>
 </div>
@@ -5303,6 +5304,280 @@ window.tblAddTableModal = function(){
   saveTables();
   renderTblGrid();
 };
+
+// ═══════════════ SPLIT BILL (per table) ═══════════════
+// Splits ONLY the table's current unpaid items — it never touches the
+// shared cart/checkout state beyond what _tblSyncItems already keeps in
+// sync. Each part is paid and removed from tbl.items the moment it's
+// confirmed; closing the dialog mid-way just leaves whatever's left as the
+// table's live order (nothing lost, nothing double-charged) — so there is
+// no "resume" state to manage. Reopening "➗ Diviser" starts fresh on
+// whatever remains. Credit is intentionally not offered here: putting part
+// of a split bill on a client's account is a real but rare case, and half-
+// wiring it into the credit-selector flow (built for a single whole sale)
+// would be worse than not offering it.
+let _splitN = 2;
+let _splitAssign = {};      // itemKey -> [partIndex per unit]
+let _splitQueue = [];       // parts still waiting to be paid
+let _splitDiscMul = 1;
+let _splitPayMode = 'cash';
+let _splitCurrentPart = null;
+
+window.showSplitBill = function(){
+  if(!_activeTable) return;
+  var tbl = getTable(_activeTable);
+  if(!tbl || !tbl.items.length){ flash('Aucun article à répartir'); return; }
+  _splitN = 2;
+  _initSplitAssign(tbl);
+  renderSplitSetup(tbl);
+};
+
+function _initSplitAssign(tbl){
+  _splitAssign = {};
+  var counter = 0;
+  tbl.items.forEach(function(it){
+    var units = [];
+    for(var u=0; u<it.qty; u++){ units.push(counter % _splitN); counter++; }
+    _splitAssign[it.key] = units;
+  });
+}
+
+function renderSplitItemsHtml(tbl){
+  return tbl.items.map(function(it){
+    var units = _splitAssign[it.key] || [];
+    var chips = units.map(function(part, u){
+      return '<button onclick="cycleSplitUnit(\''+tblEsc(it.key)+'\','+u+')" style="width:26px;height:26px;border-radius:50%;border:1px solid var(--gold);background:var(--gold-dim);color:var(--gold-l);font-size:11px;font-weight:700;cursor:pointer">'+(part+1)+'</button>';
+    }).join('');
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--div)">'+
+      '<div style="font-size:12px;flex:1">'+it.e+' '+it.name+'<div style="font-size:10px;color:var(--muted)">'+f(it.p)+' DT / unité</div></div>'+
+      '<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+chips+'</div>'+
+    '</div>';
+  }).join('');
+}
+
+function updateSplitTotals(tbl){
+  var el = document.getElementById('split-totals');
+  if(!el) return;
+  var totals = new Array(_splitN).fill(0);
+  tbl.items.forEach(function(it){
+    (_splitAssign[it.key] || []).forEach(function(part){ totals[part] += it.p; });
+  });
+  var discMul = 1 - (tbl.disc||0)/100;
+  el.innerHTML = totals.map(function(t, i){
+    return '<div style="flex:1;min-width:70px;text-align:center;padding:6px 4px;background:var(--card);border:1px solid var(--div);border-radius:8px">'+
+      '<div style="font-size:9px;color:var(--muted)">Partie '+(i+1)+'</div>'+
+      '<div style="font-size:13px;font-weight:700;color:var(--gold-l)">'+f(t*discMul)+' DT</div>'+
+    '</div>';
+  }).join('');
+}
+
+function renderSplitSetup(tbl){
+  createSessionModal(
+    '<div class="session-icon" style="font-size:28px">➗</div>'+
+    '<div class="session-title" style="font-size:16px">Diviser l\'addition — Table '+tbl.num+'</div>'+
+    '<div style="display:flex;gap:6px;justify-content:center;margin:8px 0">'+
+      [2,3,4,5,6].map(function(k){
+        return '<button onclick="setSplitPartsCount('+k+')" style="padding:8px 14px;border-radius:8px;border:1px solid '+(k===_splitN?'var(--gold)':'var(--div)')+';background:'+(k===_splitN?'var(--gold-dim)':'var(--card)')+';color:'+(k===_splitN?'var(--gold-l)':'var(--txt)')+';font-weight:700;cursor:pointer">'+k+'</button>';
+      }).join('')+
+    '</div>'+
+    '<div style="font-size:10px;color:var(--muted);text-align:center;margin-bottom:8px">Touchez un article pour changer sa part.</div>'+
+    '<div id="split-items" style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">'+renderSplitItemsHtml(tbl)+'</div>'+
+    '<div id="split-totals" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button class="mcancel" style="flex:1;margin:0;padding:10px" onclick="destroySessionModal()">Annuler</button>'+
+      '<button class="btn-session-open" style="flex:1;margin:0;padding:10px" onclick="startSplitPayments()">✓ Répartir & encaisser</button>'+
+    '</div>'
+  );
+  updateSplitTotals(tbl);
+}
+
+window.setSplitPartsCount = function(n){
+  var tbl = getTable(_activeTable);
+  if(!tbl) return;
+  _splitN = n;
+  _initSplitAssign(tbl);
+  renderSplitSetup(tbl);
+};
+
+window.cycleSplitUnit = function(key, u){
+  var tbl = getTable(_activeTable);
+  if(!tbl || !_splitAssign[key]) return;
+  _splitAssign[key][u] = (_splitAssign[key][u] + 1) % _splitN;
+  var itemsEl = document.getElementById('split-items');
+  if(itemsEl) itemsEl.innerHTML = renderSplitItemsHtml(tbl);
+  updateSplitTotals(tbl);
+};
+
+window.startSplitPayments = function(){
+  var tbl = getTable(_activeTable);
+  if(!tbl) return;
+  var buckets = [];
+  for(var i=0;i<_splitN;i++) buckets.push({});
+  tbl.items.forEach(function(it){
+    (_splitAssign[it.key] || []).forEach(function(part){
+      var b = buckets[part];
+      if(!b[it.key]) b[it.key] = Object.assign({}, it, {qty:0});
+      b[it.key].qty++;
+    });
+  });
+  var parts = buckets.map(function(b){ return Object.values(b); }).filter(function(arr){ return arr.length; });
+  if(!parts.length){ flash('⚠ Aucun article réparti'); return; }
+  destroySessionModal();
+  _splitQueue = parts;
+  _splitDiscMul = 1 - (tbl.disc||0)/100;
+  advanceSplitPayment();
+};
+
+function advanceSplitPayment(){
+  if(!_splitQueue.length){ finalizeSplitIfDone(); return; }
+  _splitCurrentPart = _splitQueue.shift();
+  renderSplitPaymentModal(_splitCurrentPart);
+}
+
+function renderSplitPaymentModal(part){
+  var sub = part.reduce(function(a,i){ return a+i.p*i.qty; }, 0);
+  var g = Math.round(sub * _splitDiscMul * 1000) / 1000;
+  _splitPayMode = 'cash';
+  var remaining = _splitQueue.length;
+  createSessionModal(
+    '<div class="session-icon" style="font-size:28px">💳</div>'+
+    '<div class="session-title" style="font-size:16px">Encaisser cette partie'+(remaining?' ('+remaining+' restante(s))':'')+'</div>'+
+    '<div style="max-height:150px;overflow-y:auto;font-size:12px;margin:8px 0">'+
+      part.map(function(it){ return '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>'+it.qty+'x '+it.e+' '+it.name+'</span><span>'+f(it.p*it.qty)+' DT</span></div>'; }).join('')+
+    '</div>'+
+    '<div style="text-align:center;font-size:24px;font-weight:700;color:var(--gold-l);margin-bottom:10px">'+f(g)+' DT</div>'+
+    '<div id="split-pay-modes" style="display:flex;gap:6px;justify-content:center;margin-bottom:8px">'+
+      [['cash','💵 Espèces'],['card','💳 Carte'],['ticket','🎫 Ticket']].map(function(m){
+        return '<button onclick="setSplitPayMode(\''+m[0]+'\')" id="split-mode-'+m[0]+'" style="padding:8px 10px;border-radius:8px;border:1px solid '+(m[0]==='cash'?'var(--gold)':'var(--div)')+';background:'+(m[0]==='cash'?'var(--gold-dim)':'var(--card)')+';color:'+(m[0]==='cash'?'var(--gold-l)':'var(--txt)')+';font-size:11px;font-weight:700;cursor:pointer">'+m[1]+'</button>';
+      }).join('')+
+    '</div>'+
+    '<div id="split-cash-row" class="session-input-row">'+
+      '<label>Reçu (DT)</label>'+
+      '<input class="session-inp" type="number" id="split-cr" step="0.1" inputmode="decimal" autocomplete="off" placeholder="'+f(g)+'" oninput="updateSplitChange('+g+')">'+
+    '</div>'+
+    '<div id="split-change" style="text-align:center;font-size:12px;color:var(--muted);min-height:16px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button class="mcancel" style="flex:1;margin:0;padding:10px" onclick="postponeSplit()">⏸ Reporter</button>'+
+      '<button class="btn-session-open" style="flex:1;margin:0;padding:10px" onclick="confirmSplitPayment('+g+')">✓ Encaisser</button>'+
+    '</div>'
+  );
+  setTimeout(function(){ var i=document.getElementById('split-cr'); if(i) i.focus(); }, 100);
+}
+
+window.setSplitPayMode = function(mode){
+  _splitPayMode = mode;
+  ['cash','card','ticket'].forEach(function(m){
+    var btn = document.getElementById('split-mode-'+m);
+    if(!btn) return;
+    var on = m===mode;
+    btn.style.borderColor = on ? 'var(--gold)' : 'var(--div)';
+    btn.style.background = on ? 'var(--gold-dim)' : 'var(--card)';
+    btn.style.color = on ? 'var(--gold-l)' : 'var(--txt)';
+  });
+  var cashRow = document.getElementById('split-cash-row');
+  if(cashRow) cashRow.style.display = mode==='cash' ? '' : 'none';
+  var chg = document.getElementById('split-change');
+  if(chg) chg.textContent = '';
+};
+
+window.updateSplitChange = function(g){
+  var el = document.getElementById('split-cr');
+  var r = el ? (parseFloat(el.value)||0) : 0;
+  var chg = document.getElementById('split-change');
+  if(!chg) return;
+  chg.textContent = (r>=g && g>0) ? ('Monnaie à rendre : '+f(r-g)+' DT') : '';
+};
+
+window.postponeSplit = function(){
+  if(_splitCurrentPart){ _splitQueue.unshift(_splitCurrentPart); _splitCurrentPart = null; }
+  destroySessionModal();
+  var tbl = getTable(_activeTable);
+  if(tbl){ items = JSON.parse(JSON.stringify(tbl.items)); renderOrd(); }
+  _splitQueue = [];
+  flash('⏸ Partage suspendu — articles restants toujours sur la table');
+};
+
+window.confirmSplitPayment = async function(g){
+  var tbl = getTable(_activeTable);
+  if(!tbl){ destroySessionModal(); return; }
+  var received = g;
+  if(_splitPayMode==='cash'){
+    var el = document.getElementById('split-cr');
+    received = el ? (parseFloat(el.value)||0) : 0;
+    if(received < g){ flash('⚠ Montant reçu insuffisant'); return; }
+  }
+  var part = _splitCurrentPart;
+  destroySessionModal();
+  await recordSplitSale(tbl, part, _splitPayMode, received, g);
+  _removeSplitItemsFromTable(tbl, part);
+  _splitCurrentPart = null;
+  advanceSplitPayment();
+};
+
+function _removeSplitItemsFromTable(tbl, part){
+  part.forEach(function(paidIt){
+    var line = tbl.items.find(function(x){ return x.key===paidIt.key; });
+    if(!line) return;
+    line.qty -= paidIt.qty;
+  });
+  tbl.items = tbl.items.filter(function(x){ return x.qty > 0; });
+  saveTables();
+  if(_activeTable === tbl.id){ items = JSON.parse(JSON.stringify(tbl.items)); renderOrd(); }
+}
+
+async function recordSplitSale(tbl, partItems, payMode, received, g){
+  var now = new Date();
+  var businessDate = todayKey();
+  var saleMargin = 0;
+  partItems.forEach(function(it){
+    var mi = Object.values(MENU).flatMap(function(c){ return c.items; }).find(function(x){ return x.id===it.id; });
+    if(mi && mi.cost) saleMargin += (it.p-mi.cost)*it.qty;
+  });
+  var saleItems = partItems.map(function(it){ return Object.assign({}, it, {c: costOf(it.id)}); });
+  var cogs = saleItems.reduce(function(a,i){ return a+(i.c||0)*i.qty; }, 0);
+  var sub = partItems.reduce(function(a,i){ return a+i.p*i.qty; }, 0);
+  var monnaie = payMode==='cash' ? (received - g) : 0;
+  var od = {
+    num: tbl.orderNum || orderNum, margin: saleMargin, cogs,
+    date: now.toLocaleDateString('fr-TN'), time: now.toLocaleTimeString('fr-TN'),
+    items: saleItems, s: sub, d: sub-g, disc: tbl.disc||0, g, payMode, r: payMode==='cash'?received:g, monnaie,
+    businessDate, type:'place', cliName:'', cliTel:'',
+    cashier: USERS[currentUser].name, sessionId: currentSession?currentSession.sid:'',
+    splitOfTable: tbl.num,
+  };
+  if(window.electronAPI && window.electronAPI.saveSale){
+    try{
+      var saved = await window.electronAPI.saveSale(od);
+      if(saved && saved.id) od.id = saved.id;
+    }catch(e){}
+  }
+  hist.push(od); daily += g; orderNum++;
+  var dtEl = document.getElementById('dt');
+  if(dtEl) dtEl.textContent = 'Ventes du jour : '+f(daily)+' DT';
+  decreaseStock(od.items);
+  syncSale(od);
+  try{ if(payMode==='cash') openDrawer('cash_sale', g, ''); }catch(e){}
+  saveState();
+  flash('✓ Partie encaissée — '+f(g)+' DT');
+  return od;
+}
+
+function finalizeSplitIfDone(){
+  var tbl = getTable(_activeTable);
+  if(!tbl) return;
+  if(tbl.items.length===0){
+    tbl.status='free'; tbl.disc=0; tbl.sentItems=[]; tbl.orderNum=null;
+    saveTables();
+    _activeTable = null;
+    items = [];
+    updateTblBar();
+    document.getElementById('btn-tables') && (document.getElementById('btn-tables').style.outline='none');
+    flash('✓ Addition entièrement réglée — Table '+tbl.num);
+    if(typeof showTblOverlay==='function') showTblOverlay();
+  } else {
+    flash('✓ Partie réglée — il reste des articles sur la table');
+  }
+}
 
 })();
 
