@@ -5036,12 +5036,14 @@ function tblDoTransfer(fromId, toId){
     return;
   }
   to.items = from.items; to.disc = from.disc; to.note = from.note;
-  to.status = from.status; to.sentItems = from.sentItems || [];
-  from.items = []; from.disc = 0; from.note = ''; from.status = 'free'; from.sentItems = [];
+  to.status = from.status; to.sentItems = from.sentItems || []; to.orderNum = from.orderNum;
+  from.items = []; from.disc = 0; from.note = ''; from.status = 'free'; from.sentItems = []; from.orderNum = null;
   if(_activeTable === fromId){
     _activeTable = toId;
     items = JSON.parse(JSON.stringify(to.items));
     disc = to.disc;
+    currentOrderNum = to.orderNum;
+    document.getElementById('onum').textContent='#'+String(currentOrderNum).padStart(3,'0');
   }
   saveTables();
   hideTblOverlay();
@@ -5106,6 +5108,13 @@ window._tblSelect = function(id){
   var tbl = getTable(id);
   if(!tbl) return;
   _activeTable = id;
+  // A table keeps ONE ticket number for its whole life at the till — assigned
+  // the first time it's opened, not at checkout. Without this, #onum never
+  // changed on table select, so every table showed whatever number was left
+  // over from login or the last checkout (usually "#001" all day).
+  if(!tbl.orderNum){ tbl.orderNum = orderNum++; saveTables(); }
+  currentOrderNum = tbl.orderNum;
+  document.getElementById('onum').textContent='#'+String(currentOrderNum).padStart(3,'0');
   // Load table's items into the POS
   items = JSON.parse(JSON.stringify(tbl.items));
   disc = tbl.disc || 0;
@@ -5205,7 +5214,7 @@ document.addEventListener('DOMContentLoaded', function(){
         // Clear active table after encaissement
         if(_activeTable){
           var tbl = getTable(_activeTable);
-          if(tbl){ tbl.items=[]; tbl.disc=0; tbl.status='free'; tbl.sentItems=[]; saveTables(); }
+          if(tbl){ tbl.items=[]; tbl.disc=0; tbl.status='free'; tbl.sentItems=[]; tbl.orderNum=null; saveTables(); }
           _activeTable = null;
           updateTblBar();
           document.getElementById('btn-tables') && (document.getElementById('btn-tables').style.outline='none');
@@ -5222,7 +5231,7 @@ document.addEventListener('DOMContentLoaded', function(){
         // The credit sale is now actually recorded — safe to free the table.
         if(_activeTable){
           var tbl = getTable(_activeTable);
-          if(tbl){ tbl.items=[]; tbl.disc=0; tbl.status='free'; tbl.sentItems=[]; saveTables(); }
+          if(tbl){ tbl.items=[]; tbl.disc=0; tbl.status='free'; tbl.sentItems=[]; tbl.orderNum=null; saveTables(); }
           _activeTable = null;
           updateTblBar();
           document.getElementById('btn-tables') && (document.getElementById('btn-tables').style.outline='none');
