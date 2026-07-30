@@ -5455,12 +5455,14 @@ function renderSplitPaymentModal(part){
       '<label>Reçu (DT)</label>'+
       '<input class="session-inp" type="number" id="split-cr" step="0.1" inputmode="decimal" autocomplete="off" placeholder="'+f(g)+'" oninput="updateSplitChange('+g+')">'+
     '</div>'+
+    '<div id="split-qa" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:6px 0"></div>'+
     '<div id="split-change" style="text-align:center;font-size:12px;color:var(--muted);min-height:16px"></div>'+
     '<div style="display:flex;gap:8px;margin-top:10px">'+
       '<button class="mcancel" style="flex:1;margin:0;padding:10px" onclick="postponeSplit()">⏸ Reporter</button>'+
       '<button class="btn-session-open" style="flex:1;margin:0;padding:10px" onclick="confirmSplitPayment('+g+')">✓ Encaisser</button>'+
     '</div>'
   );
+  renderSplitQA(g);
   setTimeout(function(){ var i=document.getElementById('split-cr'); if(i) i.focus(); }, 100);
 }
 
@@ -5476,8 +5478,35 @@ window.setSplitPayMode = function(mode){
   });
   var cashRow = document.getElementById('split-cash-row');
   if(cashRow) cashRow.style.display = mode==='cash' ? '' : 'none';
+  var qaRow = document.getElementById('split-qa');
+  if(qaRow) qaRow.style.display = mode==='cash' ? '' : 'none';
   var chg = document.getElementById('split-change');
   if(chg) chg.textContent = '';
+};
+
+// Same quick-amount logic as the main till (renderQA/setRA) — most tills
+// here have no physical keyboard, so typing an exact cash amount received
+// is the wrong default; tapping a rounded amount is the normal flow.
+function renderSplitQA(g){
+  var el = document.getElementById('split-qa');
+  if(!el) return;
+  var exact = Math.round(g*1000)/1000;
+  var a = [exact, Math.ceil(g/5)*5, Math.ceil(g/10)*10, Math.ceil(g/20)*20, 50, 100]
+    .filter(function(v,i,arr){ return arr.indexOf(v)===i && v>=g; }).slice(0,5);
+  el.innerHTML = a.map(function(v){
+    return '<button onclick="setSplitRA('+v+','+g+')" style="padding:8px 12px;border-radius:8px;border:1px solid '+(v===exact?'var(--gold)':'var(--div)')+';background:var(--card);color:'+(v===exact?'var(--gold-l)':'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer">'+(v===exact?f(v):v)+' DT</button>';
+  }).join('');
+}
+
+window.setSplitRA = function(v, g){
+  var el = document.getElementById('split-cr');
+  if(el) el.value = v;
+  updateSplitChange(g);
+  document.querySelectorAll('#split-qa button').forEach(function(b){
+    var isSel = parseFloat(b.textContent)===v;
+    b.style.borderColor = isSel ? 'var(--gold)' : 'var(--div)';
+    b.style.color = isSel ? 'var(--gold-l)' : 'var(--muted)';
+  });
 };
 
 window.updateSplitChange = function(g){
