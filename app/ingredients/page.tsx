@@ -9,7 +9,8 @@
 // Recipes are OPTIONAL. A product without one keeps its manual cost and
 // deducts nothing — you can cost your five biggest sellers and ignore the rest.
 // ═══════════════════════════════════════════════════════════════════
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost, f3, num,
   qtyTrim, qtyDelta, LevelMeter, BarList, DaysCover, dt,
@@ -23,7 +24,11 @@ type Ing = {
   tracked: boolean; archived: boolean
   stock_value: number; is_low: boolean; used_in_recipes: number
 }
-type Product = { item_id: string; name: string; category: string; emoji: string; price: number }
+type Product = {
+  item_id: string; name: string; category: string; emoji: string; price: number
+  /** Size labels from the POS's own variant array (e.g. ["Moy","Max"]). [] = no size split. */
+  variants: string[]
+}
 /** 30-day rollup per ingredient, from the movement ledger. */
 type Usage = {
   ing_key: string
@@ -57,7 +62,7 @@ const MOVE_LABEL: Record<Movement['kind'], string> = {
   count: 'Comptage',
 }
 type Recipe = {
-  item_id: string; item_name: string; cost_mode: 'auto' | 'manual'
+  item_id: string; variant_key: string; item_name: string; cost_mode: 'auto' | 'manual'
   cost_override: number | null; enabled: boolean; yield_qty: number
   cost_computed: number; cost_effective: number
   nb_lines: number; lines_missing_cost: number
@@ -87,7 +92,19 @@ const PRESETS = [
 ]
 
 export default function IngredientsPage() {
+  // useSearchParams() (used only for the ?edit= deep link from /catalog and
+  // /stock) opts this page into CSR up to the nearest Suspense boundary —
+  // without one, `next build` fails prerendering this page entirely.
+  return (
+    <Suspense fallback={<Shell active="/ingredients" title="Ingrédients & recettes" restName=""><Loading /></Shell>}>
+      <IngredientsPageInner />
+    </Suspense>
+  )
+}
+
+function IngredientsPageInner() {
   const { key, checked } = useApiKey()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
@@ -116,8 +133,11 @@ export default function IngredientsPage() {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [editIng, setEditIng] = useState<Partial<Ing> | null>(null)
-  const [editRec, setEditRec] = useState<{ product: Product; recipe: Recipe | null } | null>(null)
+  const [editRec, setEditRec] = useState<{ product: Product; variantKey: string; recipe: Recipe | null } | null>(null)
   const [saving, setSaving] = useState(false)
+  // Guards against re-opening the modal on every reload() after a save — the
+  // deep link should land once, not fight the user for control of the modal.
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false)
 
   useEffect(() => {
     if (key) load(key)
@@ -235,17 +255,51 @@ export default function IngredientsPage() {
     })
   }, [views, blockedByIng])
 
+  // item_id -> variant_key ('' = whole item) -> recipe. A variant-split
+  // product (Pizza Moy/Max) can have a different recipe per size instead of
+  // one blended figure.
   const recByItem = useMemo(() => {
-    const m: Record<string, Recipe> = {}
-    for (const r of recipes) m[r.item_id] = r
+    const m: Record<string, Record<string, Recipe>> = {}
+    for (const r of recipes) (m[r.item_id] ||= {})[r.variant_key || ''] = r
     return m
   }, [recipes])
+
+  // /catalog links here with ?edit=<item_id>&variant=<label> so "choisir
+  // Par recette" and "construire la recette" feel like one action instead of
+  // landing on an unrelated page and hunting for the same product again.
+  useEffect(() => {
+    if (deepLinkHandled || !products.length) return
+    const itemId = searchParams.get('edit')
+    if (!itemId) return
+    const variantKey = searchParams.get('variant') || ''
+    const product = products.find(p => p.item_id === itemId)
+    if (product) {
+      setTab('rec')
+      const recipe = recByItem[itemId]?.[variantKey] || null
+      setEditRec({ product, variantKey, recipe })
+    }
+    setDeepLinkHandled(true)
+  }, [products, recByItem, searchParams, deepLinkHandled])
 
   const visibleProducts = useMemo(() => {
     if (!search) return products
     const q = search.toLowerCase()
     return products.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q))
   }, [products, search])
+
+  // One row per (product, variant) — a size-split product gets one row per
+  // size instead of one row hiding which sizes have a recipe and which don't.
+  const productRows = useMemo(() => {
+    const rows: { product: Product; variantKey: string; label: string }[] = []
+    for (const p of visibleProducts) {
+      if (p.variants && p.variants.length > 0) {
+        for (const v of p.variants) rows.push({ product: p, variantKey: v, label: v })
+      } else {
+        rows.push({ product: p, variantKey: '', label: '' })
+      }
+    }
+    return rows
+  }, [visibleProducts])
 
   if (!checked || loading) return <Shell active="/ingredients" title="Ingrédients & recettes" restName={restName}><Loading /></Shell>
   if (!key) return <LoginGate />
@@ -690,20 +744,20 @@ export default function IngredientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleProducts.length === 0 ? (
+                {productRows.length === 0 ? (
                   <tr><td colSpan={7}><Empty icon="clipboard" text="Aucun produit. Le menu vient de la caisse." /></td></tr>
-                ) : visibleProducts.map(p => {
-                  const r = recByItem[p.item_id]
+                ) : productRows.map(({ product: p, variantKey, label }) => {
+                  const r = recByItem[p.item_id]?.[variantKey]
                   const cost = r ? r.cost_effective : 0
                   const marge = p.price - cost
                   const margePct = p.price > 0 ? Math.round((marge / p.price) * 100) : 0
                   return (
-                    <tr key={p.item_id}>
+                    <tr key={p.item_id + '|' + variantKey}>
                       <td>
                         <div className="row">
                           <span>{p.emoji}</span>
                           <div>
-                            <div className="strong">{p.name}</div>
+                            <div className="strong">{p.name}{label && <span className="badge bNeutral" style={{ marginLeft: 6 }}>{label}</span>}</div>
                             <div className="t11 cFaint">{p.category}</div>
                           </div>
                         </div>
@@ -766,7 +820,7 @@ export default function IngredientsPage() {
                         )}
                       </td>
                       <td className="tr actionCell">
-                        <button className="btn btnSm" onClick={() => setEditRec({ product: p, recipe: r || null })}>
+                        <button className="btn btnSm" onClick={() => setEditRec({ product: p, variantKey, recipe: r || null })}>
                           {r ? 'Modifier' : '+ Recette'}
                         </button>
                       </td>
@@ -803,11 +857,11 @@ export default function IngredientsPage() {
       )}
       {editRec && (
         <RecipeModal
-          product={editRec.product} recipe={editRec.recipe} ings={ings.filter(i => !i.archived)}
+          product={editRec.product} variantKey={editRec.variantKey} recipe={editRec.recipe} ings={ings.filter(i => !i.archived)}
           saving={saving}
           onClose={() => setEditRec(null)}
-          onSave={v => save('saveRecipe', v)}
-          onDelete={() => save('deleteRecipe', { item_id: editRec.product.item_id })}
+          onSave={v => save('saveRecipe', { ...v, variant_key: editRec.variantKey })}
+          onDelete={() => save('deleteRecipe', { item_id: editRec.product.item_id, variant_key: editRec.variantKey })}
         />
       )}
     </Shell>
@@ -1138,7 +1192,7 @@ function IngredientModal({ value, saving, onClose, onSave }: any) {
 }
 
 // ─────────────────────────────────────────────────────────────
-function RecipeModal({ product, recipe, ings, saving, onClose, onSave, onDelete }: any) {
+function RecipeModal({ product, variantKey, recipe, ings, saving, onClose, onSave, onDelete }: any) {
   const [lines, setLines] = useState<{ ing_key: string; qty: number | string }[]>(
     recipe?.lines?.length ? recipe.lines.map((l: any) => ({ ...l })) : [{ ing_key: '', qty: '' }]
   )
@@ -1173,9 +1227,13 @@ function RecipeModal({ product, recipe, ings, saving, onClose, onSave, onDelete 
       <div className="modal" style={{ maxWidth: 660 }} onClick={e => e.stopPropagation()}>
         <div className="modalHead">
           <div>
-            <div className="modalTitle">{product.emoji} {product.name}</div>
+            <div className="modalTitle">
+              {product.emoji} {product.name}
+              {variantKey && <span className="badge bNeutral" style={{ marginLeft: 8 }}>{variantKey}</span>}
+            </div>
             <div className="t12 cMuted">
               Prix de vente {f3(product.price)} DT <span className="owned">caisse</span>
+              {variantKey && <> — recette spécifique à cette taille, indépendante des autres</>}
             </div>
           </div>
           <button className="btn btnGhost btnSm spacer" onClick={onClose}>✕</button>

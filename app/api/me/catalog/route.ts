@@ -115,6 +115,10 @@ type CatalogItem = {
   tracked: boolean
   low_threshold: number
   barcode: string
+  // Set only from menu_json's own tracked:false — never overwritten by the
+  // stock-row merge below, so it survives as the fallback signal even once a
+  // stock row exists but never got an explicit track_mode of its own.
+  menu_untracked?: boolean
 }
 
 // Read all stock rows, tolerating a DB where tracked/low_threshold haven't been
@@ -169,7 +173,11 @@ export async function GET(req: Request) {
           price: itemPrice(it),
           category: String(catName).slice(0, 80),
           cost: 0, sell_price: 0, quantity: 0,
-          tracked: true, low_threshold: 5, barcode: '',
+          // The POS's own tracked:false is a deliberate statement (made-to-order,
+          // nothing to count) — it must survive into the catalog view, not get
+          // silently overwritten by the "tracked by default" assumption.
+          tracked: it.tracked !== false, low_threshold: 5, barcode: '',
+          menu_untracked: it.tracked === false,
         })
       }
     }
@@ -226,15 +234,18 @@ export async function GET(req: Request) {
     } catch { /* recipes not migrated — no product has one */ }
 
     const products = Array.from(catalog.values())
-      .map(p => ({
-        ...p,
-        has_recipe: withRecipe.has(p.item_id),
-        // Explicit column wins; otherwise infer exactly as the server does when
-        // deciding what a sale consumes, so the UI cannot show one thing while
-        // the sale path does another.
-        track_mode: (p as any).track_mode
-          ?? (withRecipe.has(p.item_id) ? 'recipe' : 'stock'),
-      }))
+      .map(p => {
+        const { menu_untracked, ...rest } = p
+        return {
+          ...rest,
+          has_recipe: withRecipe.has(p.item_id),
+          // Explicit column wins; otherwise infer exactly as the server does when
+          // deciding what a sale consumes (see resolveTrackModes in lib/stock.ts),
+          // so the UI cannot show one thing while the sale path does another.
+          track_mode: (p as any).track_mode
+            ?? (withRecipe.has(p.item_id) ? 'recipe' : menu_untracked ? 'none' : 'stock'),
+        }
+      })
       .sort((a, b) => (a.category || '').localeCompare(b.category || '') || (a.name || '').localeCompare(b.name || ''))
 
     return cors(NextResponse.json({ ok: true, name: rows[0].name, count: products.length, products }))

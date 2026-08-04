@@ -616,7 +616,7 @@ export async function PATCH(req: Request) {
   let body: any
   try { body = await req.json() } catch { return cors(NextResponse.json({ ok: false, error: 'Bad JSON' }, { status: 400 })) }
 
-  const sold: { item_id: string; qty: number; uid?: string; ts?: string }[] = body.sold || []
+  const sold: { item_id: string; qty: number; uid?: string; ts?: string; variant?: string; variant_key?: string }[] = body.sold || []
   if (!sold.length) return cors(NextResponse.json({ ok: true, updated: 0 }))
 
   const actor      = String(body.actor ?? '').slice(0, 80)
@@ -705,6 +705,10 @@ export async function PATCH(req: Request) {
         uid: it.uid,
         ts: it.ts ?? null,
         sale_num: saleNum,
+        // POS-reported size for variant products (e.g. "Moyenne"/"Maxi") —
+        // '' when the item has no size split. Lets a Pizza recipe deduct
+        // different ingredient quantities depending which size sold.
+        variant_key: String(it.variant ?? it.variant_key ?? '').slice(0, 40),
       }))
     if (recipeLines.length) {
       ingredients = await consumeForSale(rid, recipeLines, { actor, source: 'pos', saleNum })

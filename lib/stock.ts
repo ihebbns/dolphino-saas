@@ -85,6 +85,29 @@ export async function resolveTrackModes(
     for (const r of rows) withRecipe.add(String(r.item_id))
   } catch { /* recipes not migrated — leave the set empty */ }
 
+  // Which of these products does the POS menu itself mark tracked:false?
+  // (e.g. made-to-order drinks — nothing to count units of). This is the
+  // client's own stated intent from the till, and it must win over the
+  // "count units by default" fallback below, or every made-to-order item
+  // with no stock row and no recipe silently starts decrementing a quantity
+  // nobody ever counted.
+  const untrackedByMenu = new Set<string>()
+  try {
+    const rows = await sql`SELECT menu_json FROM restaurants WHERE id = ${rid} LIMIT 1`
+    const menu = rows[0]?.menu_json
+    if (menu && typeof menu === 'object') {
+      for (const catVal of Object.values(menu as Record<string, any>)) {
+        const items = Array.isArray(catVal) ? catVal : (catVal?.items ?? [])
+        for (const it of items) {
+          if (it && it.tracked === false) untrackedByMenu.add(String(it.id))
+        }
+      }
+    }
+  } catch { /* menu_json missing/malformed — leave the set empty */ }
+
+  const fallbackMode = (id: string): TrackMode =>
+    withRecipe.has(id) ? 'recipe' : untrackedByMenu.has(id) ? 'none' : 'stock'
+
   let haveColumn = true
   try {
     const rows = await sql`
@@ -101,14 +124,15 @@ export async function resolveTrackModes(
   for (const id of ids) {
     if (out.has(id)) continue
     // No stock row, or no column yet: a recipe is the deliberate statement of
-    // intent, so it wins. Otherwise count units.
-    out.set(id, withRecipe.has(id) ? 'recipe' : 'stock')
+    // intent, so it wins. Otherwise defer to the POS's own tracked flag, and
+    // only count units if nothing says otherwise.
+    out.set(id, fallbackMode(id))
   }
 
   // Column missing entirely: ignore whatever we managed to read and infer for
   // everything, so behaviour is consistent rather than half-and-half.
   if (!haveColumn) {
-    for (const id of ids) out.set(id, withRecipe.has(id) ? 'recipe' : 'stock')
+    for (const id of ids) out.set(id, fallbackMode(id))
   }
 
   return out

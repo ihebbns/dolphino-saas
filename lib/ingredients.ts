@@ -237,10 +237,13 @@ export type SoldLine = {
   uid?: string
   ts?: string | null
   sale_num?: number | null
+  /** POS variant label (e.g. "Moyenne"/"Maxi"), '' or absent = no size split. */
+  variant_key?: string | null
 }
 
 type RecipeLine = {
   item_id: string
+  variant_key: string
   ing_key: string
   qty: number                 // in the ingredient's RECIPE unit
   conversion_factor: number   // recipe units per stock unit
@@ -248,6 +251,11 @@ type RecipeLine = {
   enabled: boolean
   tracked: boolean
 }
+
+// Recipes are keyed by (item_id, variant_key) — '' means "whole item, no
+// size split". A composite string key keeps the existing Map<string,...>
+// shape working everywhere instead of introducing a second index dimension.
+export const recipeKey = (itemId: string, variantKey?: string | null) => itemId + '|' + (variantKey || '')
 
 /**
  * Turn sold products into ingredient consumption.
@@ -275,11 +283,12 @@ export async function consumeForSale(
   let rows: any[] = []
   try {
     rows = await sql`
-      SELECT rl.item_id, rl.ing_key, rl.qty::float AS qty,
+      SELECT rl.item_id, rl.variant_key, rl.ing_key, rl.qty::float AS qty,
              i.conversion_factor::float AS conversion_factor,
              r.yield_qty::float AS yield_qty, r.enabled, i.tracked
       FROM recipe_lines rl
       JOIN recipes     r ON r.restaurant_id = rl.restaurant_id AND r.item_id = rl.item_id
+                         AND r.variant_key = rl.variant_key
       JOIN ingredients i ON i.restaurant_id = rl.restaurant_id AND i.ing_key = rl.ing_key
       WHERE rl.restaurant_id = ${rid}
         AND rl.item_id = ANY(${itemIds})
@@ -294,14 +303,19 @@ export async function consumeForSale(
 
   const byItem = new Map<string, RecipeLine[]>()
   for (const r of rows as RecipeLine[]) {
-    const arr = byItem.get(r.item_id) || []
+    const key = recipeKey(r.item_id, r.variant_key)
+    const arr = byItem.get(key) || []
     arr.push(r)
-    byItem.set(r.item_id, arr)
+    byItem.set(key, arr)
   }
 
   let applied = 0
   for (const line of lines) {
-    const recipe = byItem.get(clip(line.item_id, 64))
+    const id = clip(line.item_id, 64)
+    // Exact variant recipe first; a variant with no recipe of its own falls
+    // back to the whole-item recipe (variant_key ''), so adding a size split
+    // for ONE size doesn't silently stop deducting the others.
+    const recipe = byItem.get(recipeKey(id, line.variant_key)) ?? byItem.get(recipeKey(id, ''))
     if (!recipe) continue                       // product has no recipe: fine
 
     for (const rl of recipe) {
@@ -374,6 +388,7 @@ export async function ingredientCosts(rid: number): Promise<Map<string, IngCost>
 
 export type RecipeCost = {
   itemId: string
+  variantKey: string         // '' = whole item, no size split
   computed: number          // what the lines add up to
   mode: 'auto' | 'manual'
   override: number | null
@@ -387,6 +402,9 @@ export type RecipeCost = {
  * Both figures are returned on purpose. An override that hides the computed
  * value turns a decision into a guess: showing "calculé 4,200 · utilisé 5,000"
  * is what makes a stale recipe or a bad assumption visible.
+ *
+ * Keyed by recipeKey(item_id, variant_key) — a variant-split product (Pizza
+ * Moyenne/Maxi) gets one entry per size instead of one blended figure.
  */
 export async function recipeCosts(rid: number): Promise<Map<string, RecipeCost>> {
   const out = new Map<string, RecipeCost>()
@@ -395,12 +413,13 @@ export async function recipeCosts(rid: number): Promise<Map<string, RecipeCost>>
   let rows: any[] = []
   try {
     rows = await sql`
-      SELECT r.item_id, r.cost_mode, r.cost_override::float AS cost_override,
+      SELECT r.item_id, r.variant_key, r.cost_mode, r.cost_override::float AS cost_override,
              r.yield_qty::float AS yield_qty,
              rl.ing_key, rl.qty::float AS qty,
              i.conversion_factor::float AS conversion_factor
       FROM recipes r
       LEFT JOIN recipe_lines rl ON rl.restaurant_id = r.restaurant_id AND rl.item_id = r.item_id
+                                AND rl.variant_key = r.variant_key
       LEFT JOIN ingredients  i  ON i.restaurant_id  = r.restaurant_id AND i.ing_key  = rl.ing_key
       WHERE r.restaurant_id = ${rid} AND r.enabled`
   } catch {
@@ -409,15 +428,17 @@ export async function recipeCosts(rid: number): Promise<Map<string, RecipeCost>>
 
   for (const r of rows) {
     const id = r.item_id as string
-    let e = out.get(id)
+    const variantKey = String(r.variant_key || '')
+    const key = recipeKey(id, variantKey)
+    let e = out.get(key)
     if (!e) {
       e = {
-        itemId: id, computed: 0,
+        itemId: id, variantKey, computed: 0,
         mode: r.cost_mode === 'manual' ? 'manual' : 'auto',
         override: r.cost_override == null ? null : n4(r.cost_override),
         used: 0, missingCost: [],
       }
-      out.set(id, e)
+      out.set(key, e)
     }
     if (!r.ing_key) continue
 
@@ -446,13 +467,21 @@ export async function recipeCosts(rid: number): Promise<Map<string, RecipeCost>>
  * freezes the correct number onto every sale. This is what makes "a product
  * with a recipe gets its cost from its ingredients, automatically" real instead
  * of just displayed.
+ *
+ * stock.cost has no variant dimension (one scalar per item_id, matching the
+ * POS's single displayed price-minus-cost), so only the whole-item recipe
+ * (variantKey '') writes through to it. A size-specific recipe still gets its
+ * own cost_computed cached on its own recipe row — visible in the ingredients
+ * UI — it just doesn't overwrite the single stock.cost figure.
  */
 export async function cacheComputedCosts(rid: number, costs: Map<string, RecipeCost>): Promise<void> {
   for (const c of costs.values()) {
     try {
       await sql`
         UPDATE recipes SET cost_computed = ${c.computed}, cost_computed_at = NOW()
-        WHERE restaurant_id = ${rid} AND item_id = ${c.itemId}`
+        WHERE restaurant_id = ${rid} AND item_id = ${c.itemId} AND variant_key = ${c.variantKey}`
+
+      if (c.variantKey !== '') continue
 
       // Auto mode: the recipe IS the cost. Write it through to stock.cost so the
       // POS (which only reads stock.cost) always has the current figure without

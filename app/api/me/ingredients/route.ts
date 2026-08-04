@@ -18,9 +18,13 @@
 //   action 'moveIngredient'  { ing_key, kind, qty, unit_cost?, reason? }
 //                            kind = receive | waste | adjust | count
 //                            → appends to the ledger; quantity stays derived
-//   action 'saveRecipe'      { item_id, item_name, cost_mode, cost_override,
-//                              enabled, yield_qty, lines:[{ing_key, qty}] }
-//   action 'deleteRecipe'    { item_id }
+//   action 'saveRecipe'      { item_id, variant_key?, item_name, cost_mode,
+//                              cost_override, enabled, yield_qty,
+//                              lines:[{ing_key, qty}] }
+//                            variant_key: '' (default) = whole item; a POS
+//                            size label (e.g. "Moy"/"Max") scopes the recipe
+//                            to just that size — see migration-recipe-variants.sql
+//   action 'deleteRecipe'    { item_id, variant_key? }
 //
 // Recipes are OPTIONAL: a product with no recipe keeps its manual cost and
 // deducts nothing. See migration-ingredients.sql.
@@ -31,7 +35,7 @@ import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import {
   recipeCosts, cacheComputedCosts, ingredientCosts, ingredientLedgerReady,
-  recordIngMovement, type IngKind,
+  recordIngMovement, recipeKey, type IngKind,
 } from '@/lib/ingredients'
 import { refreshSupplierBalance } from '@/lib/suppliers'
 import { serverError, isMissingSchema, notReadyPayload } from '@/lib/apiError'
@@ -116,6 +120,10 @@ export async function GET(req: Request) {
           category: catName,
           emoji: clip(it.e ?? it.emoji, 10) || '🍽️',
           price: itemPrice(it),
+          // Size labels from the POS's own variant array (e.g. ["Moy","Max"]),
+          // so the recipe editor can offer one recipe per size instead of one
+          // blended recipe for the whole product. [] = no size split.
+          variants: Array.isArray(it.v) ? it.v.map((v: any) => clip(v?.l ?? v?.label, 20)).filter(Boolean) : [],
         })
       }
     }
@@ -144,19 +152,22 @@ export async function GET(req: Request) {
     } catch { /* migration-ingredient-audit.sql has not been run yet */ }
 
     const recipes = await sql`
-      SELECT rc.item_id, rc.item_name, rc.cost_mode, rc.cost_override::float,
+      SELECT rc.item_id, rc.variant_key, rc.item_name, rc.cost_mode, rc.cost_override::float,
              rc.enabled, rc.yield_qty::float,
              rc.cost_computed::float, rc.cost_effective::float,
              rc.nb_lines, rc.lines_missing_cost
       FROM recipe_cost rc
       WHERE rc.restaurant_id = ${rid}
-      ORDER BY rc.item_name`
+      ORDER BY rc.item_name, rc.variant_key`
 
     const lines = await sql`
-      SELECT item_id, ing_key, qty::float FROM recipe_lines WHERE restaurant_id = ${rid}`
+      SELECT item_id, variant_key, ing_key, qty::float FROM recipe_lines WHERE restaurant_id = ${rid}`
 
     const byItem: Record<string, any[]> = {}
-    for (const l of lines) (byItem[l.item_id] ||= []).push({ ing_key: l.ing_key, qty: l.qty })
+    for (const l of lines) {
+      const k = recipeKey(l.item_id, l.variant_key)
+      ;(byItem[k] ||= []).push({ ing_key: l.ing_key, qty: l.qty })
+    }
 
     // Roll the lines up, and return BOTH the calculated figure and the one
     // actually charged. An override that hides the calculation turns a decision
@@ -183,8 +194,8 @@ export async function GET(req: Request) {
     const ingByKey: Record<string, any> = {}
     for (const i of ingredients) ingByKey[i.ing_key] = i
 
-    function buildable(itemId: string, yieldQty: number) {
-      const rows = byItem[itemId] || []
+    function buildable(itemId: string, variantKey: string, yieldQty: number) {
+      const rows = byItem[recipeKey(itemId, variantKey)] || []
       const portions = Math.max(1, Number(yieldQty) || 1)
       let limit: number | null = null
       let limitedBy: { ing_key: string; name: string; available: number; need: number; unit: string } | null = null
@@ -225,13 +236,14 @@ export async function GET(req: Request) {
     }
 
     const recipesFull = recipes.map((r: any) => {
-      const c = rollup.get(r.item_id)
+      const variantKey = String(r.variant_key || '')
+      const c = rollup.get(recipeKey(r.item_id, variantKey))
       const computed = c ? c.computed : 0
       const used = c ? c.used : (r.cost_override ?? 0)
-      const cap = buildable(r.item_id, r.yield_qty)
+      const cap = buildable(r.item_id, variantKey, r.yield_qty)
       return {
         ...r,
-        lines: byItem[r.item_id] || [],
+        lines: byItem[recipeKey(r.item_id, variantKey)] || [],
         cost_computed: computed,
         cost_used: used,
         // Signed gap, so the UI can show "+19 %" without recomputing it.
@@ -499,18 +511,22 @@ export async function POST(req: Request) {
     if (action === 'saveRecipe') {
       const itemId = clip(body.item_id, 64)
       if (!itemId) return cors(NextResponse.json({ ok: false, error: 'item_id requis' }, { status: 400 }))
+      // '' = whole item, no size split. A variant-specific recipe uses the
+      // POS's own size label (e.g. "Moy"/"Max") so a Pizza can have a
+      // different ingredient quantity per size instead of one blended recipe.
+      const variantKey = clip(body.variant_key, 40)
       const mode = body.cost_mode === 'manual' ? 'manual' : 'auto'
       const yieldQty = n3(body.yield_qty) || 1
       if (!(yieldQty > 0)) return cors(NextResponse.json({ ok: false, error: 'Rendement invalide' }, { status: 400 }))
 
       await sql`
         INSERT INTO recipes
-          (restaurant_id, item_id, item_name, cost_mode, cost_override, enabled, yield_qty, notes, updated_at)
+          (restaurant_id, item_id, variant_key, item_name, cost_mode, cost_override, enabled, yield_qty, notes, updated_at)
         VALUES
-          (${rid}, ${itemId}, ${clip(body.item_name, 120)}, ${mode},
+          (${rid}, ${itemId}, ${variantKey}, ${clip(body.item_name, 120)}, ${mode},
            ${mode === 'manual' ? n3(body.cost_override) : null},
            ${body.enabled !== false}, ${yieldQty}, ${clip(body.notes, 300)}, NOW())
-        ON CONFLICT (restaurant_id, item_id) DO UPDATE SET
+        ON CONFLICT (restaurant_id, item_id, variant_key) DO UPDATE SET
           item_name = EXCLUDED.item_name, cost_mode = EXCLUDED.cost_mode,
           cost_override = EXCLUDED.cost_override, enabled = EXCLUDED.enabled,
           yield_qty = EXCLUDED.yield_qty, notes = EXCLUDED.notes, updated_at = NOW()`
@@ -518,15 +534,15 @@ export async function POST(req: Request) {
       // Replace the line set wholesale — simpler and atomic enough here than
       // diffing, and the editor always submits the complete list.
       if (Array.isArray(body.lines)) {
-        await sql`DELETE FROM recipe_lines WHERE restaurant_id = ${rid} AND item_id = ${itemId}`
+        await sql`DELETE FROM recipe_lines WHERE restaurant_id = ${rid} AND item_id = ${itemId} AND variant_key = ${variantKey}`
         for (const l of body.lines.slice(0, 200)) {
           const ik = clip(l?.ing_key, 64)
           const q = n4(l?.qty)
           if (!ik || !(q > 0)) continue
           await sql`
-            INSERT INTO recipe_lines (restaurant_id, item_id, ing_key, qty)
-            VALUES (${rid}, ${itemId}, ${ik}, ${q})
-            ON CONFLICT (restaurant_id, item_id, ing_key) DO UPDATE SET qty = EXCLUDED.qty`
+            INSERT INTO recipe_lines (restaurant_id, item_id, variant_key, ing_key, qty)
+            VALUES (${rid}, ${itemId}, ${variantKey}, ${ik}, ${q})
+            ON CONFLICT (restaurant_id, item_id, variant_key, ing_key) DO UPDATE SET qty = EXCLUDED.qty`
         }
       }
       // After saving the lines, recompute the cost and push it through:
@@ -534,6 +550,8 @@ export async function POST(req: Request) {
       // - When mode='auto', write it into stock.cost so the POS picks it up
       //   next sync without anyone retyping it. That's the "cost from ingredients
       //   becomes the product's cost, automatically" the owner asked for.
+      // (Only the whole-item recipe, variant_key '', writes through to stock.cost —
+      // see cacheComputedCosts for why a size-specific recipe can't.)
       const rollup = await recipeCosts(rid)
       await cacheComputedCosts(rid, rollup)
 
@@ -545,14 +563,15 @@ export async function POST(req: Request) {
                         WHERE restaurant_id = ${rid} AND item_id = ${itemId}` } catch { /* older stock schema */ }
       }
 
-      return cors(NextResponse.json({ ok: true, item_id: itemId }))
+      return cors(NextResponse.json({ ok: true, item_id: itemId, variant_key: variantKey }))
     }
 
     if (action === 'deleteRecipe') {
       const itemId = clip(body.item_id, 64)
       if (!itemId) return cors(NextResponse.json({ ok: false, error: 'item_id requis' }, { status: 400 }))
-      await sql`DELETE FROM recipe_lines WHERE restaurant_id = ${rid} AND item_id = ${itemId}`
-      await sql`DELETE FROM recipes      WHERE restaurant_id = ${rid} AND item_id = ${itemId}`
+      const variantKey = clip(body.variant_key, 40)
+      await sql`DELETE FROM recipe_lines WHERE restaurant_id = ${rid} AND item_id = ${itemId} AND variant_key = ${variantKey}`
+      await sql`DELETE FROM recipes      WHERE restaurant_id = ${rid} AND item_id = ${itemId} AND variant_key = ${variantKey}`
       return cors(NextResponse.json({ ok: true }))
     }
 
