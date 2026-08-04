@@ -42,10 +42,10 @@ type Product = {
  * "20 en stock" while /ingredients said "encore possible 5" for the same item,
  * and nothing on screen said which to believe.
  */
-const MODES: { id: TrackMode; label: string; hint: string }[] = [
-  { id: 'stock',  label: 'À l’unité',    hint: 'Compté par pièce : un Coca, une bouteille d’eau. La vente retire 1 du stock.' },
-  { id: 'recipe', label: 'Par recette',  hint: 'Fabriqué : une citronnade prend 200 ml d’une bouteille d’1 L. La vente retire les ingrédients.' },
-  { id: 'none',   label: 'Non suivi',    hint: 'Rien n’est décompté. Pour un café, un service.' },
+const MODES: { id: TrackMode; icon: string; label: string; hint: string }[] = [
+  { id: 'stock',  icon: '📦', label: 'À l’unité',    hint: 'Compté par pièce : un Coca, une bouteille d’eau. La vente retire 1 du stock.' },
+  { id: 'recipe', icon: '🧪', label: 'Par recette',  hint: 'Fabriqué : une citronnade prend 200 ml d’une bouteille d’1 L. La vente retire les ingrédients.' },
+  { id: 'none',   icon: '🚫', label: 'Non suivi',    hint: 'Rien n’est décompté. Pour un café, un service.' },
 ]
 
 // A product present in the caisse menu has a caisse-owned price.
@@ -369,17 +369,28 @@ export default function CatalogPage() {
                             onClick={() => (m.id === 'stock' && p.track_mode !== 'stock')
                               ? activateStockMode(p)
                               : edit(p.item_id, 'track_mode', m.id)}
-                          >{m.label}</button>
+                          >{m.icon} {m.label}</button>
                         ))}
                       </div>
-                      {/* Choosing "par recette" without a recipe deducts nothing
-                          at all. Silence here would look like working stock. */}
-                      {p.track_mode === 'recipe' && !p.has_recipe && (
-                        <div className="t11 cWarn" style={{ marginTop: 4 }}>
-                          Aucune recette : rien ne sera décompté.{' '}
-                          <a href="/ingredients" style={{ color: 'inherit', textDecoration: 'underline' }}>
-                            Créer la recette
+                      {/* "Par recette" needs a second step — which ingredients,
+                          in what quantity — that this screen has no room for.
+                          One button straight into that exact product's editor,
+                          instead of a bare warning that sends the owner off to
+                          find it again on a different page. */}
+                      {p.track_mode === 'recipe' && (
+                        <div style={{ marginTop: 6 }}>
+                          <a
+                            href={`/ingredients?edit=${encodeURIComponent(p.item_id)}`}
+                            className="btn btnSm"
+                            style={!p.has_recipe ? { borderColor: 'var(--warn)', color: 'var(--warn)' } : undefined}
+                          >
+                            🧪 {p.has_recipe ? 'Gérer la recette' : 'Créer la recette'}
                           </a>
+                          {!p.has_recipe && (
+                            <div className="t11 cWarn" style={{ marginTop: 3 }}>
+                              Aucune recette : rien ne sera décompté.
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>

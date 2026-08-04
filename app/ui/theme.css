@@ -690,6 +690,32 @@ code.k {
 /* Desktop keeps the compact icon strip. */
 .actionCell .btn + .btn { margin-left: 4px; }
 
+/* ── Row menu — one small "⋯" button instead of a wall of per-row buttons.
+   Used where a row has several possible actions but only one is common
+   enough to deserve its own always-visible button. ── */
+.rowMenuWrap { position: relative; display: inline-block; }
+.rowMenu {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.18);
+  min-width: 180px; padding: 4px; z-index: 60;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.rowMenuItem {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; border-radius: 7px;
+  font-size: 13px; font-weight: 550; text-align: left;
+  background: none; border: none; cursor: pointer; color: var(--text);
+  width: 100%;
+}
+.rowMenuItem:hover { background: var(--surface-3); }
+.rowMenuItem.danger { color: var(--danger); }
+.rowMenuItem.danger:hover { background: var(--danger-soft); }
+.rowMenuSep { height: 1px; background: var(--line); margin: 4px 2px; }
+@media (max-width: 640px) {
+  .rowMenu { right: 0; left: auto; min-width: 200px; }
+}
+
 /* Shown only on paper — a printed report has to state what it covers. */
 .printOnly { display: none; }
 .printHead { margin-bottom: 12px; }

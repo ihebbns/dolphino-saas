@@ -15,7 +15,7 @@ export type IconName =
   | 'lock' | 'unlock' | 'alert' | 'check' | 'close'
   | 'chevronRight' | 'plus' | 'minus' | 'clipboard'
   | 'search' | 'refresh' | 'print' | 'trash' | 'edit'
-  | 'arrowUp' | 'arrowDown' | 'store' | 'flask' | 'tag'
+  | 'arrowUp' | 'arrowDown' | 'store' | 'flask' | 'tag' | 'more'
 
 const P: Record<IconName, string> = {
   home:        'M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5',
@@ -42,6 +42,7 @@ const P: Record<IconName, string> = {
   store:       'M4 9v12h16V9M2 9l2-5h16l2 5H2ZM9 21v-6h6v6',
   flask:       'M9 3h6v5l4 9a2 2 0 0 1-1.8 3H6.8A2 2 0 0 1 5 17l4-9V3ZM7 14h10',
   tag:         'M20 12 12 20l-8-8V4h8l8 8ZM7.5 7.5h.01',
+  more:        'M5 12h.01M12 12h.01M19 12h.01',
 }
 
 export function Icon({

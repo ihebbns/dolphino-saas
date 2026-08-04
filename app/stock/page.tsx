@@ -13,7 +13,7 @@
 // Quantity is derived as "latest count + deltas recorded since". That is what
 // makes an écart provable and stops two tills clobbering each other.
 // ═══════════════════════════════════════════════════════════════════
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Shell, LoginGate, NotReady, Loading, Empty, useApiKey, apiGet, apiPost,
   f3, qtyTrim, qtyDelta, dt, num, Icon, LevelMeter, useModules,
@@ -106,6 +106,16 @@ export default function StockPage() {
   const [rupture, setRupture] = useState<Record<string, boolean>>({})
   const [ruptureBusy, setRuptureBusy] = useState<Record<string, boolean>>({})
   const mods = useModules(key)
+  // Which row's "⋯" menu is open, if any — one at a time, closes on an
+  // outside click just like the POS's own header dropdown.
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!openMenu) return
+    const close = () => setOpenMenu(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [openMenu])
 
   useEffect(() => {
     if (key) load(key)
@@ -639,16 +649,21 @@ export default function StockPage() {
                             <span className={'badge ' + statusCls} style={{ fontSize: 11 }}>{statusTxt}</span>
                           </td>
                           <td className="tr nowrap actionCell">
-                            <button
-                              className="btn btnSm"
-                              style={isOut
-                                ? { background: 'var(--ok)', color: '#fff', borderColor: 'var(--ok)' }
-                                : { borderColor: 'var(--danger)', color: 'var(--danger)' }}
-                              disabled={!!ruptureBusy[p.item_id]}
-                              onClick={() => toggleRupture(p.item_id, p.name)}
-                            >
-                              {ruptureBusy[p.item_id] ? '...' : isOut ? '✓ Remettre en vente' : '⛔ Rupture'}
-                            </button>
+                            <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                              <a href={`/ingredients?edit=${encodeURIComponent(p.item_id)}`} className="btn btnSm">
+                                🧪 {p.has_recipe ? 'Recette' : 'Créer'}
+                              </a>
+                              <button
+                                className="btn btnSm"
+                                style={isOut
+                                  ? { background: 'var(--ok)', color: '#fff', borderColor: 'var(--ok)' }
+                                  : { borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                                disabled={!!ruptureBusy[p.item_id]}
+                                onClick={() => toggleRupture(p.item_id, p.name)}
+                              >
+                                {ruptureBusy[p.item_id] ? '...' : isOut ? '✓ Remettre en vente' : '⛔ Rupture'}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -739,11 +754,12 @@ export default function StockPage() {
                         {v.last_count_at ? <>{qtyTrim(v.dernier_compte)} le {dt(v.last_count_at)}</> : <span className="cFaint">jamais</span>}
                       </td>
                       <td className="tr nowrap actionCell">
-                        <button className="btn btnSm" title="Livraison reçue" onClick={() => setMove({ item: v, kind: 'receive' })}>
-                          <Icon name="plus" size={14} /> Réception
-                        </button>
-                        <button className="btn btnSm" title="Casse, périmé, offert" onClick={() => setMove({ item: v, kind: 'waste' })}>
-                          <Icon name="trash" size={14} /> Perte
+                        {/* Only the two most common/urgent actions stay always
+                            visible — everything else (Réception, Perte,
+                            supprimer) lives one click away in "⋯", instead of
+                            a wall of buttons stacking into a mess on mobile. */}
+                        <button className="btn btnSm btnPrimary" onClick={() => setMove({ item: v, kind: 'count' })}>
+                          <Icon name="clipboard" size={14} /> Inventaire
                         </button>
                         {/* Rupture toggle — no lock check, always available.
                             Manager can mark something out of stock remotely
@@ -758,20 +774,27 @@ export default function StockPage() {
                         >
                           {ruptureBusy[v.item_id] ? '…' : (isRupture ? '✓ Remettre en vente' : '⛔ Rupture')}
                         </button>
-                        <button className="btn btnSm btnPrimary" onClick={() => setMove({ item: v, kind: 'count' })}>
-                          <Icon name="clipboard" size={14} /> Inventaire
-                        </button>
-                        {/* Only offered for a product no longer in the POS menu —
-                            never for one still actively sold at the till. */}
-                        {menuItemIds.size > 0 && !menuItemIds.has(v.item_id) && (
-                          <button
-                            className="btn btnSm btnDanger"
-                            title="Retiré du menu de la caisse — supprimer cette fiche de stock orpheline"
-                            onClick={() => deleteStockItem(v.item_id, v.item_name || v.item_id)}
-                          >
-                            <Icon name="trash" size={14} />
+                        <RowMenu open={openMenu === v.item_id} onToggle={() => setOpenMenu(m => m === v.item_id ? null : v.item_id)}>
+                          <button className="rowMenuItem" onClick={() => { setMove({ item: v, kind: 'receive' }); setOpenMenu(null) }}>
+                            <Icon name="plus" size={14} /> Réception
                           </button>
-                        )}
+                          <button className="rowMenuItem" onClick={() => { setMove({ item: v, kind: 'waste' }); setOpenMenu(null) }}>
+                            <Icon name="trash" size={14} /> Perte
+                          </button>
+                          {/* Only offered for a product no longer in the POS menu —
+                              never for one still actively sold at the till. */}
+                          {menuItemIds.size > 0 && !menuItemIds.has(v.item_id) && (
+                            <>
+                              <div className="rowMenuSep" />
+                              <button
+                                className="rowMenuItem danger"
+                                onClick={() => { deleteStockItem(v.item_id, v.item_name || v.item_id); setOpenMenu(null) }}
+                              >
+                                <Icon name="trash" size={14} /> Supprimer la fiche
+                              </button>
+                            </>
+                          )}
+                        </RowMenu>
                       </td>
                     </tr>
                   )
@@ -946,6 +969,24 @@ export default function StockPage() {
         />
       )}
     </Shell>
+  )
+}
+
+// ── Row menu — replaces a wall of always-visible per-row buttons with one
+// "⋯" that opens the same actions in a small dropdown. Square/Toast keep only
+// the single most common action (here: Inventaire) visible on the row itself.
+function RowMenu({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <div className="rowMenuWrap">
+      <button className="btn btnSm" title="Plus d'actions" onClick={e => { e.stopPropagation(); onToggle() }}>
+        <Icon name="more" size={14} />
+      </button>
+      {open && (
+        <div className="rowMenu" onClick={e => e.stopPropagation()}>
+          {children}
+        </div>
+      )}
+    </div>
   )
 }
 
