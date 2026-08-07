@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS wallet_movements (
   delta          NUMERIC(12,3) NOT NULL,   -- signed change to the balance
 
   pay_method     VARCHAR(20)   DEFAULT '', -- how a topup arrived (cash/card)
+  -- Real money paid, for a 'topup' — separate from `delta` (the bonus-inclusive
+  -- credited amount). NULL for non-topup kinds. See migration-wallet-paid-amount.sql
+  -- for why this must stay distinct from delta: reward-tier eligibility (Phase 2)
+  -- is computed on this, never on delta, or the bonus would earn more bonus.
+  paid_amount    NUMERIC(12,3),
   items_summary  VARCHAR(400)  DEFAULT '', -- goods bought, for a spend
   sale_num       INTEGER,
   reason         VARCHAR(200)  DEFAULT '',
