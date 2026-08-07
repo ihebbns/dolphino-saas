@@ -1,24 +1,24 @@
 'use client'
 // ═══════════════════════════════════════════════════════════════════
-// /credits — CRÉANCES CLIENTS (ardoises)
+// /wallet — CARTE DE FIDÉLITÉ (solde prépayé client)
 //
-// Read-only. The caisse owns credit: an ardoise is opened, charged and settled
-// at the counter. This page exists because that data used to live only in one
-// till's localStorage — if the machine died, the record of who owed money was
-// gone and it was invisible from the web.
+// Mirror of /credits with the sign flipped: a wallet balance is money the
+// CLIENT owns, not a debt they owe. The caisse owns the wallet exactly as it
+// owns credit — a recharge is taken and a spend happens at the counter — this
+// page reads what the till has already published.
 //
-// Two panels surface findings rather than raw rows: fiches deleted at the till
-// while money was still owed, and balances where a till disagrees with its own
-// movement history.
+// The 30% recharge bonus is computed on the till (same as a credit sale
+// amount), so a 100 DT recharge already arrives here as a 130 DT 'topup'
+// movement — there is nothing extra to compute on this page.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
-import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, useModules, apiGet, apiPost, f3, dt, daysSince } from '../ui/Shell'
+import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, useModules, apiGet, f3, dt, daysSince } from '../ui/Shell'
 
 type Client = {
   client_key: string; name: string; phone: string
   balance: number; balance_derived: number; drift: number
-  nb_credits: number; nb_payments: number
-  total_pris: number; total_regle: number
+  nb_topups: number; nb_spends: number
+  total_recharge: number; total_depense: number
   last_movement_at: string | null; archived: boolean
 }
 type Movement = {
@@ -27,10 +27,16 @@ type Movement = {
   sale_num: number | null; reason: string; actor: string; client_ts: string
 }
 
-export default function CreditsPage() {
+const KIND_LABEL: Record<string, string> = {
+  topup: '📥 Rechargement', spend: '🛒 Dépensé', adjust: '✏️ Correction', bonus: '🎁 Récompense',
+}
+const KIND_BADGE: Record<string, string> = {
+  topup: 'bOk', spend: 'bNeutral', adjust: 'bNeutral', bonus: 'bBrand',
+}
+
+export default function WalletPage() {
   const { key, checked } = useApiKey()
   const mods = useModules(key)
-  const walletHideTabs = mods.on('wallet') ? [] : ['/wallet']
   const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
@@ -41,14 +47,8 @@ export default function CreditsPage() {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [sel, setSel] = useState<Client | null>(null)
-  // The fiche used to filter the page's shared movement list. That list is the
-  // last 200 movements ACROSS ALL clients, so any ardoise whose activity had
-  // scrolled past that window showed a truncated history — or "aucun mouvement"
-  // for a client who visibly owed money. The fiche now asks the server for that
-  // one client's own history.
   const [ficheRows, setFicheRows] = useState<Movement[] | null>(null)
   const [ficheBusy, setFicheBusy] = useState(false)
-  /** What the server found missing, and which database it looked in. */
   const [diag, setDiag] = useState<{ missing: string[]; db: { database: string; schema: string } | null }>(
     { missing: [], db: null }
   )
@@ -63,11 +63,8 @@ export default function CreditsPage() {
     setFicheRows(null)
     if (!key) return
     setFicheBusy(true)
-    const d = await apiGet(
-      `/api/me/credits?client=${encodeURIComponent(c.client_key)}&limit=1000`, key
-    )
+    const d = await apiGet(`/api/me/wallet?client=${encodeURIComponent(c.client_key)}&limit=1000`, key)
     setFicheBusy(false)
-    // Fall back to the shared list rather than showing nothing if the call fails.
     setFicheRows(d.ok ? (d.movements || []) : movements.filter(m => m.client_key === c.client_key))
   }
 
@@ -76,20 +73,9 @@ export default function CreditsPage() {
     setFicheRows(null)
   }
 
-  async function deleteFiche(c: Client) {
-    if (!key) return
-    if (!confirm(`Supprimer définitivement la fiche de ${c.name} ? Cette action est irréversible.`)) return
-    setMsg('')
-    const d = await apiPost('/api/me/credits', { key, action: 'delete', client_key: c.client_key })
-    if (d.ok) {
-      setMsg('✓ Fiche supprimée')
-      await load(key)
-    } else setMsg(d.error || 'Erreur')
-  }
-
   async function load(k: string) {
     setLoading(true); setMsg('')
-    const d = await apiGet('/api/me/credits', k)
+    const d = await apiGet('/api/me/wallet', k)
     if (d.ok) {
       setReady(d.ready !== false)
       setDiag({ missing: d.missing || [], db: d.db || null })
@@ -111,79 +97,87 @@ export default function CreditsPage() {
   }, [clients, search, showArchived])
 
   const drifting = clients.filter(c => Math.abs(c.drift || 0) > 0.001)
-  const archivedOwing = clients.filter(c => c.archived && c.balance > 0)
   const stale = clients.filter(c => !c.archived && c.balance > 0 && (daysSince(c.last_movement_at) ?? 0) >= 30)
 
   if (!checked || loading) {
-    return <Shell active="/credits" title="Créances clients" restName={restName} hideTabs={walletHideTabs}><Loading /></Shell>
+    return <Shell active="/wallet" title="Fidélité" restName={restName}><Loading /></Shell>
   }
   if (!key) return <LoginGate />
 
-  // Until the migration runs nothing is known. Rendering the KPI cards here would
-  // print "Total dû 0.000 DT", which reads as "nobody owes you anything" — a
-  // claim we cannot make. Show only what is true: the table isn't set up yet.
+  // Presentation only — the module toggle never deletes anything. The wallets
+  // and wallet_movements tables (and this establishment's own history) stay
+  // exactly as they are; turning this back on shows everything again, right
+  // where it was left. Only shown once useModules() has actually answered, so
+  // this page never flashes "désactivé" for a fraction of a second on load.
+  if (mods.loaded && !mods.on('wallet')) {
+    return (
+      <Shell active="/wallet" title="Fidélité" restName={restName}>
+        <div className="notice nWarn">
+          <span className="noticeIcon">💳</span>
+          <div>
+            <div className="noticeTitle">Module Fidélité désactivé</div>
+            Aucune donnée n&apos;est perdue — les soldes et l&apos;historique restent intacts et
+            réapparaissent dès la réactivation. Contactez Servio pour l&apos;activer.
+          </div>
+        </div>
+      </Shell>
+    )
+  }
+
   if (!ready) {
     return (
       <Shell
-        active="/credits"
-        title="Créances clients"
-        subtitle="Argent qui vous est dû — les ardoises se gèrent à la caisse"
+        active="/wallet"
+        title="Fidélité"
+        subtitle="Solde prépayé client — les recharges se font à la caisse"
         restName={restName}
-        hideTabs={walletHideTabs}
         actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
       >
-        <NotReady sql="migration-credits.sql" missing={diag.missing} db={diag.db} />
+        <NotReady sql="migration-wallet.sql" missing={diag.missing} db={diag.db} />
       </Shell>
     )
   }
 
   return (
     <Shell
-      active="/credits"
-      title="Créances clients"
-      subtitle="Argent qui vous est dû — les ardoises se gèrent à la caisse"
+      active="/wallet"
+      title="Fidélité"
+      subtitle="Solde prépayé client — les recharges se font à la caisse (bonus 30% à chaque rechargement)"
       restName={restName}
-      badges={{ '/credits': totals?.nb_debiteurs ?? 0 }}
-      hideTabs={walletHideTabs}
+      badges={{ '/wallet': totals?.nb_avec_solde ?? 0 }}
       actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
     >
       {msg && <div className="notice nDanger"><span className="noticeIcon">✕</span><div>{msg}</div></div>}
 
       <div className="statGrid mb20">
         <div className="stat">
-          <div className="statLabel">Total dû</div>
-          <div className="statValue num" style={{ color: (totals?.total_creances ?? 0) > 0 ? 'var(--danger)' : 'var(--ok)' }}>
-            {f3(totals?.total_creances)} DT
+          <div className="statLabel">Solde total en circulation</div>
+          <div className="statValue num" style={{ color: 'var(--ok)' }}>
+            {f3(totals?.total_solde)} DT
           </div>
+          <div className="statHint">ce que vous devrez livrer en produits</div>
         </div>
         <div className="stat">
-          <div className="statLabel">Clients qui doivent</div>
-          <div className="statValue num">{totals?.nb_debiteurs ?? 0}</div>
+          <div className="statLabel">Clients avec solde</div>
+          <div className="statValue num">{totals?.nb_avec_solde ?? 0}</div>
           <div className="statHint">sur {totals?.nb_clients ?? 0} fiches</div>
         </div>
         <div className="stat">
-          <div className="statLabel">Dettes dormantes</div>
+          <div className="statLabel">Soldes dormants</div>
           <div className="statValue num" style={{ color: stale.length ? 'var(--warn)' : 'var(--ok)' }}>{stale.length}</div>
           <div className="statHint">30 jours sans mouvement</div>
         </div>
-        {(totals?.nb_archives_avec_dette ?? 0) > 0 && (
-          <div className="stat" style={{ borderColor: 'var(--danger-line)' }}>
-            <div className="statLabel">Supprimées avec dette</div>
-            <div className="statValue num cDanger">{f3(totals?.creances_archivees)} DT</div>
-            <div className="statHint">{totals.nb_archives_avec_dette} fiche(s)</div>
-          </div>
-        )}
       </div>
 
-      {archivedOwing.length > 0 && (
-        <div className="notice nDanger">
+      {drifting.length > 0 && (
+        <div className="notice nWarn">
           <span className="noticeIcon">⚠</span>
           <div>
             <div className="noticeTitle">
-              {archivedOwing.length} fiche(s) supprimée(s) à la caisse alors qu&apos;une dette restait
+              {drifting.length} solde(s) où la caisse et son propre historique ne concordent pas
             </div>
-            {archivedOwing.map(c => (
-              <div key={c.client_key}>• {c.name} — {f3(c.balance)} DT</div>
+            {drifting.slice(0, 5).map(c => (
+              <div key={c.client_key}>• {c.name} — caisse: {f3(c.balance)}, historique: {f3(c.balance_derived)}</div>
             ))}
           </div>
         </div>
@@ -206,16 +200,16 @@ export default function CreditsPage() {
             <thead>
               <tr>
                 <th>Client</th>
-                <th className="tr">Doit</th>
-                <th className="tr">Total pris</th>
-                <th className="tr">Total réglé</th>
+                <th className="tr">Solde</th>
+                <th className="tr">Total rechargé</th>
+                <th className="tr">Total dépensé</th>
                 <th>Dernier mouvement</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={6}><Empty icon="📒" text="Aucune ardoise" /></td></tr>
+                <tr><td colSpan={6}><Empty icon="💳" text="Aucune carte de fidélité" /></td></tr>
               ) : filtered.map(c => {
                 const d = daysSince(c.last_movement_at)
                 const isStale = c.balance > 0 && d !== null && d >= 30
@@ -233,20 +227,18 @@ export default function CreditsPage() {
                         </div>
                       </div>
                     </td>
-                    <td data-label="Doit" className="tr num nowrap bold" style={{ color: c.balance > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                    <td data-label="Solde" className="tr num nowrap bold" style={{ color: c.balance > 0 ? 'var(--ok)' : 'var(--faint)' }}>
                       {f3(c.balance)} DT
                     </td>
-                    <td data-label="Total pris" className="tr num cMuted">{f3(c.total_pris)}</td>
-                    <td data-label="Total réglé" className="tr num cMuted">{f3(c.total_regle)}</td>
+                    <td data-label="Total rechargé" className="tr num cMuted">{f3(c.total_recharge)}</td>
+                    <td data-label="Total dépensé" className="tr num cMuted">{f3(c.total_depense)}</td>
                     <td data-label="Dernier mouvement" className="nowrap">
                       <div className="t13">{dt(c.last_movement_at)}</div>
                       {isStale && <div className="t11 cWarn">{d} jours sans mouvement</div>}
                     </td>
-                    {/* actionCell makes this a full-width button row on a phone
-                        instead of a cramped strip pinned to the right edge. */}
                     <td className="tr actionCell">
                       {c.archived ? (
-                        <button className="btn btnSm" style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', color: 'var(--red)' }} onClick={() => deleteFiche(c)}>Supprimer</button>
+                        <span className="t11 cFaint">supprimée à la caisse</span>
                       ) : (
                         <button className="btn btnSm" onClick={() => openFiche(c)}>Fiche</button>
                       )}
@@ -277,18 +269,13 @@ export default function CreditsPage() {
                   <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
                   <td data-label="Client">{m.name || m.client_key}</td>
                   <td data-label="Type">
-                    <span className={'badge ' + (m.kind === 'payment' ? 'bOk' : m.kind === 'credit' ? 'bDanger' : 'bNeutral')}>
-                      {m.kind === 'payment'
-                        ? '💵 Règlement' + (m.pay_method === 'card' ? ' (carte)' : '')
-                        : m.kind === 'credit' ? '📒 À crédit' : '✏️ Correction'}
+                    <span className={'badge ' + (KIND_BADGE[m.kind] || 'bNeutral')}>
+                      {(KIND_LABEL[m.kind] || m.kind) + (m.kind === 'topup' && m.pay_method === 'card' ? ' (carte)' : '')}
                     </span>
                   </td>
-                  <td data-label="Montant" className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                  <td data-label="Montant" className="tr num nowrap bold" style={{ color: m.delta > 0 ? 'var(--ok)' : 'var(--text-2)' }}>
                     {m.delta > 0 ? '+' : '−'}{f3(Math.abs(m.delta))}
                   </td>
-                  {/* clamp1 instead of an inline nowrap: an inline style beats the
-                      mobile media query, so this cell stayed one long unbreakable
-                      line and dragged the whole card layout wider than the phone. */}
                   <td data-label="Détail" className="t12 cMuted clamp1">
                     {m.items_summary || m.reason || (m.sale_num ? '#' + String(m.sale_num).padStart(3, '0') : '—')}
                   </td>
@@ -315,26 +302,25 @@ export default function CreditsPage() {
               <button className="btn btnGhost btnSm spacer" onClick={closeFiche} aria-label="Fermer">✕</button>
             </div>
             <div className="modalBody">
-              {/* The balance leads: it is the amount to ask for. */}
               <div className="statGrid mb20">
                 <div className="stat">
-                  <div className="statLabel">Doit actuellement</div>
-                  <div className="statValue num" style={{ color: sel.balance > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                  <div className="statLabel">Solde actuel</div>
+                  <div className="statValue num" style={{ color: sel.balance > 0 ? 'var(--ok)' : 'var(--faint)' }}>
                     {f3(sel.balance)} DT
                   </div>
                   <div className="statHint">
-                    {sel.balance > 0 ? 'ardoise ouverte' : 'rien à réclamer'}
+                    {sel.balance > 0 ? 'utilisable en caisse' : 'rien à dépenser'}
                   </div>
                 </div>
                 <div className="stat">
-                  <div className="statLabel">Total pris</div>
-                  <div className="statValue num">{f3(sel.total_pris)}</div>
-                  <div className="statHint">{sel.nb_credits ?? 0} fois à crédit</div>
+                  <div className="statLabel">Total rechargé</div>
+                  <div className="statValue num">{f3(sel.total_recharge)}</div>
+                  <div className="statHint">{sel.nb_topups ?? 0} rechargement(s)</div>
                 </div>
                 <div className="stat">
-                  <div className="statLabel">Total réglé</div>
-                  <div className="statValue num">{f3(sel.total_regle)}</div>
-                  <div className="statHint">{sel.nb_payments ?? 0} règlement(s)</div>
+                  <div className="statLabel">Total dépensé</div>
+                  <div className="statValue num">{f3(sel.total_depense)}</div>
+                  <div className="statHint">{sel.nb_spends ?? 0} achat(s) réglé(s) au solde</div>
                 </div>
                 <div className="stat">
                   <div className="statLabel">Dernier mouvement</div>
@@ -356,7 +342,7 @@ export default function CreditsPage() {
                   <div>
                     <div className="noticeTitle">Fiche supprimée à la caisse</div>
                     {sel.balance > 0
-                      ? 'Elle a été supprimée alors qu’une dette restait due.'
+                      ? 'Elle a été supprimée alors qu’un solde restait dessus.'
                       : 'Conservée ici pour l’historique.'}
                   </div>
                 </div>
@@ -376,7 +362,7 @@ export default function CreditsPage() {
               ) : !ficheRows || ficheRows.length === 0 ? (
                 <Empty
                   icon="receipt"
-                  text="Aucun mouvement reçu pour ce client. Les ardoises remontent depuis la caisse à chaque synchronisation."
+                  text="Aucun mouvement reçu pour ce client. Les soldes remontent depuis la caisse à chaque synchronisation."
                 />
               ) : (
                 <table className="t">
@@ -386,11 +372,6 @@ export default function CreditsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Running balance, computed backwards from the current one so
-                        each line answers "what did he owe after this?" — the
-                        question actually asked when a client disputes a total.
-                        The server returns newest first, so walking down the list
-                        means subtracting the row above. */}
                     {ficheRows.map((m, i) => {
                       const after = ficheRows
                         .slice(0, i)
@@ -399,12 +380,8 @@ export default function CreditsPage() {
                         <tr key={m.id}>
                           <td className="t12 cMuted nowrap">{dt(m.client_ts)}</td>
                           <td data-label="Type" className="t12">
-                            <span className={'badge ' + (
-                              m.kind === 'payment' ? 'bOk' : m.kind === 'credit' ? 'bDanger' : 'bNeutral'
-                            )}>
-                              {m.kind === 'payment'
-                                ? 'Règlement' + (m.pay_method === 'card' ? ' (carte)' : '')
-                                : m.kind === 'credit' ? 'À crédit' : 'Correction'}
+                            <span className={'badge ' + (KIND_BADGE[m.kind] || 'bNeutral')}>
+                              {KIND_LABEL[m.kind] || m.kind}
                             </span>
                             {m.items_summary
                               ? <div className="t11 cFaint">{m.items_summary}</div>
@@ -415,7 +392,7 @@ export default function CreditsPage() {
                           </td>
                           <td
                             data-label="Montant" className="tr num nowrap bold"
-                            style={{ color: m.delta > 0 ? 'var(--danger)' : 'var(--ok)' }}
+                            style={{ color: m.delta > 0 ? 'var(--ok)' : 'var(--text-2)' }}
                           >
                             {m.delta > 0 ? '+' : '−'}{f3(Math.abs(m.delta))}
                           </td>

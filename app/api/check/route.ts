@@ -20,6 +20,10 @@ export const runtime = 'edge'
 const DEFAULT_MODULES = {
   tables: false, barcode: false, credit: true, stockTracking: true,
   poleDisplay: true, kitchenTickets: true, printEnabled: true, dashboard: true, menuManage: true,
+  // Carte de fidélité (solde prépayé + bonus recharge) — off by default: it's a
+  // per-client business decision (the bonus rate eats into their margin), not
+  // something every client should suddenly have active.
+  wallet: false,
 }
 
 const cors = (r: NextResponse) => {

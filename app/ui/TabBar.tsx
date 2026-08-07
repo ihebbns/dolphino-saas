@@ -48,7 +48,17 @@ export const DESTINATIONS: Destination[] = [
   // taps: /audit is the raw drawer-opening trail, which is an investigation tool,
   // not a daily errand.
   // "Crédit" not "Créances": the word on the till, and the word the owner uses.
-  { href: '/credits', name: 'Crédit', short: 'Crédit', icon: 'receipt' },
+  // Fidélité lives as a SUB-route here rather than its own destination, same
+  // reasoning as /stock's subs below — it's the same "money tied to a named
+  // client" idea as Crédit, just the other sign (a balance they own, not a
+  // debt), so it doesn't earn a 5th thumb-height slot of its own.
+  {
+    href: '/credits', name: 'Crédit', short: 'Crédit', icon: 'receipt',
+    subs: [
+      { href: '/credits', name: 'Crédit' },
+      { href: '/wallet', name: 'Fidélité' },
+    ],
+  },
   // Établissement is deliberately absent: its settings move under Profil, so the
   // owner has one place for "me and my account" instead of two.
   { href: '/profil', name: 'Profil', short: 'Profil', icon: 'settings' },

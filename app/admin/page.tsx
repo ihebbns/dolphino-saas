@@ -165,6 +165,12 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
   const [actionClient, setActionClient] = useState<any>(null)
+  // Modules for whichever client the action modal is currently open for. Loaded
+  // fresh each time the modal opens rather than trusted from the client list,
+  // since the list only carries plan/suspend_at, not the full config blob.
+  const [moduleCfg, setModuleCfg] = useState<{ config: any; modules: Record<string, boolean> } | null>(null)
+  const [moduleLoading, setModuleLoading] = useState(false)
+  const [moduleSaving, setModuleSaving] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [demoRequests, setDemoRequests] = useState<any[]>([])
   const [showDemos, setShowDemos] = useState(false)
@@ -201,6 +207,52 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       else flash('Erreur: ' + data.error)
     } catch { flash('Erreur de connexion') }
     setActionClient(null)
+    setModuleCfg(null)
+  }
+
+  // ── Module distribution for an EXISTING client ────────────────────────
+  // Reads the client's real config (not just modules) so saving never wipes
+  // tagline/logo/zones/etc — only the modules key changes, the rest is
+  // round-tripped exactly as the server had it.
+  async function loadModules(apiKey: string) {
+    setModuleLoading(true)
+    setModuleCfg(null)
+    try {
+      const res = await fetch(`${API}/api/admin/config?admin_key=${encodeURIComponent(key)}&api_key=${encodeURIComponent(apiKey)}`)
+      const data = await res.json()
+      if (data.ok) {
+        const config = data.config || {}
+        setModuleCfg({ config, modules: { ...(config.modules || {}) } })
+      } else flash('Erreur: ' + data.error)
+    } catch { flash('Erreur de connexion') }
+    setModuleLoading(false)
+  }
+
+  function toggleModule(id: string) {
+    setModuleCfg(prev => {
+      if (!prev) return prev
+      const current = prev.modules[id]
+      // Undefined means "server default" — flip from the module's REAL default
+      // (see MODULES_DEFAULT_OFF), not a blind assumption that undefined = on.
+      const effective = current === undefined ? !MODULES_DEFAULT_OFF.has(id) : current
+      return { ...prev, modules: { ...prev.modules, [id]: !effective } }
+    })
+  }
+
+  async function saveModules(apiKey: string) {
+    if (!moduleCfg) return
+    setModuleSaving(true)
+    try {
+      const config = { ...moduleCfg.config, modules: moduleCfg.modules }
+      const res = await fetch(`${API}/api/admin/config`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_key: key, api_key: apiKey, config }),
+      })
+      const data = await res.json()
+      if (data.ok) flash('✓ Modules enregistrés — actifs au prochain contrôle de licence (≤30 min)')
+      else flash('Erreur: ' + data.error)
+    } catch { flash('Erreur de connexion') }
+    setModuleSaving(false)
   }
 
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
@@ -289,7 +341,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
                 {/* Actions */}
                 {c.plan === 'active' ? (
-                  <button onClick={() => setActionClient(c)} style={{ padding:'7px 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--muted)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
+                  <button onClick={() => { setActionClient(c); loadModules(c.api_key) }} style={{ padding:'7px 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--muted)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
                     Actions ▾
                   </button>
                 ) : (
@@ -365,11 +417,46 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
       {/* Action modal */}
       {actionClient && (
-        <div onClick={() => setActionClient(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
+        <div onClick={() => { setActionClient(null); setModuleCfg(null) }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
           <div onClick={e => e.stopPropagation()} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', width:'100%', maxWidth:'420px', boxShadow:'var(--shadow)', maxHeight:'90vh', overflowY:'auto' }}>
             <div style={{ fontSize:'16px', fontWeight:'700', marginBottom:'4px' }}>{actionClient.name}</div>
             <div style={{ fontSize:'12px', color:'var(--muted)', marginBottom:'20px' }}>{actionClient.api_key}</div>
-            
+
+            {/* Modules — distribute/remove features on an already-created client.
+                Undefined = server default (see DEFAULT_MODULES in /api/check);
+                explicit true/false always wins. Reaches the till through the
+                same license check the EXE already polls, no rebuild needed. */}
+            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Modules</div>
+            {moduleLoading ? (
+              <div style={{ padding:'20px', textAlign:'center', color:'var(--muted)', fontSize:'12px' }}>Chargement…</div>
+            ) : !moduleCfg ? (
+              <div style={{ padding:'20px', textAlign:'center', color:'var(--red)', fontSize:'12px' }}>Échec du chargement</div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:'2px', marginBottom:'12px' }}>
+                {MODULES_LIST.map(m => {
+                  const val = moduleCfg.modules[m.id]
+                  const on = val === undefined ? !MODULES_DEFAULT_OFF.has(m.id) : val
+                  return (
+                    <label key={m.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'8px 6px', borderRadius:'8px', cursor:'pointer' }}>
+                      <input type="checkbox" checked={on} onChange={() => toggleModule(m.id)} style={{ width:'16px', height:'16px', accentColor:'var(--gold)', flexShrink:0 }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:'13px', fontWeight:'600' }}>{m.label}</div>
+                        <div style={{ fontSize:'11px', color:'var(--muted)' }}>{m.desc}</div>
+                      </div>
+                      {val === undefined && <span style={{ fontSize:'10px', color:'var(--muted)', fontStyle:'italic' }}>défaut</span>}
+                    </label>
+                  )
+                })}
+                <button
+                  onClick={() => saveModules(actionClient.api_key)}
+                  disabled={moduleSaving}
+                  style={{ marginTop:'10px', padding:'12px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'10px', color:'#fff', cursor: moduleSaving ? 'default':'pointer', fontSize:'13px', fontWeight:'700', opacity: moduleSaving ? 0.7 : 1 }}
+                >
+                  {moduleSaving ? '…' : '✓ Enregistrer les modules'}
+                </button>
+              </div>
+            )}
+
             {/* Suspend options */}
             <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Suspendre</div>
             <div style={{ display:'flex', flexDirection:'column', gap:'8px', marginBottom:'16px' }}>
@@ -388,7 +475,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
             <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Programmer une suspension</div>
             <ScheduleSection apiKey={actionClient.api_key} suspendAt={actionClient.suspend_at} onAction={doAction} onCancel={() => doAction(actionClient.api_key, 'cancel_schedule')} />
 
-            <button onClick={() => setActionClient(null)} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
+            <button onClick={() => { setActionClient(null); setModuleCfg(null) }} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
               Fermer
             </button>
           </div>
@@ -405,6 +492,7 @@ const MODULES_LIST = [
   { id:'stockTracking',  label:'📦 Stock produits',        desc:"Comptage à l'unité, seuils, livraisons" },
   { id:'ingredients',    label:'🧪 Ingrédients & recettes', desc:'Coût auto, déduction sur vente' },
   { id:'credits',        label:'📒 Crédit client',          desc:'Ardoises / créances' },
+  { id:'wallet',         label:'💳 Fidélité',               desc:'Solde prépayé + bonus 30% à la recharge' },
   { id:'sessions',       label:'🔒 Clôtures caisse',        desc:'Fond, compté, écart' },
   { id:'delivery',       label:'🛵 Livraison',              desc:'Type de commande + livraison' },
   { id:'tables',         label:'🪑 Plan de salle',          desc:'Tables, zones' },
@@ -413,6 +501,12 @@ const MODULES_LIST = [
   { id:'printEnabled',   label:'🖨️ Impression tickets',     desc:'Ticket thermique 80mm' },
   { id:'dashboard',      label:'📊 Dashboard distant',      desc:'Accès web en temps réel' },
 ]
+
+// Real server defaults (mirrors DEFAULT_MODULES in app/api/check/route.ts) — a
+// module absent from every list below defaults ON, because that's what every
+// isXEnabled() on the till actually does: `!(modules && modules.x === false)`
+// treats "key not present" as enabled. Only list the modules that default OFF.
+const MODULES_DEFAULT_OFF = new Set(['tables', 'barcode', 'wallet'])
 
 const PRESETS: Record<string, { label:string; emoji:string; modules:string[]; zone1:string; zone2:string; zone1Cats:string; zone2Cats:string }> = {
   cafe:     { label:'Café / Salon de thé',    emoji:'☕', modules:['sessions','credits','kitchenTickets','printEnabled','dashboard'], zone1:'BAR — Boissons', zone2:'CUISINE — Pâtisserie', zone1Cats:'Café,Thé,Jus,Boisson', zone2Cats:'Pâtisserie,Sandwich' },
