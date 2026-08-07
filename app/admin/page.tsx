@@ -171,6 +171,8 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [moduleCfg, setModuleCfg] = useState<{ config: any; modules: Record<string, boolean> } | null>(null)
   const [moduleLoading, setModuleLoading] = useState(false)
   const [moduleSaving, setModuleSaving] = useState(false)
+  const [rewardBusy, setRewardBusy] = useState(false)
+  const [rewardResult, setRewardResult] = useState<any>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [demoRequests, setDemoRequests] = useState<any[]>([])
   const [showDemos, setShowDemos] = useState(false)
@@ -207,7 +209,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       else flash('Erreur: ' + data.error)
     } catch { flash('Erreur de connexion') }
     setActionClient(null)
-    setModuleCfg(null)
+    setModuleCfg(null); setRewardResult(null)
   }
 
   // ── Module distribution for an EXISTING client ────────────────────────
@@ -216,7 +218,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   // round-tripped exactly as the server had it.
   async function loadModules(apiKey: string) {
     setModuleLoading(true)
-    setModuleCfg(null)
+    setModuleCfg(null); setRewardResult(null)
     try {
       const res = await fetch(`${API}/api/admin/config?admin_key=${encodeURIComponent(key)}&api_key=${encodeURIComponent(apiKey)}`)
       const data = await res.json()
@@ -253,6 +255,25 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       else flash('Erreur: ' + data.error)
     } catch { flash('Erreur de connexion') }
     setModuleSaving(false)
+  }
+
+  // Runs the SAME job the monthly cron runs (see /api/cron/wallet-rewards),
+  // for one client on demand — testing it, or running it by hand before a
+  // cron schedule is actually deployed. Idempotent: running it twice for the
+  // same month credits nothing the second time (see wallet_reward_runs).
+  async function runRewards(apiKey: string) {
+    setRewardBusy(true)
+    setRewardResult(null)
+    try {
+      const res = await fetch(`${API}/api/admin/wallet-rewards`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_key: key, api_key: apiKey }),
+      })
+      const data = await res.json()
+      if (data.ok) setRewardResult(data)
+      else flash('Erreur: ' + data.error)
+    } catch { flash('Erreur de connexion') }
+    setRewardBusy(false)
   }
 
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
@@ -417,7 +438,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
       {/* Action modal */}
       {actionClient && (
-        <div onClick={() => { setActionClient(null); setModuleCfg(null) }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
+        <div onClick={() => { setActionClient(null); setModuleCfg(null); setRewardResult(null) }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
           <div onClick={e => e.stopPropagation()} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', width:'100%', maxWidth:'420px', boxShadow:'var(--shadow)', maxHeight:'90vh', overflowY:'auto' }}>
             <div style={{ fontSize:'16px', fontWeight:'700', marginBottom:'4px' }}>{actionClient.name}</div>
             <div style={{ fontSize:'12px', color:'var(--muted)', marginBottom:'20px' }}>{actionClient.api_key}</div>
@@ -454,6 +475,38 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
                 >
                   {moduleSaving ? '…' : '✓ Enregistrer les modules'}
                 </button>
+
+                {/* Récompense mensuelle — same job the cron runs, triggerable
+                    by hand for testing or before a cron schedule is set up.
+                    Only shown once wallet is confirmed on for this client,
+                    same "défaut"-aware check used above. */}
+                {(moduleCfg.modules['wallet'] === undefined ? !MODULES_DEFAULT_OFF.has('wallet') : moduleCfg.modules['wallet']) && (
+                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--div)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      Récompense mensuelle (Fidélité)
+                    </div>
+                    <button
+                      onClick={() => runRewards(actionClient.api_key)}
+                      disabled={rewardBusy}
+                      style={{ width: '100%', padding: '12px', background: 'var(--card)', border: '1px solid var(--div)', borderRadius: '10px', color: 'var(--gold-l)', cursor: rewardBusy ? 'default' : 'pointer', fontSize: '13px', fontWeight: '700', opacity: rewardBusy ? 0.7 : 1 }}
+                    >
+                      {rewardBusy ? '…' : '🎁 Calculer la récompense (mois dernier)'}
+                    </button>
+                    {rewardResult && (
+                      <div style={{ marginTop: '10px', fontSize: '12px' }}>
+                        <div style={{ color: 'var(--muted)', marginBottom: '6px' }}>Période : {rewardResult.period}</div>
+                        {rewardResult.results.length === 0 ? (
+                          <div style={{ color: 'var(--muted)' }}>Aucun client n&apos;a rechargé ce mois-ci.</div>
+                        ) : rewardResult.results.map((r: any, i: number) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: r.applied ? 'var(--green)' : 'var(--muted)' }}>
+                            <span>{r.name} ({r.qualifying_spend.toFixed(3)} DT)</span>
+                            <span>{r.applied ? `+${r.amount.toFixed(3)} DT (${(r.tier_pct * 100).toFixed(0)}%)` : (r.reason || '—')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -475,7 +528,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
             <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Programmer une suspension</div>
             <ScheduleSection apiKey={actionClient.api_key} suspendAt={actionClient.suspend_at} onAction={doAction} onCancel={() => doAction(actionClient.api_key, 'cancel_schedule')} />
 
-            <button onClick={() => { setActionClient(null); setModuleCfg(null) }} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
+            <button onClick={() => { setActionClient(null); setModuleCfg(null); setRewardResult(null) }} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
               Fermer
             </button>
           </div>

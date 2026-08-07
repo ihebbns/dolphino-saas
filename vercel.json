@@ -8,5 +8,11 @@
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type,X-Api-Key,Authorization" }
       ]
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/wallet-rewards",
+      "schedule": "0 3 2 * *"
+    }
   ]
 }

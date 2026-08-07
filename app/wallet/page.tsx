@@ -2,17 +2,21 @@
 // ═══════════════════════════════════════════════════════════════════
 // /wallet — CARTE DE FIDÉLITÉ (solde prépayé client)
 //
-// Mirror of /credits with the sign flipped: a wallet balance is money the
-// CLIENT owns, not a debt they owe. The caisse owns the wallet exactly as it
-// owns credit — a recharge is taken and a spend happens at the counter — this
-// page reads what the till has already published.
+// Unlike /credits, this page can WRITE — the owner asked to create cards and
+// recharge them from the dashboard, not only at the counter. Two actions do
+// that: 'createClient' (new card, balance 0) and 'webTopup' (+30% bonus,
+// computed server-side so the browser can never set its own bonus rate).
+// SPEND still only ever happens at the till — there is no "spend" button
+// here on purpose, since only a real sale should draw the balance down.
 //
-// The 30% recharge bonus is computed on the till (same as a credit sale
-// amount), so a 100 DT recharge already arrives here as a 130 DT 'topup'
-// movement — there is nothing extra to compute on this page.
+// A card (or recharge) created here reaches the till on its next
+// pullCloudWallets() poll (see La_Coupole's client) — same pull-then-merge
+// pattern pullCloudCosts() already uses, not a second competing source of
+// truth. The till still owns and pushes its own topups/spends exactly as
+// before; this page is an ADDITIONAL way in, not a replacement.
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
-import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, useModules, apiGet, f3, dt, daysSince } from '../ui/Shell'
+import { Shell, LoginGate, NotReady, Loading, Empty, useApiKey, useModules, apiGet, apiPost, f3, dt, daysSince } from '../ui/Shell'
 
 type Client = {
   client_key: string; name: string; phone: string
@@ -52,6 +56,13 @@ export default function WalletPage() {
   const [diag, setDiag] = useState<{ missing: string[]; db: { database: string; schema: string } | null }>(
     { missing: [], db: null }
   )
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [recharge, setRecharge] = useState<Client | null>(null)
+  const [rechargeAmount, setRechargeAmount] = useState('')
+  const [recharging, setRecharging] = useState(false)
 
   useEffect(() => {
     if (key) load(key)
@@ -85,6 +96,32 @@ export default function WalletPage() {
       setTotals(d.totals || null)
     } else setMsg(d.error || 'Erreur de chargement')
     setLoading(false)
+  }
+
+  async function createClient() {
+    if (!key || !newName.trim()) return
+    setCreating(true); setMsg('')
+    const d = await apiPost('/api/me/wallet', { key, action: 'createClient', name: newName.trim(), phone: newPhone.trim() })
+    setCreating(false)
+    if (d.ok) {
+      setMsg('✓ Carte créée pour ' + newName.trim())
+      setShowCreate(false); setNewName(''); setNewPhone('')
+      await load(key)
+    } else setMsg(d.error || 'Erreur')
+  }
+
+  async function confirmRecharge() {
+    if (!key || !recharge) return
+    const amount = parseFloat(rechargeAmount)
+    if (!(amount > 0)) { setMsg('Montant invalide'); return }
+    setRecharging(true); setMsg('')
+    const d = await apiPost('/api/me/wallet', { key, action: 'webTopup', client_key: recharge.client_key, amount, actor: 'web' })
+    setRecharging(false)
+    if (d.ok) {
+      setMsg(`✓ ${f3(amount)} DT → ${f3(d.credited)} DT crédités sur la carte de ${recharge.name}`)
+      setRecharge(null); setRechargeAmount('')
+      await load(key)
+    } else setMsg(d.error || 'Erreur')
   }
 
   const filtered = useMemo(() => {
@@ -145,7 +182,12 @@ export default function WalletPage() {
       subtitle="Solde prépayé client — les recharges se font à la caisse (bonus 30% à chaque rechargement)"
       restName={restName}
       badges={{ '/wallet': totals?.nb_avec_solde ?? 0 }}
-      actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
+      actions={
+        <>
+          <button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>
+          <button className="btn btnPrimary" onClick={() => setShowCreate(true)}>+ Nouvelle carte</button>
+        </>
+      }
     >
       {msg && <div className="notice nDanger"><span className="noticeIcon">✕</span><div>{msg}</div></div>}
 
@@ -240,7 +282,10 @@ export default function WalletPage() {
                       {c.archived ? (
                         <span className="t11 cFaint">supprimée à la caisse</span>
                       ) : (
-                        <button className="btn btnSm" onClick={() => openFiche(c)}>Fiche</button>
+                        <>
+                          <button className="btn btnSm" onClick={() => { setRecharge(c); setRechargeAmount('') }}>📥 Recharger</button>
+                          <button className="btn btnSm" onClick={() => openFiche(c)}>Fiche</button>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -405,6 +450,72 @@ export default function WalletPage() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreate && (
+        <div className="overlay" onClick={() => !creating && setShowCreate(false)}>
+          <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modalHead">
+              <div className="modalTitle">💳 Nouvelle carte</div>
+              <button className="btn btnGhost btnSm spacer" onClick={() => setShowCreate(false)} aria-label="Fermer">✕</button>
+            </div>
+            <div className="modalBody col" style={{ gap: 12 }}>
+              <div className="field">
+                <label className="label">Nom du client</label>
+                <input className="input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Amira Ben Salah" autoFocus />
+              </div>
+              <div className="field">
+                <label className="label">Téléphone (optionnel)</label>
+                <input className="input" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="55 123 456" />
+              </div>
+              <div className="t11 cFaint">Le solde démarre à 0 DT — rechargez-la ensuite depuis la liste.</div>
+            </div>
+            <div className="modalFoot">
+              <button className="btn" onClick={() => setShowCreate(false)} disabled={creating}>Annuler</button>
+              <button className="btn btnPrimary" onClick={createClient} disabled={creating || !newName.trim()}>
+                {creating ? '…' : '✓ Créer la carte'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {recharge && (
+        <div className="overlay" onClick={() => !recharging && setRecharge(null)}>
+          <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modalHead">
+              <div>
+                <div className="modalTitle">📥 Recharger — {recharge.name}</div>
+                <div className="t12 cMuted">Solde actuel : {f3(recharge.balance)} DT</div>
+              </div>
+              <button className="btn btnGhost btnSm spacer" onClick={() => setRecharge(null)} aria-label="Fermer">✕</button>
+            </div>
+            <div className="modalBody col" style={{ gap: 12 }}>
+              <div className="field">
+                <label className="label">Montant reçu du client (DT)</label>
+                <input
+                  className="input inputNum" type="number" step="0.5" min="0" autoFocus
+                  value={rechargeAmount} onChange={e => setRechargeAmount(e.target.value)} placeholder="0.000"
+                />
+              </div>
+              {(() => {
+                const amt = parseFloat(rechargeAmount)
+                const credited = amt > 0 ? Math.round(amt * 1.3 * 1000) / 1000 : 0
+                return (
+                  <div className="t12" style={{ color: 'var(--brand)', fontWeight: 650 }}>
+                    Sera crédité : {f3(credited)} DT (bonus +30%)
+                  </div>
+                )
+              })()}
+            </div>
+            <div className="modalFoot">
+              <button className="btn" onClick={() => setRecharge(null)} disabled={recharging}>Annuler</button>
+              <button className="btn btnPrimary" onClick={confirmRecharge} disabled={recharging || !(parseFloat(rechargeAmount) > 0)}>
+                {recharging ? '…' : '✓ Créditer'}
+              </button>
             </div>
           </div>
         </div>
