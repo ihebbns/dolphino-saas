@@ -24,7 +24,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 type Variant = { label: string; price: number }
-type MenuItem = { id: string; name: string; e: string; price: number; variants: Variant[] | null }
+type MenuItem = { id: string; name: string; e: string; price: number; variants: Variant[] | null; available?: boolean }
 type CartLine = { id: string; name: string; e: string; price: number; variantLabel: string; qty: number }
 
 const ORDER_TYPES = [
@@ -117,6 +117,7 @@ export default function KioskPage({ params }: { params: { slug: string } }) {
   }, [stage])
 
   function addToCart(item: MenuItem, variant: Variant | null) {
+    if (item.available === false) return // defense in depth — the tile itself is already non-interactive
     const price = variant ? variant.price : item.price
     const label = variant ? variant.label : ''
     setCartList(prev => {
@@ -223,16 +224,20 @@ export default function KioskPage({ params }: { params: { slug: string } }) {
                 ))}
               </div>
               <div className="kioGrid">
-                {cat && info.menu[cat].items.map((it: MenuItem) => (
-                  <div key={it.id} className={'kioItem' + (justAdded === it.id ? ' bump' : '')} onClick={() => it.variants ? setPicking(it) : addToCart(it, null)}>
-                    <div className="kioItemPlate"><span className="kioItemEmoji">{it.e}</span></div>
-                    <div className="kioItemName">{it.name}</div>
-                    <div className="kioItemFoot">
-                      <span className="kioItemPrice">{it.variants ? `dès ${Math.min(...it.variants.map(v => v.price)).toFixed(3)}` : it.price.toFixed(3)} {currency}</span>
-                      <span className="kioItemAdd">+</span>
+                {cat && info.menu[cat].items.map((it: MenuItem) => {
+                  const out = it.available === false
+                  return (
+                    <div key={it.id} className={'kioItem' + (justAdded === it.id ? ' bump' : '') + (out ? ' out' : '')} onClick={() => !out && (it.variants ? setPicking(it) : addToCart(it, null))}>
+                      {out && <div className="kioItemOutBadge">Rupture</div>}
+                      <div className="kioItemPlate"><span className="kioItemEmoji">{it.e}</span></div>
+                      <div className="kioItemName">{it.name}</div>
+                      <div className="kioItemFoot">
+                        <span className="kioItemPrice">{it.variants ? `dès ${Math.min(...it.variants.map(v => v.price)).toFixed(3)}` : it.price.toFixed(3)} {currency}</span>
+                        {!out && <span className="kioItemAdd">+</span>}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               {cartList.length > 0 && (
                 <div className="kioCartBar" onClick={() => setStage('cart')}>
@@ -294,6 +299,9 @@ export default function KioskPage({ params }: { params: { slug: string } }) {
               <div className="kioConfirmRing"><div className="kioConfirmCheck">✓</div></div>
               <div className="kioConfirmTitle">Commande envoyée !</div>
               <div className="kioHint" style={{ fontSize: 18 }}>{name}, votre commande arrive en cuisine.</div>
+              {confirmed.droppedOutOfStock && (
+                <div className="kioErr" style={{ marginTop: 10 }}>⚠️ Indisponible, retiré de la commande : {confirmed.droppedOutOfStock.join(', ')}</div>
+              )}
               <div className="kioConfirmCard">
                 <div className="kioConfirmCardLabel">Total à régler</div>
                 <div className="kioConfirmTotal">{confirmed.total.toFixed(3)} {currency}</div>
@@ -418,6 +426,8 @@ const KIOSK_CSS = `
 .kioItemFoot{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:auto;}
 .kioItemPrice{font-size:15px;font-weight:800;color:#F5A623;}
 .kioItemAdd{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#D97706,#F5A623);color:#1A1200;font-weight:900;font-size:17px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(245,166,35,.35);}
+.kioItem.out{opacity:.5;filter:grayscale(.6);}
+.kioItemOutBadge{position:absolute;top:10px;right:10px;background:#F87171;color:#fff;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;letter-spacing:.3px;}
 
 /* ── Sticky cart bar ── */
 .kioCartBar{position:fixed;left:16px;right:16px;bottom:16px;display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:20px;

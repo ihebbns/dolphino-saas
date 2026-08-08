@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 type Variant = { label: string; price: number }
-type MenuItem = { id: string; name: string; e: string; price: number; variants: Variant[] | null }
+type MenuItem = { id: string; name: string; e: string; price: number; variants: Variant[] | null; available?: boolean }
 type MenuCat = { icon: string; items: MenuItem[] }
 type CartLine = { id: string; name: string; e: string; price: number; variantLabel: string; qty: number }
 
@@ -87,6 +87,7 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   }, [slug])
 
   function addToCart(item: MenuItem, variant: Variant | null) {
+    if (item.available === false) return // defense in depth — the tile itself is already non-interactive
     const price = variant ? variant.price : item.price
     const label = variant ? variant.label : ''
     setCart(prev => {
@@ -225,6 +226,9 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
               <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
               <div className="moiCardTitle">Commande envoyée !</div>
               <div className="moiHint">Le commerce va la confirmer sous peu.</div>
+              {confirmed.droppedOutOfStock && (
+                <div className="moiErr" style={{ marginTop: 10 }}>⚠️ Indisponible, retiré de la commande : {confirmed.droppedOutOfStock.join(', ')}</div>
+              )}
               <div className="moiBalance" style={{ marginTop: 10 }}>{confirmed.total.toFixed(3)} {currency}</div>
               <button className="moiBtn moiBtnPrimary" style={{ marginTop: 16 }} onClick={() => setConfirmed(null)}>Nouvelle commande</button>
             </div>
@@ -239,16 +243,20 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
               </div>
 
               <div className="moiGrid">
-                {cat && info.menu[cat].items.map((it: MenuItem) => (
-                  <div key={it.id} className="moiItem" onClick={() => it.variants ? setPicking(it) : addToCart(it, null)}>
-                    <div className="moiItemEmoji">{it.e}</div>
-                    <div className="moiItemName">{it.name}</div>
-                    <div className="moiItemPrice">
-                      {it.variants ? `${Math.min(...it.variants.map(v => v.price)).toFixed(3)}+` : it.price.toFixed(3)} {currency}
+                {cat && info.menu[cat].items.map((it: MenuItem) => {
+                  const out = it.available === false
+                  return (
+                    <div key={it.id} className={'moiItem' + (out ? ' out' : '')} onClick={() => !out && (it.variants ? setPicking(it) : addToCart(it, null))}>
+                      {out && <div className="moiItemOutBadge">Rupture</div>}
+                      <div className="moiItemEmoji">{it.e}</div>
+                      <div className="moiItemName">{it.name}</div>
+                      <div className="moiItemPrice">
+                        {it.variants ? `${Math.min(...it.variants.map(v => v.price)).toFixed(3)}+` : it.price.toFixed(3)} {currency}
+                      </div>
+                      {!out && <div className="moiItemAdd">+</div>}
                     </div>
-                    <div className="moiItemAdd">+</div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {cart.length > 0 && (
@@ -355,6 +363,8 @@ const MOI_CSS = `
 .moiItemName{font-size:12px;font-weight:700;line-height:1.25;}
 .moiItemPrice{font-size:13px;font-weight:800;color:var(--m-accent);}
 .moiItemAdd{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;background:#F59E0B;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
+.moiItem.out{opacity:.5;filter:grayscale(.5);}
+.moiItemOutBadge{position:absolute;top:6px;right:6px;background:var(--m-err);color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px;}
 .moiCart{background:var(--m-bg2);border-top:2px solid var(--m-border);border-radius:18px 18px 0 0;margin-top:16px;padding:16px;position:sticky;bottom:0;box-shadow:var(--m-shadow);}
 .moiCartRow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--m-border2);font-size:13px;}
 .moiQty{display:flex;align-items:center;gap:8px;}

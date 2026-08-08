@@ -18,6 +18,15 @@
 //     'markPaid' just lets staff record that it happened, separate from
 //     accept/reject, so an accepted-but-unpaid order stays visible instead
 //     of silently blending into "done".
+// POST { key, action:'claim'|'release', order_id, actor? }
+//   → with more than one till, two cashiers could both pull the same
+//     unpaid order into their cart and both complete a real sale for it —
+//     duplicate stock deduction, duplicate receipt. 'claim' is the atomic
+//     "I've got this one" a till takes BEFORE loading an order into the
+//     cart; a second till's claim fails while the first is active. Claims
+//     expire after 3 minutes (till crashed, cashier walked away mid-flow)
+//     so a stuck claim can't strand an order forever, and 'release' lets
+//     a till give it up early if the cashier clears the cart instead.
 // ═══════════════════════════════════════════════════
 
 import { NextResponse } from 'next/server'
@@ -60,8 +69,12 @@ export async function GET(req: Request) {
       WHERE restaurant_id = ${rest.id} AND status = 'pending'
       ORDER BY created_at ASC`
 
+    // claimed_by/claimed_at travel to the till so it can gray out a row
+    // another till is actively encaissé-ing — a stale claim (>3 min) reads
+    // as unclaimed here too, matching the same window 'claim' itself uses.
     const unpaid = await sql`
-      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at
+      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at,
+             CASE WHEN claimed_at > NOW() - INTERVAL '3 minutes' THEN claimed_by ELSE NULL END AS claimed_by
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
       ORDER BY responded_at ASC`
@@ -91,7 +104,7 @@ export async function POST(req: Request) {
 
   const action = clip(body?.action, 16)
   const orderId = parseInt(String(body?.order_id))
-  if (!['accept', 'reject', 'markPaid'].includes(action) || !Number.isFinite(orderId)) {
+  if (!['accept', 'reject', 'markPaid', 'claim', 'release'].includes(action) || !Number.isFinite(orderId)) {
     return cors(NextResponse.json({ ok: false, error: 'Paramètres invalides' }, { status: 400 }))
   }
 
@@ -99,9 +112,27 @@ export async function POST(req: Request) {
     const rest = await resolveRestaurant(key)
     if (!rest) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 403 }))
 
+    if (action === 'claim') {
+      const actor = clip(body?.actor, 80)
+      const res = await sql`
+        UPDATE online_orders SET claimed_by = ${actor}, claimed_at = NOW()
+        WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
+          AND (claimed_by IS NULL OR claimed_at < NOW() - INTERVAL '3 minutes' OR claimed_by = ${actor})
+        RETURNING id`
+      if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Déjà en cours d’encaissement sur une autre caisse' }, { status: 409 }))
+      return cors(NextResponse.json({ ok: true }))
+    }
+
+    if (action === 'release') {
+      await sql`
+        UPDATE online_orders SET claimed_by = NULL, claimed_at = NULL
+        WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND claimed_by = ${clip(body?.actor, 80)}`
+      return cors(NextResponse.json({ ok: true }))
+    }
+
     if (action === 'markPaid') {
       const res = await sql`
-        UPDATE online_orders SET paid = TRUE, paid_at = NOW(), paid_by = ${clip(body?.actor, 80)}
+        UPDATE online_orders SET paid = TRUE, paid_at = NOW(), paid_by = ${clip(body?.actor, 80)}, claimed_by = NULL, claimed_at = NULL
         WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
         RETURNING id`
       if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà payée' }, { status: 404 }))

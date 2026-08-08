@@ -30,7 +30,7 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
 
   try {
     const rows = await sql`
-      SELECT name, config, menu_json FROM restaurants
+      SELECT id, name, config, menu_json FROM restaurants
       WHERE public_slug = ${slug} AND plan NOT IN ('suspended', 'suspended_exe')
       LIMIT 1`
     if (!rows.length) return NextResponse.json({ ok: false, error: 'Commerce introuvable' }, { status: 404 })
@@ -40,8 +40,19 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
     const modules = (config.modules && typeof config.modules === 'object') ? config.modules : {}
     const menuRaw = (r.menu_json && typeof r.menu_json === 'object') ? r.menu_json : {}
 
+    // Same gate the POS itself uses (isStockEnabled()) — rupture only means
+    // something once stock is actually being tracked for this client.
+    let outOfStock = new Set<string>()
+    if (modules.stockTracking !== false) {
+      const stockRows = await sql`
+        SELECT item_id FROM stock WHERE restaurant_id = ${r.id} AND is_available = FALSE`
+      outOfStock = new Set(stockRows.map((s: any) => String(s.item_id)))
+    }
+
     // Strip to exactly what a customer needs to browse and order — no cost,
-    // no barcode, no track_mode, nothing internal.
+    // no barcode, no track_mode, nothing internal. Out-of-stock items stay
+    // visible but flagged, not hidden — same as a real kiosk shows a
+    // grayed-out "sold out" tile rather than making the item vanish.
     const menu: Record<string, any> = {}
     for (const [catName, catVal] of Object.entries<any>(menuRaw)) {
       const items = Array.isArray(catVal) ? catVal : (catVal?.items ?? [])
@@ -53,6 +64,7 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
           e: String(it.e || it.emoji || '🍽️').slice(0, 10),
           price: itemPrice(it),
           variants: Array.isArray(it.v) ? it.v.map((v: any) => ({ label: String(v?.l || ''), price: Number(v?.p) || 0 })) : null,
+          available: !outOfStock.has(String(it.id ?? '')),
         }))
       if (cleanItems.length) menu[catName] = { icon: catVal?.icon || '📦', items: cleanItems }
     }

@@ -59,11 +59,24 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
       for (const it of items) if (it?.id) byId.set(String(it.id), it)
     }
 
+    // Same rupture flag the till itself blocks a sale on — a stale client
+    // menu (customer had the page open while staff marked something out)
+    // can never sneak a rupture item into a paid order. Same module gate as
+    // the menu route: rupture only means something once stock is tracked.
+    let outOfStock = new Set<string>()
+    if (modules.stockTracking !== false) {
+      const stockRows = await sql`
+        SELECT item_id FROM stock WHERE restaurant_id = ${rid} AND is_available = FALSE`
+      outOfStock = new Set(stockRows.map((s: any) => String(s.item_id)))
+    }
+
     const orderItems: any[] = []
     let total = 0
+    const droppedOutOfStock: string[] = []
     for (const ri of reqItems) {
       const menuItem = byId.get(clip(ri?.id, 64))
       if (!menuItem) continue // unknown/stale item id — silently dropped, never trusted
+      if (outOfStock.has(String(menuItem.id))) { droppedOutOfStock.push(menuItem.name); continue }
       const qty = Math.max(1, Math.min(20, parseInt(String(ri?.qty)) || 1))
 
       let price: number, variantLabel = ''
@@ -80,7 +93,12 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
       total += price * qty
     }
 
-    if (!orderItems.length) return NextResponse.json({ ok: false, error: 'Aucun article valide' }, { status: 400 })
+    if (!orderItems.length) {
+      const error = droppedOutOfStock.length
+        ? `Rupture de stock : ${droppedOutOfStock.join(', ')}`
+        : 'Aucun article valide'
+      return NextResponse.json({ ok: false, error }, { status: 400 })
+    }
     total = Math.round(total * 1000) / 1000
 
     const [row] = await sql`
@@ -88,7 +106,12 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
       VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note})
       RETURNING id`
 
-    return NextResponse.json({ ok: true, order_id: row.id, total, items: orderItems })
+    return NextResponse.json({
+      ok: true, order_id: row.id, total, items: orderItems,
+      // Order still went through with whatever WAS available — the client
+      // shows this as a heads-up, not a failure.
+      droppedOutOfStock: droppedOutOfStock.length ? droppedOutOfStock : undefined,
+    })
   } catch (e: any) {
     return NextResponse.json(serverError('public order', e), { status: 500 })
   }
