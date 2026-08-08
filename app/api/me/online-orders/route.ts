@@ -42,6 +42,7 @@ import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import { serverError } from '@/lib/apiError'
+import { whatsappConfigured, sendWhatsAppOrderReady } from '@/lib/whatsapp'
 
 export const runtime = 'edge'
 
@@ -154,8 +155,19 @@ export async function POST(req: Request) {
       const res = await sql`
         UPDATE online_orders SET ready = TRUE, ready_at = NOW(), ready_by = ${clip(body?.actor, 80)}
         WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
-        RETURNING id`
+        RETURNING id, client_name, client_phone`
       if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà prête' }, { status: 404 }))
+      // Best-effort — /moi's own live polling is the guaranteed path; this is
+      // a bonus nudge for a customer who's closed the tab. Inert (returns
+      // {skipped:true}) until WHATSAPP_TOKEN/WHATSAPP_PHONE_ID are set.
+      // Awaited (not fire-and-forget) — the edge runtime doesn't guarantee an
+      // unawaited promise survives past the response being sent, and this
+      // call is typically a few hundred ms, not worth risking a silent no-op.
+      // Its own failures are swallowed either way; markReady never fails
+      // because a notification couldn't be sent.
+      if (whatsappConfigured() && res[0].client_phone) {
+        await sendWhatsAppOrderReady(res[0].client_phone, res[0].client_name, orderId).catch(() => {})
+      }
       return cors(NextResponse.json({ ok: true }))
     }
 
