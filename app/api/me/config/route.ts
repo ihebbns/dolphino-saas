@@ -17,6 +17,7 @@ export const runtime = 'edge'
 const MODULE_KEYS = [
   'tables', 'barcode', 'credit', 'stockTracking', 'poleDisplay',
   'kitchenTickets', 'printEnabled', 'dashboard', 'menuManage',
+  'wallet', 'onlineOrders',
 ]
 
 const cors = (r: NextResponse) => {

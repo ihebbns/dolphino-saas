@@ -24,6 +24,10 @@ const DEFAULT_MODULES = {
   // per-client business decision (the bonus rate eats into their margin), not
   // something every client should suddenly have active.
   wallet: false,
+  // Commande en ligne (page publique servio.tn/moi/<slug>) — off by default,
+  // same reasoning: a client needs to actually be ready to staff an incoming
+  // order queue before customers can send orders straight to the till.
+  onlineOrders: false,
 }
 
 const cors = (r: NextResponse) => {
