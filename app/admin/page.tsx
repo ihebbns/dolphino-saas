@@ -3,7 +3,12 @@ import React, { useState, useEffect } from 'react'
 import { useTheme } from '../ui/useTheme'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
-const ADMIN_KEY = 'servio-admin-iheb-2026'
+// There is deliberately NO admin key constant here. The only copy of that
+// secret lives server-side (ADMIN_SECRET_KEY) — anything defined in this file
+// ships in the public JS bundle for anyone who opens devtools on /admin, so a
+// password embedded here is not a password, it's a public one. Login always
+// round-trips through the server; a network failure is an error, never a
+// local bypass.
 
 // ═══════════════ ADMIN PAGE ═══════════════
 export default function AdminPage() {
@@ -14,11 +19,13 @@ export default function AdminPage() {
   const { dark, toggle: toggleTheme } = useTheme()
 
   useEffect(() => {
-    if (sessionStorage.getItem('servio_admin') === '1') setAuthed(true)
+    // Session persistence only checks that a key was previously validated by
+    // the server (see Login below) — never re-derives or assumes one.
+    if (sessionStorage.getItem('servio_admin_key')) setAuthed(true)
   }, [])
 
-  if (!authed) return <Login dark={dark} toggleTheme={toggleTheme} onLogin={() => { sessionStorage.setItem('servio_admin','1'); setAuthed(true) }} />
-  return <Panel dark={dark} toggleTheme={toggleTheme} onLogout={() => { sessionStorage.removeItem('servio_admin'); setAuthed(false) }} />
+  if (!authed) return <Login dark={dark} toggleTheme={toggleTheme} onLogin={(validatedKey) => { sessionStorage.setItem('servio_admin_key', validatedKey); setAuthed(true) }} />
+  return <Panel dark={dark} toggleTheme={toggleTheme} onLogout={() => { sessionStorage.removeItem('servio_admin_key'); setAuthed(false) }} />
 }
 
 // ═══════════════ THEME WRAPPER ═══════════════
@@ -42,7 +49,7 @@ function Wrap({ dark, children }: { dark: boolean, children: React.ReactNode }) 
 }
 
 // ═══════════════ LOGIN ═══════════════
-function Login({ dark, toggleTheme, onLogin }: { dark:boolean, toggleTheme:()=>void, onLogin:()=>void }) {
+function Login({ dark, toggleTheme, onLogin }: { dark:boolean, toggleTheme:()=>void, onLogin:(validatedKey:string)=>void }) {
   const [pass, setPass] = useState('')
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
@@ -50,15 +57,14 @@ function Login({ dark, toggleTheme, onLogin }: { dark:boolean, toggleTheme:()=>v
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    // Test against API
+    // Always the server's call, no exceptions — a network failure is an
+    // error state, never a reason to authenticate locally.
     try {
       const res = await fetch(`${API}/api/admin/clients`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ admin_key: pass }) })
-      if (res.ok) { onLogin(); sessionStorage.setItem('servio_admin_key', pass) }
+      if (res.ok) onLogin(pass)
       else setErr('Mot de passe incorrect')
-    } catch { 
-      // Fallback: local check
-      if (pass === ADMIN_KEY) onLogin()
-      else setErr('Erreur de connexion')
+    } catch {
+      setErr('Erreur de connexion')
     }
     setLoading(false)
   }
@@ -177,7 +183,12 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [demoRequests, setDemoRequests] = useState<any[]>([])
   const [showDemos, setShowDemos] = useState(false)
 
-  const key = sessionStorage.getItem('servio_admin_key') || ADMIN_KEY
+  const key = sessionStorage.getItem('servio_admin_key') || ''
+  // Panel only ever renders after AdminPage confirms a validated key is
+  // stored, so this is a defensive backstop, not the real gate — but if it
+  // ever IS empty, fail back to the login screen rather than sending blank
+  // credentials to admin endpoints.
+  useEffect(() => { if (!key) onLogout() }, [key])
 
   async function loadClients() {
     setLoading(true)
