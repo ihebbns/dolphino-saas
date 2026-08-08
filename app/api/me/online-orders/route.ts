@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════
 // /api/me/online-orders — the till's incoming-order queue.
 //
-// GET  ?key=API              → pending orders (+ a short recent history)
+// GET  ?key=API              → pending orders + unpaid-accepted + recent history
 // POST { key, action:'accept'|'reject', order_id, actor? }
 //   → staff-driven only, never auto-transitions. 'accept' does NOT deduct
 //     stock or touch sales here — the POS pulls the pending order's items
@@ -9,6 +9,12 @@
 //     through its own encaisser() flow, so accepted online orders go
 //     through EXACTLY the same stock/kitchen-ticket/receipt path as an
 //     order typed in by hand. This endpoint only tracks queue status.
+// POST { key, action:'markPaid', order_id, actor? }
+//   → online orders (phone or kiosk) never carry a payment step at
+//     submission — the customer pays at the counter, same as a walk-in.
+//     'markPaid' just lets staff record that it happened, separate from
+//     accept/reject, so an accepted-but-unpaid order stays visible instead
+//     of silently blending into "done".
 // ═══════════════════════════════════════════════════
 
 import { NextResponse } from 'next/server'
@@ -51,13 +57,19 @@ export async function GET(req: Request) {
       WHERE restaurant_id = ${rest.id} AND status = 'pending'
       ORDER BY created_at ASC`
 
+    const unpaid = await sql`
+      SELECT id, client_name, client_phone, order_type, total::float AS total, responded_at
+      FROM online_orders
+      WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
+      ORDER BY responded_at ASC`
+
     const recent = await sql`
-      SELECT id, client_name, order_type, total::float AS total, status, created_at, responded_at
+      SELECT id, client_name, order_type, total::float AS total, status, paid, created_at, responded_at
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status != 'pending'
       ORDER BY responded_at DESC LIMIT 30`
 
-    return cors(NextResponse.json({ ok: true, pending, recent }))
+    return cors(NextResponse.json({ ok: true, pending, unpaid, recent }))
   } catch (e: any) {
     return cors(NextResponse.json(serverError('online-orders GET', e), { status: 500 }))
   }
@@ -71,13 +83,22 @@ export async function POST(req: Request) {
 
   const action = clip(body?.action, 16)
   const orderId = parseInt(String(body?.order_id))
-  if (!['accept', 'reject'].includes(action) || !Number.isFinite(orderId)) {
+  if (!['accept', 'reject', 'markPaid'].includes(action) || !Number.isFinite(orderId)) {
     return cors(NextResponse.json({ ok: false, error: 'Paramètres invalides' }, { status: 400 }))
   }
 
   try {
     const rest = await resolveRestaurant(key)
     if (!rest) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 403 }))
+
+    if (action === 'markPaid') {
+      const res = await sql`
+        UPDATE online_orders SET paid = TRUE, paid_at = NOW()
+        WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
+        RETURNING id`
+      if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà payée' }, { status: 404 }))
+      return cors(NextResponse.json({ ok: true }))
+    }
 
     const status = action === 'accept' ? 'accepted' : 'rejected'
     const res = await sql`

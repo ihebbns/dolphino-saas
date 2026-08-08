@@ -33,7 +33,9 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   const reqItems: any[] = Array.isArray(body?.items) ? body.items.slice(0, 50) : []
 
   if (!slug) return NextResponse.json({ ok: false, error: 'Lien invalide' }, { status: 400 })
-  if (!phone) return NextResponse.json({ ok: false, error: 'Numéro requis' }, { status: 400 })
+  // Phone is optional here (kiosk orders are a walk-up name-only flow) — the
+  // customer-account page (/moi/[slug]) still collects it in its own UI since
+  // it doubles as the wallet-lookup identity there; this is just the floor.
   if (!name) return NextResponse.json({ ok: false, error: 'Nom requis' }, { status: 400 })
   if (!reqItems.length) return NextResponse.json({ ok: false, error: 'Panier vide' }, { status: 400 })
 
