@@ -27,6 +27,11 @@
 //     expire after 3 minutes (till crashed, cashier walked away mid-flow)
 //     so a stuck claim can't strand an order forever, and 'release' lets
 //     a till give it up early if the cashier clears the cart instead.
+// POST { key, action:'markReady', order_id, actor? }
+//   → orthogonal to paid — kitchen finishing an order and the customer
+//     settling the bill are independent events. Lets the customer's own
+//     tracking view (see /api/public/[slug]/order-status) show "ready
+//     for pickup" without conflating it with payment state.
 // ═══════════════════════════════════════════════════
 
 import { NextResponse } from 'next/server'
@@ -73,10 +78,21 @@ export async function GET(req: Request) {
     // another till is actively encaissé-ing — a stale claim (>3 min) reads
     // as unclaimed here too, matching the same window 'claim' itself uses.
     const unpaid = await sql`
-      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at,
+      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at, ready,
              CASE WHEN claimed_at > NOW() - INTERVAL '3 minutes' THEN claimed_by ELSE NULL END AS claimed_by
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
+      ORDER BY responded_at ASC`
+
+    // Separate from `unpaid` on purpose — paid and ready are independent
+    // (a kiosk order can be paid via wallet before the kitchen is done, or
+    // accepted-and-cooking long before anyone's collected payment). Without
+    // this, an order paid early would vanish from the till entirely with no
+    // way left to ever mark it ready.
+    const preparing = await sql`
+      SELECT id, client_name, order_type, total::float AS total, responded_at, paid
+      FROM online_orders
+      WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
       ORDER BY responded_at ASC`
 
     // Includes who acted (responded_by / paid_by) and the full order, not just
@@ -85,12 +101,12 @@ export async function GET(req: Request) {
     // without the POS's local session context.
     const recent = await sql`
       SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note,
-             status, responded_by, responded_at, paid, paid_by, paid_at, created_at
+             status, responded_by, responded_at, paid, paid_by, paid_at, ready, ready_by, ready_at, created_at
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status != 'pending'
       ORDER BY responded_at DESC LIMIT 100`
 
-    return cors(NextResponse.json({ ok: true, pending, unpaid, recent }))
+    return cors(NextResponse.json({ ok: true, pending, unpaid, preparing, recent }))
   } catch (e: any) {
     return cors(NextResponse.json(serverError('online-orders GET', e), { status: 500 }))
   }
@@ -104,7 +120,7 @@ export async function POST(req: Request) {
 
   const action = clip(body?.action, 16)
   const orderId = parseInt(String(body?.order_id))
-  if (!['accept', 'reject', 'markPaid', 'claim', 'release'].includes(action) || !Number.isFinite(orderId)) {
+  if (!['accept', 'reject', 'markPaid', 'markReady', 'claim', 'release'].includes(action) || !Number.isFinite(orderId)) {
     return cors(NextResponse.json({ ok: false, error: 'Paramètres invalides' }, { status: 400 }))
   }
 
@@ -127,6 +143,15 @@ export async function POST(req: Request) {
       await sql`
         UPDATE online_orders SET claimed_by = NULL, claimed_at = NULL
         WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND claimed_by = ${clip(body?.actor, 80)}`
+      return cors(NextResponse.json({ ok: true }))
+    }
+
+    if (action === 'markReady') {
+      const res = await sql`
+        UPDATE online_orders SET ready = TRUE, ready_at = NOW(), ready_by = ${clip(body?.actor, 80)}
+        WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
+        RETURNING id`
+      if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà prête' }, { status: 404 }))
       return cors(NextResponse.json({ ok: true }))
     }
 

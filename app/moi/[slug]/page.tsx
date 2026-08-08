@@ -133,6 +133,31 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
     setSubmitting(false)
   }
 
+  // Live status tracking once an order's been submitted — polls until the
+  // order reaches a terminal-for-the-customer state (ready, or rejected).
+  // Kiosk doesn't need this (customer is standing in the restaurant); a
+  // phone order can be made from anywhere, so this is the one place the
+  // gap "did they even see the rejection" actually gets closed.
+  const [orderStatus, setOrderStatus] = useState<any>(null)
+  useEffect(() => {
+    if (!confirmed?.order_id) { setOrderStatus(null); return }
+    let stopped = false
+    let iv: ReturnType<typeof setInterval>
+    async function poll() {
+      try {
+        const res = await fetch(`/api/public/${slug}/order-status?order_id=${confirmed.order_id}`)
+        const d = await res.json()
+        if (stopped || !d.ok) return
+        setOrderStatus(d)
+        // Reached a terminal-for-the-customer state — stop the interval outright.
+        if (d.ready || d.status === 'rejected') clearInterval(iv)
+      } catch {}
+    }
+    poll()
+    iv = setInterval(poll, 6000)
+    return () => { stopped = true; clearInterval(iv) }
+  }, [confirmed?.order_id, slug])
+
   async function lookupAccount() {
     if (!accountPhone.trim()) return
     setAccountLoading(true)
@@ -223,9 +248,31 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
             <div className="moiCard"><div className="moiHint">Les commandes en ligne ne sont pas disponibles pour le moment — appelez-nous ou passez sur place.</div></div>
           ) : confirmed ? (
             <div className="moiCard moiConfirm">
-              <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
-              <div className="moiCardTitle">Commande envoyée !</div>
-              <div className="moiHint">Le commerce va la confirmer sous peu.</div>
+              {orderStatus?.status === 'rejected' ? (
+                <>
+                  <div style={{ fontSize: 40, marginBottom: 10 }}>❌</div>
+                  <div className="moiCardTitle">Commande refusée</div>
+                  <div className="moiHint">Contactez le commerce pour plus d&apos;informations.</div>
+                </>
+              ) : orderStatus?.ready ? (
+                <>
+                  <div style={{ fontSize: 40, marginBottom: 10 }}>🍽️</div>
+                  <div className="moiCardTitle">Commande prête !</div>
+                  <div className="moiHint">Passez la récupérer{orderStatus.order_type === 'sur_place' ? '' : ' au comptoir'}.</div>
+                </>
+              ) : orderStatus?.status === 'accepted' ? (
+                <>
+                  <div style={{ fontSize: 40, marginBottom: 10 }}>👨‍🍳</div>
+                  <div className="moiCardTitle">En préparation</div>
+                  <div className="moiHint">Le commerce prépare votre commande.</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 40, marginBottom: 10 }}>⏳</div>
+                  <div className="moiCardTitle">Commande envoyée !</div>
+                  <div className="moiHint">Le commerce va la confirmer sous peu.</div>
+                </>
+              )}
               {confirmed.droppedOutOfStock && (
                 <div className="moiErr" style={{ marginTop: 10 }}>⚠️ Indisponible, retiré de la commande : {confirmed.droppedOutOfStock.join(', ')}</div>
               )}
