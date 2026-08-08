@@ -43,8 +43,12 @@ import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import { serverError } from '@/lib/apiError'
 import { whatsappConfigured, sendWhatsAppOrderReady } from '@/lib/whatsapp'
+import { sendOrderReadyPush } from '@/lib/webpush'
 
-export const runtime = 'edge'
+// Node runtime, not edge — the web-push package (see lib/webpush.ts) needs
+// real Node crypto internals to sign VAPID requests, which edge's Web
+// Crypto subset doesn't cover. This route isn't a latency-sensitive public
+// path (POS polling + admin), so the switch costs nothing that matters.
 
 const cors = (r: NextResponse) => {
   r.headers.set('Access-Control-Allow-Origin', '*')
@@ -157,17 +161,20 @@ export async function POST(req: Request) {
         WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
         RETURNING id, client_name, client_phone`
       if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà prête' }, { status: 404 }))
-      // Best-effort — /moi's own live polling is the guaranteed path; this is
-      // a bonus nudge for a customer who's closed the tab. Inert (returns
-      // {skipped:true}) until WHATSAPP_TOKEN/WHATSAPP_PHONE_ID are set.
-      // Awaited (not fire-and-forget) — the edge runtime doesn't guarantee an
-      // unawaited promise survives past the response being sent, and this
-      // call is typically a few hundred ms, not worth risking a silent no-op.
-      // Its own failures are swallowed either way; markReady never fails
-      // because a notification couldn't be sent.
+      // Best-effort, both awaited — /moi's own live polling is the guaranteed
+      // path; these are bonus nudges for a customer who's closed the tab.
+      // Each is independently inert until its own config exists (WhatsApp
+      // needs WHATSAPP_TOKEN/WHATSAPP_PHONE_ID; push needs the VAPID keys and
+      // an actual subscription for this order). Neither's failure can fail
+      // markReady itself — a notification not going out is not the same
+      // problem as the order not actually being marked ready.
       if (whatsappConfigured() && res[0].client_phone) {
         await sendWhatsAppOrderReady(res[0].client_phone, res[0].client_name, orderId).catch(() => {})
       }
+      await sendOrderReadyPush(orderId, {
+        title: 'Commande prête ! 🍽️',
+        body: `${res[0].client_name}, votre commande #${orderId} est prête.`,
+      }).catch(() => {})
       return cors(NextResponse.json({ ok: true }))
     }
 

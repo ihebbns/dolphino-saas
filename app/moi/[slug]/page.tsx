@@ -27,6 +27,17 @@ const ORDER_TYPES = [
   { id: 'livraison', label: '🛵 Livraison' },
 ]
 
+// Web Push wants the VAPID key as a raw Uint8Array, not the base64url string
+// it's distributed as — standard boilerplate conversion, not project-specific.
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(base64)
+  const arr = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i)
+  return arr
+}
+
 export default function PublicOrderPage({ params }: { params: { slug: string } }) {
   const slug = params.slug
   const [loading, setLoading] = useState(true)
@@ -158,6 +169,38 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
     return () => { stopped = true; clearInterval(iv) }
   }, [confirmed?.order_id, slug])
 
+  // Free, no-account notification path (see lib/webpush.ts / SETUP-WHATSAPP.md
+  // for the paid WhatsApp alternative) — only works while this browser is
+  // reachable (tab open, or the page installed to the home screen), which is
+  // why the live poll above stays the guaranteed path either way. Triggered
+  // by an explicit tap, never automatically — a permission prompt fired on
+  // page load is exactly what gets a browser to start auto-denying prompts.
+  const [pushState, setPushState] = useState<'idle' | 'asking' | 'granted' | 'denied' | 'unsupported'>('idle')
+  async function enablePushNotifications() {
+    if (!confirmed?.order_id) return
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+      setPushState('unsupported'); return
+    }
+    setPushState('asking')
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') { setPushState('denied'); return }
+      const reg = await navigator.serviceWorker.register('/sw.js')
+      await navigator.serviceWorker.ready
+      const vapidKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY
+      if (!vapidKey) { setPushState('unsupported'); return }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      })
+      await fetch(`/api/public/${slug}/push-subscribe`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: confirmed.order_id, subscription: sub.toJSON() }),
+      })
+      setPushState('granted')
+    } catch { setPushState('denied') }
+  }
+
   async function lookupAccount() {
     if (!accountPhone.trim()) return
     setAccountLoading(true)
@@ -277,7 +320,19 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                 <div className="moiErr" style={{ marginTop: 10 }}>⚠️ Indisponible, retiré de la commande : {confirmed.droppedOutOfStock.join(', ')}</div>
               )}
               <div className="moiBalance" style={{ marginTop: 10 }}>{confirmed.total.toFixed(3)} {currency}</div>
-              <button className="moiBtn moiBtnPrimary" style={{ marginTop: 16 }} onClick={() => setConfirmed(null)}>Nouvelle commande</button>
+
+              {!orderStatus?.ready && orderStatus?.status !== 'rejected' && (
+                pushState === 'granted' ? (
+                  <div className="moiHint" style={{ marginTop: 12 }}>🔔 Vous serez notifié ici</div>
+                ) : pushState === 'denied' ? (
+                  <div className="moiHint" style={{ marginTop: 12 }}>Notifications refusées — gardez cette page ouverte pour suivre votre commande.</div>
+                ) : pushState === 'unsupported' ? null : (
+                  <button className="moiBtn" style={{ marginTop: 12 }} onClick={enablePushNotifications} disabled={pushState === 'asking'}>
+                    {pushState === 'asking' ? '…' : '🔔 Me notifier quand c\'est prêt'}
+                  </button>
+                )
+              )}
+              <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={() => setConfirmed(null)}>Nouvelle commande</button>
             </div>
           ) : (
             <>
