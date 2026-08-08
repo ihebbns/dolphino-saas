@@ -30,7 +30,10 @@ type Movement = {
 export default function CreditsPage() {
   const { key, checked } = useApiKey()
   const mods = useModules(key)
-  const walletHideTabs = mods.on('wallet') ? [] : ['/wallet']
+  const walletHideTabs = [
+    ...(mods.on('wallet') ? [] : ['/wallet']),
+    ...(mods.on('onlineOrders') ? [] : ['/orders']),
+  ]
   const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')

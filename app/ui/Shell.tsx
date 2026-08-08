@@ -65,11 +65,16 @@ export const DESTS: Dest[] = DESTINATIONS.map(d => ({
   tabs: d.subs,
 }))
 
+// Mirrors DEFAULT_MODULES in app/api/check/route.ts and MODULES_DEFAULT_OFF
+// in app/admin/page.tsx — must stay in sync with both. These are the only
+// modules an established client doesn't already have; everything else
+// defaults to on so nothing disappears for an existing client.
+const MODULES_DEFAULT_OFF = new Set(['tables', 'barcode', 'wallet', 'onlineOrders'])
+
 /**
  * Reads which optional modules this establishment uses. Presentation only: a
  * module that is off simply stops being offered, so a café that does not do
  * recipes never sees a Recettes tab it will not maintain.
- * Defaults to ON so nothing disappears for an existing client.
  */
 export function useModules(key: string | null) {
   const [modules, setModules] = useState<Record<string, boolean>>({})
@@ -82,7 +87,7 @@ export function useModules(key: string | null) {
       setLoaded(true)
     }).catch(() => setLoaded(true))
   }, [key])
-  const on = (name: string) => modules[name] !== false
+  const on = (name: string) => (modules[name] === undefined ? !MODULES_DEFAULT_OFF.has(name) : modules[name])
   return { modules, loaded, on }
 }
 

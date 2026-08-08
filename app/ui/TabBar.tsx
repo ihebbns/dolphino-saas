@@ -51,12 +51,15 @@ export const DESTINATIONS: Destination[] = [
   // Fidélité lives as a SUB-route here rather than its own destination, same
   // reasoning as /stock's subs below — it's the same "money tied to a named
   // client" idea as Crédit, just the other sign (a balance they own, not a
-  // debt), so it doesn't earn a 5th thumb-height slot of its own.
+  // debt), so it doesn't earn a 5th thumb-height slot of its own. Commandes
+  // (the PWA/kiosk order history) joins them for the same reason: it's the
+  // audit trail for the same customer-facing money flow, not a new concern.
   {
     href: '/credits', name: 'Crédit', short: 'Crédit', icon: 'receipt',
     subs: [
       { href: '/credits', name: 'Crédit' },
       { href: '/wallet', name: 'Fidélité' },
+      { href: '/orders', name: 'Commandes' },
     ],
   },
   // Établissement is deliberately absent: its settings move under Profil, so the

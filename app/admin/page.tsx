@@ -559,7 +559,7 @@ const MODULES_LIST = [
 // module absent from every list below defaults ON, because that's what every
 // isXEnabled() on the till actually does: `!(modules && modules.x === false)`
 // treats "key not present" as enabled. Only list the modules that default OFF.
-const MODULES_DEFAULT_OFF = new Set(['tables', 'barcode', 'wallet'])
+const MODULES_DEFAULT_OFF = new Set(['tables', 'barcode', 'wallet', 'onlineOrders'])
 
 const PRESETS: Record<string, { label:string; emoji:string; modules:string[]; zone1:string; zone2:string; zone1Cats:string; zone2Cats:string }> = {
   cafe:     { label:'Café / Salon de thé',    emoji:'☕', modules:['sessions','credits','kitchenTickets','printEnabled','dashboard'], zone1:'BAR — Boissons', zone2:'CUISINE — Pâtisserie', zone1Cats:'Café,Thé,Jus,Boisson', zone2Cats:'Pâtisserie,Sandwich' },

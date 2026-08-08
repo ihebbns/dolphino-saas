@@ -2,6 +2,9 @@
 // /api/me/online-orders — the till's incoming-order queue.
 //
 // GET  ?key=API              → pending orders + unpaid-accepted + recent history
+//                               (recent[] carries responded_by / paid_by so the
+//                               manager's /orders page can show who actioned
+//                               each order without any POS-local context)
 // POST { key, action:'accept'|'reject', order_id, actor? }
 //   → staff-driven only, never auto-transitions. 'accept' does NOT deduct
 //     stock or touch sales here — the POS pulls the pending order's items
@@ -63,11 +66,16 @@ export async function GET(req: Request) {
       WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
       ORDER BY responded_at ASC`
 
+    // Includes who acted (responded_by / paid_by) and the full order, not just
+    // a summary — this is what the manager's /orders audit page reads, so it
+    // has to answer "who accepted this, who took the money" on its own,
+    // without the POS's local session context.
     const recent = await sql`
-      SELECT id, client_name, order_type, total::float AS total, status, paid, created_at, responded_at
+      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note,
+             status, responded_by, responded_at, paid, paid_by, paid_at, created_at
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status != 'pending'
-      ORDER BY responded_at DESC LIMIT 30`
+      ORDER BY responded_at DESC LIMIT 100`
 
     return cors(NextResponse.json({ ok: true, pending, unpaid, recent }))
   } catch (e: any) {
@@ -93,7 +101,7 @@ export async function POST(req: Request) {
 
     if (action === 'markPaid') {
       const res = await sql`
-        UPDATE online_orders SET paid = TRUE, paid_at = NOW()
+        UPDATE online_orders SET paid = TRUE, paid_at = NOW(), paid_by = ${clip(body?.actor, 80)}
         WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
         RETURNING id`
       if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà payée' }, { status: 404 }))

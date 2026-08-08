@@ -41,6 +41,7 @@ const KIND_BADGE: Record<string, string> = {
 export default function WalletPage() {
   const { key, checked } = useApiKey()
   const mods = useModules(key)
+  const ordersHideTabs = mods.on('onlineOrders') ? [] : ['/orders']
   const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
@@ -137,7 +138,7 @@ export default function WalletPage() {
   const stale = clients.filter(c => !c.archived && c.balance > 0 && (daysSince(c.last_movement_at) ?? 0) >= 30)
 
   if (!checked || loading) {
-    return <Shell active="/wallet" title="Fidélité" restName={restName}><Loading /></Shell>
+    return <Shell active="/wallet" title="Fidélité" restName={restName} hideTabs={ordersHideTabs}><Loading /></Shell>
   }
   if (!key) return <LoginGate />
 
@@ -148,7 +149,7 @@ export default function WalletPage() {
   // this page never flashes "désactivé" for a fraction of a second on load.
   if (mods.loaded && !mods.on('wallet')) {
     return (
-      <Shell active="/wallet" title="Fidélité" restName={restName}>
+      <Shell active="/wallet" title="Fidélité" restName={restName} hideTabs={ordersHideTabs}>
         <div className="notice nWarn">
           <span className="noticeIcon">💳</span>
           <div>
@@ -168,6 +169,7 @@ export default function WalletPage() {
         title="Fidélité"
         subtitle="Solde prépayé client — les recharges se font à la caisse"
         restName={restName}
+        hideTabs={ordersHideTabs}
         actions={<button className="btn" onClick={() => key && load(key)}>↻ Recharger</button>}
       >
         <NotReady sql="migration-wallet.sql" missing={diag.missing} db={diag.db} />
@@ -181,6 +183,7 @@ export default function WalletPage() {
       title="Fidélité"
       subtitle="Solde prépayé client — les recharges se font à la caisse (bonus 30% à chaque rechargement)"
       restName={restName}
+      hideTabs={ordersHideTabs}
       badges={{ '/wallet': totals?.nb_avec_solde ?? 0 }}
       actions={
         <>
