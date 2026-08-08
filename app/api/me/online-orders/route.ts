@@ -58,7 +58,7 @@ export async function GET(req: Request) {
       ORDER BY created_at ASC`
 
     const unpaid = await sql`
-      SELECT id, client_name, client_phone, order_type, total::float AS total, responded_at
+      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
       ORDER BY responded_at ASC`
