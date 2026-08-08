@@ -182,6 +182,9 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [showAdd, setShowAdd] = useState(false)
   const [demoRequests, setDemoRequests] = useState<any[]>([])
   const [showDemos, setShowDemos] = useState(false)
+  const [modalTab, setModalTab] = useState<'apercu'|'modules'|'compte'>('apercu')
+  const [overview, setOverview] = useState<{ dashboard:any; wallet:any; orders:any } | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(false)
 
   const key = sessionStorage.getItem('servio_admin_key') || ''
   // Panel only ever renders after AdminPage confirms a validated key is
@@ -209,6 +212,14 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
     } catch { /* silent */ }
   }
 
+  function openClient(c: any) {
+    setActionClient(c); setModalTab('apercu')
+    loadModules(c.api_key); loadOverview(c)
+  }
+  function closeModal() {
+    setActionClient(null); setModuleCfg(null); setRewardResult(null); setOverview(null)
+  }
+
   async function doAction(apiKey: string, action: string, days?: number, target?: string) {
     try {
       const body: any = { admin_key: key, api_key: apiKey, action }
@@ -219,8 +230,31 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       if (data.ok) { flash('✓ Action effectuée'); loadClients() }
       else flash('Erreur: ' + data.error)
     } catch { flash('Erreur de connexion') }
-    setActionClient(null)
-    setModuleCfg(null); setRewardResult(null)
+    closeModal()
+  }
+
+  // ── Overview tab: today's activity, at a glance ────────────────────────
+  // Calls the SAME endpoints the client's own dashboard/POS call, using
+  // their own api_key (already visible in the client list — this isn't a
+  // new privilege, just admin reading what that client can already read).
+  // No new backend surface, so nothing here can drift from what the owner
+  // themselves would see.
+  async function loadOverview(c: any) {
+    setOverviewLoading(true)
+    setOverview(null)
+    try {
+      const [dashRes, walletRes, ordersRes] = await Promise.all([
+        fetch(`${API}/api/dashboard?key=${encodeURIComponent(c.api_key)}`).then(r => r.json()).catch(() => null),
+        fetch(`${API}/api/me/wallet?key=${encodeURIComponent(c.api_key)}`).then(r => r.json()).catch(() => null),
+        fetch(`${API}/api/me/online-orders?key=${encodeURIComponent(c.api_key)}`).then(r => r.json()).catch(() => null),
+      ])
+      setOverview({
+        dashboard: dashRes?.ok ? dashRes : null,
+        wallet: walletRes?.ok ? walletRes : null,
+        orders: ordersRes?.ok ? ordersRes : null,
+      })
+    } catch { /* tab shows its own empty state */ }
+    setOverviewLoading(false)
   }
 
   // ── Module distribution for an EXISTING client ────────────────────────
@@ -311,7 +345,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
         </div>
       </header>
 
-      <div style={{ maxWidth:'1000px', margin:'0 auto', padding:'24px' }}>
+      <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'24px' }}>
         {/* KPIs */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'14px', marginBottom:'24px' }}>
           {[
@@ -319,23 +353,45 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
             { label:'Actifs', val:active, color:'var(--green)', icon:'✓' },
             { label:'Suspendus', val:suspended, color:'var(--red)', icon:'🔒' },
           ].map((k,i) => (
-            <div key={i} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'12px', padding:'20px', textAlign:'center', position:'relative', overflow:'hidden' }}>
+            <div key={i} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'14px', padding:'22px', textAlign:'center', position:'relative', overflow:'hidden' }}>
               <div style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:k.color }}/>
-              <div style={{ fontSize:'32px', fontWeight:'800', color:k.color }}>{k.val}</div>
+              <div style={{ fontSize:'13px', marginBottom:'4px' }}>{k.icon}</div>
+              <div style={{ fontSize:'34px', fontWeight:'800', color:k.color, lineHeight:1.1 }}>{k.val}</div>
               <div style={{ fontSize:'12px', color:'var(--muted)', marginTop:'4px' }}>{k.label}</div>
             </div>
           ))}
         </div>
 
-        {/* Info bar */}
-        <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', padding:'12px 18px', marginBottom:'20px', fontSize:'12px', color:'var(--muted)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'8px' }}>
-          <span>📂 {clients.length} client{clients.length !== 1 ? 's' : ''} — utilisez le formulaire ci-dessous pour en ajouter un nouveau.</span>
-          <button onClick={() => setShowAdd(!showAdd)} style={{ background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'8px', padding:'8px 16px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700' }}>
-            {showAdd ? '✕ Fermer' : '+ Nouveau client'}
-          </button>
+        {/* ── Create a client — two clear paths ──────────────────────────
+            "Compte web" is DB-only (no POS): useful for a quick dashboard-
+            only trial. A real client needs the till too, and that step
+            genuinely cannot happen from this hosted page — electron-builder
+            needs a real Windows machine — so the full flow is the local
+            tools/new-client wizard, pointed to explicitly rather than left
+            for the admin to discover on their own. */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'14px', marginBottom:'20px' }}>
+          <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'12px', padding:'16px 18px' }}>
+            <div style={{ fontSize:'13px', fontWeight:'700', marginBottom:'4px' }}>💻 Client complet (POS + Web)</div>
+            <div style={{ fontSize:'11px', color:'var(--muted)', marginBottom:'10px', lineHeight:1.5 }}>
+              Assistant local avec menu, zones cuisine et build de l&apos;EXE en un seul flux.
+            </div>
+            <code style={{ display:'block', background:'var(--bg)', border:'1px solid var(--div)', borderRadius:'8px', padding:'8px 10px', fontSize:'11px', color:'var(--gold-l)', fontFamily:'monospace' }}>
+              node tools/new-client/server.mjs
+            </code>
+            <div style={{ fontSize:'10px', color:'var(--muted)', marginTop:'6px' }}>→ ouvre http://localhost:4790 (depuis servio-pos-package/)</div>
+          </div>
+          <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'12px', padding:'16px 18px', display:'flex', flexDirection:'column' }}>
+            <div style={{ fontSize:'13px', fontWeight:'700', marginBottom:'4px' }}>⚡ Compte web seul (rapide)</div>
+            <div style={{ fontSize:'11px', color:'var(--muted)', marginBottom:'10px', lineHeight:1.5, flex:1 }}>
+              Crée uniquement le compte tableau de bord — sans EXE. Utile pour un accès démo/test immédiat.
+            </div>
+            <button onClick={() => setShowAdd(!showAdd)} style={{ background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'8px', padding:'10px 16px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700' }}>
+              {showAdd ? '✕ Fermer' : '+ Compte web seul'}
+            </button>
+          </div>
         </div>
 
-        {/* ── Add Client Form ──────────────────────────────────────────── */}
+        {/* ── Add Client Form (web-only account) ─────────────────────────── */}
         {showAdd && <AddClientForm adminKey={key} onDone={() => { setShowAdd(false); loadClients(); flash('✓ Client créé') }} onError={(e) => flash(e)} />}
 
         {/* Client list */}
@@ -351,7 +407,11 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
             <div style={{ padding:'40px', textAlign:'center', color:'var(--muted)' }}>Aucun client</div>
           ) : (
             clients.map((c, i) => (
-              <div key={i} style={{ padding:'16px 20px', borderBottom:'1px solid var(--div)', display:'flex', alignItems:'center', gap:'12px', flexWrap:'wrap' }}>
+              <div key={i} onClick={() => openClient(c)}
+                style={{ padding:'16px 20px', borderBottom:'1px solid var(--div)', display:'flex', alignItems:'center', gap:'12px', flexWrap:'wrap', cursor:'pointer', transition:'background .1s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--card)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
                 {/* Client info */}
                 <div style={{ flex:1, minWidth:'180px' }}>
                   <div style={{ fontWeight:'700', fontSize:'14px' }}>{c.name}</div>
@@ -373,11 +433,11 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
                 {/* Actions */}
                 {c.plan === 'active' ? (
-                  <button onClick={() => { setActionClient(c); loadModules(c.api_key) }} style={{ padding:'7px 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--muted)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
-                    Actions ▾
+                  <button onClick={e => { e.stopPropagation(); openClient(c) }} style={{ padding:'7px 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--muted)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
+                    Détails →
                   </button>
                 ) : (
-                  <button onClick={() => doAction(c.api_key, 'activate')} style={{ padding:'7px 14px', background:'var(--green-dim)', border:'1px solid rgba(61,184,122,.3)', borderRadius:'8px', color:'var(--green)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
+                  <button onClick={e => { e.stopPropagation(); doAction(c.api_key, 'activate') }} style={{ padding:'7px 14px', background:'var(--green-dim)', border:'1px solid rgba(61,184,122,.3)', borderRadius:'8px', color:'var(--green)', cursor:'pointer', fontSize:'12px', fontWeight:'600' }}>
                     🔓 Réactiver
                   </button>
                 )}
@@ -449,17 +509,85 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
       {/* Action modal */}
       {actionClient && (
-        <div onClick={() => { setActionClient(null); setModuleCfg(null); setRewardResult(null) }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
-          <div onClick={e => e.stopPropagation()} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', width:'100%', maxWidth:'420px', boxShadow:'var(--shadow)', maxHeight:'90vh', overflowY:'auto' }}>
+        <div onClick={closeModal} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'16px', padding:'28px', width:'100%', maxWidth:'480px', boxShadow:'var(--shadow)', maxHeight:'90vh', overflowY:'auto' }}>
             <div style={{ fontSize:'16px', fontWeight:'700', marginBottom:'4px' }}>{actionClient.name}</div>
-            <div style={{ fontSize:'12px', color:'var(--muted)', marginBottom:'20px' }}>{actionClient.api_key}</div>
+            <div style={{ fontSize:'12px', color:'var(--muted)', marginBottom:'18px' }}>{actionClient.api_key}</div>
 
-            {/* Modules — distribute/remove features on an already-created client.
-                Undefined = server default (see DEFAULT_MODULES in /api/check);
-                explicit true/false always wins. Reaches the till through the
-                same license check the EXE already polls, no rebuild needed. */}
-            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Modules</div>
-            {moduleLoading ? (
+            {/* Tabs */}
+            <div style={{ display:'flex', gap:'4px', marginBottom:'18px', background:'var(--card)', borderRadius:'10px', padding:'4px' }}>
+              {[['apercu','📊 Aperçu'],['modules','🧩 Modules'],['compte','⚙️ Compte']].map(([id,label]) => (
+                <button key={id} onClick={() => setModalTab(id as any)} style={{
+                  flex:1, padding:'8px 6px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'12px', fontWeight:'700',
+                  background: modalTab===id ? 'var(--panel)' : 'transparent',
+                  color: modalTab===id ? 'var(--gold-l)' : 'var(--muted)',
+                  boxShadow: modalTab===id ? 'var(--shadow)' : 'none',
+                }}>{label}</button>
+              ))}
+            </div>
+
+            {/* ── Aperçu — today's activity, at a glance. Same data the
+                client's own dashboard/POS would show, just read via their
+                api_key from here instead of asked-for-and-copy-pasted. ── */}
+            {modalTab === 'apercu' && (
+              overviewLoading ? (
+                <div style={{ padding:'30px', textAlign:'center', color:'var(--muted)', fontSize:'12px' }}>Chargement…</div>
+              ) : (
+                <div style={{ marginBottom:'8px' }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'8px', marginBottom:'16px' }}>
+                    {[
+                      { label:'CA aujourd\'hui', val: overview?.dashboard ? `${(overview.dashboard.kpis?.total_revenue||0).toFixed(3)} DT` : '—' },
+                      { label:'Commandes', val: overview?.dashboard ? String(overview.dashboard.kpis?.total_orders||0) : '—' },
+                      { label:'Ticket moyen', val: overview?.dashboard ? `${(overview.dashboard.kpis?.avg_ticket||0).toFixed(3)} DT` : '—' },
+                    ].map((s,i) => (
+                      <div key={i} style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', padding:'12px 8px', textAlign:'center' }}>
+                        <div style={{ fontSize:'15px', fontWeight:'800', color:'var(--gold-l)' }}>{s.val}</div>
+                        <div style={{ fontSize:'10px', color:'var(--muted)', marginTop:'2px' }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {overview?.wallet?.totals && (
+                    <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', padding:'12px 14px', marginBottom:'10px' }}>
+                      <div style={{ fontSize:'11px', fontWeight:'700', color:'var(--muted)', marginBottom:'6px', textTransform:'uppercase', letterSpacing:'.5px' }}>💳 Fidélité</div>
+                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'13px' }}>
+                        <span>{overview.wallet.totals.nb_avec_solde} carte{overview.wallet.totals.nb_avec_solde !== 1 ? 's' : ''} avec solde</span>
+                        <strong style={{ color:'var(--green)' }}>{(overview.wallet.totals.total_solde||0).toFixed(3)} DT</strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {overview?.orders && (
+                    <div style={{ background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', padding:'12px 14px', marginBottom:'10px' }}>
+                      <div style={{ fontSize:'11px', fontWeight:'700', color:'var(--muted)', marginBottom:'6px', textTransform:'uppercase', letterSpacing:'.5px' }}>🌐 Commandes en ligne</div>
+                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'13px', marginBottom:'4px' }}>
+                        <span>En attente à la caisse</span>
+                        <strong style={{ color: overview.orders.pending?.length ? 'var(--gold-l)' : 'var(--muted)' }}>{overview.orders.pending?.length || 0}</strong>
+                      </div>
+                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'13px' }}>
+                        <span>Non payées</span>
+                        <strong style={{ color: overview.orders.unpaid?.length ? 'var(--red)' : 'var(--muted)' }}>{overview.orders.unpaid?.length || 0}</strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {!overview?.dashboard && !overview?.wallet && !overview?.orders && (
+                    <div style={{ padding:'20px', textAlign:'center', color:'var(--muted)', fontSize:'12px' }}>Aucune activité à afficher pour le moment.</div>
+                  )}
+
+                  <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'12px', paddingTop:'12px', borderTop:'1px solid var(--div)' }}>
+                    {actionClient.owner_email} · {actionClient.city || '—'}{actionClient.phone ? ' · '+actionClient.phone : ''}
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* ── Modules — distribute/remove features on an already-created
+                client. Undefined = server default (see DEFAULT_MODULES in
+                /api/check); explicit true/false always wins. Reaches the
+                till through the same license check the EXE already polls,
+                no rebuild needed. ── */}
+            {modalTab === 'modules' && (moduleLoading ? (
               <div style={{ padding:'20px', textAlign:'center', color:'var(--muted)', fontSize:'12px' }}>Chargement…</div>
             ) : !moduleCfg ? (
               <div style={{ padding:'20px', textAlign:'center', color:'var(--red)', fontSize:'12px' }}>Échec du chargement</div>
@@ -519,27 +647,30 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
                   </div>
                 )}
               </div>
+            ))}
+
+            {/* ── Compte — suspend/schedule/reactivate ── */}
+            {modalTab === 'compte' && (
+              <>
+                <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Suspendre</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'8px', marginBottom:'16px' }}>
+                  <button onClick={() => doAction(actionClient.api_key, 'suspend_all')} style={{ padding:'14px', background:'var(--red-dim)', border:'1px solid rgba(224,82,82,.3)', borderRadius:'10px', color:'var(--red)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
+                    🔒 Suspendre TOUT <span style={{ float:'right', opacity:.6 }}>EXE + Dashboard</span>
+                  </button>
+                  <button onClick={() => doAction(actionClient.api_key, 'suspend_exe')} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--orange)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
+                    💻 Suspendre EXE seul <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>Dashboard reste actif</span>
+                  </button>
+                  <button onClick={() => doAction(actionClient.api_key, 'suspend_dash')} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--blue)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
+                    📊 Suspendre Dashboard seul <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>EXE reste actif</span>
+                  </button>
+                </div>
+
+                <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Programmer une suspension</div>
+                <ScheduleSection apiKey={actionClient.api_key} suspendAt={actionClient.suspend_at} onAction={doAction} onCancel={() => doAction(actionClient.api_key, 'cancel_schedule')} />
+              </>
             )}
 
-            {/* Suspend options */}
-            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Suspendre</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'8px', marginBottom:'16px' }}>
-              <button onClick={() => doAction(actionClient.api_key, 'suspend_all')} style={{ padding:'14px', background:'var(--red-dim)', border:'1px solid rgba(224,82,82,.3)', borderRadius:'10px', color:'var(--red)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
-                🔒 Suspendre TOUT <span style={{ float:'right', opacity:.6 }}>EXE + Dashboard</span>
-              </button>
-              <button onClick={() => doAction(actionClient.api_key, 'suspend_exe')} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--orange)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
-                💻 Suspendre EXE seul <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>Dashboard reste actif</span>
-              </button>
-              <button onClick={() => doAction(actionClient.api_key, 'suspend_dash')} style={{ padding:'14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--blue)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
-                📊 Suspendre Dashboard seul <span style={{ float:'right', opacity:.6, color:'var(--muted)' }}>EXE reste actif</span>
-              </button>
-            </div>
-
-            {/* Schedule options */}
-            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Programmer une suspension</div>
-            <ScheduleSection apiKey={actionClient.api_key} suspendAt={actionClient.suspend_at} onAction={doAction} onCancel={() => doAction(actionClient.api_key, 'cancel_schedule')} />
-
-            <button onClick={() => { setActionClient(null); setModuleCfg(null); setRewardResult(null) }} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
+            <button onClick={closeModal} style={{ width:'100%', padding:'12px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'10px', color:'var(--muted)', cursor:'pointer', fontSize:'13px', marginTop:'4px' }}>
               Fermer
             </button>
           </div>
