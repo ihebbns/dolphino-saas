@@ -18,6 +18,10 @@
 //     'markPaid' just lets staff record that it happened, separate from
 //     accept/reject, so an accepted-but-unpaid order stays visible instead
 //     of silently blending into "done".
+// POST { key, action:'unmarkPaid', order_id }
+//   → reverses markPaid — called by the till when the sale that paid for
+//     this order gets voided, so the order goes back to "needs payment"
+//     rather than staying marked paid for money that was refunded.
 // POST { key, action:'claim'|'release', order_id, actor? }
 //   → with more than one till, two cashiers could both pull the same
 //     unpaid order into their cart and both complete a real sale for it —
@@ -120,7 +124,7 @@ export async function POST(req: Request) {
 
   const action = clip(body?.action, 16)
   const orderId = parseInt(String(body?.order_id))
-  if (!['accept', 'reject', 'markPaid', 'markReady', 'claim', 'release'].includes(action) || !Number.isFinite(orderId)) {
+  if (!['accept', 'reject', 'markPaid', 'unmarkPaid', 'markReady', 'claim', 'release'].includes(action) || !Number.isFinite(orderId)) {
     return cors(NextResponse.json({ ok: false, error: 'Paramètres invalides' }, { status: 400 }))
   }
 
@@ -161,6 +165,18 @@ export async function POST(req: Request) {
         WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
         RETURNING id`
       if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà payée' }, { status: 404 }))
+      return cors(NextResponse.json({ ok: true }))
+    }
+
+    // Reverses markPaid — called when the till voids the sale that paid for
+    // this order. The attempted payment didn't stand, so the order goes back
+    // to "needs payment" rather than staying marked paid for money that was
+    // refunded. No status guard beyond restaurant ownership: a void can
+    // legitimately happen well after the order left 'accepted'.
+    if (action === 'unmarkPaid') {
+      await sql`
+        UPDATE online_orders SET paid = FALSE, paid_at = NULL, paid_by = NULL, claimed_by = NULL, claimed_at = NULL
+        WHERE id = ${orderId} AND restaurant_id = ${rest.id}`
       return cors(NextResponse.json({ ok: true }))
     }
 
