@@ -35,6 +35,21 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   const [tab, setTab] = useState<'order' | 'account'>('order')
   const [cat, setCat] = useState<string | null>(null)
 
+  // Defaults light (most phone browsers/QR-code opens land in a bright
+  // context), remembered per-customer-per-restaurant since it's their own
+  // device, not shared like the kiosk's.
+  const [theme, setTheme] = useState<'dark' | 'light'>('light')
+  useEffect(() => {
+    try { const saved = localStorage.getItem('servio_moi_theme_' + slug); if (saved === 'light' || saved === 'dark') setTheme(saved) } catch {}
+  }, [slug])
+  function toggleTheme() {
+    setTheme(t => {
+      const next = t === 'dark' ? 'light' : 'dark'
+      try { localStorage.setItem('servio_moi_theme_' + slug, next) } catch {}
+      return next
+    })
+  }
+
   const [cart, setCart] = useState<CartLine[]>([])
   const [picking, setPicking] = useState<MenuItem | null>(null)
 
@@ -128,19 +143,20 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
     setAccountLoading(false)
   }
 
-  if (loading) return <div className="moiWrap moiCenter"><div className="moiSpinner" /></div>
-  if (loadError || !info) return <div className="moiWrap moiCenter"><div className="moiErr">{loadError || 'Erreur'}</div></div>
+  if (loading) return <div className="moiWrap moiCenter" data-theme={theme}><style>{MOI_CSS}</style><div className="moiSpinner" /></div>
+  if (loadError || !info) return <div className="moiWrap moiCenter" data-theme={theme}><style>{MOI_CSS}</style><div className="moiErr">{loadError || 'Erreur'}</div></div>
 
   return (
-    <div className="moiWrap">
+    <div className="moiWrap" data-theme={theme}>
       <style>{MOI_CSS}</style>
 
       <header className="moiHead">
         <div className="moiLogo">{info.logo}</div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div className="moiName">{info.name}</div>
           {info.tagline && <div className="moiTagline">{info.tagline}</div>}
         </div>
+        <button className="moiThemeBtn" onClick={toggleTheme}>{theme === 'dark' ? '☀️' : '🌙'}</button>
       </header>
 
       {info.walletEnabled && (
@@ -292,51 +308,62 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
 }
 
 const MOI_CSS = `
-.moiWrap{min-height:100vh;background:#F6F7F9;color:#14181F;font-family:-apple-system,'Segoe UI',system-ui,Roboto,sans-serif;padding-bottom:24px;}
+.moiWrap[data-theme="light"]{
+  --m-bg:#F6F7F9; --m-bg2:#FFFFFF; --m-bg3:#FAFBFC; --m-text:#14181F; --m-muted:#6B7280; --m-muted2:#9AA3AF;
+  --m-border:#E3E6EA; --m-border2:#F1F3F5; --m-accent:#B45309; --m-tab-on-bg:#FEF3C7; --m-tab-on-border:#FCD34D;
+  --m-shadow:0 -8px 24px rgba(0,0,0,.06); --m-err:#B42318; --m-ok:#067647; --m-minus:#4B5563;
+}
+.moiWrap[data-theme="dark"]{
+  --m-bg:#0F1115; --m-bg2:#171A23; --m-bg3:#1B1E28; --m-text:#FFFFFF; --m-muted:#9AA3AF; --m-muted2:#6B7280;
+  --m-border:#262B36; --m-border2:#1E212B; --m-accent:#F5A623; --m-tab-on-bg:rgba(245,166,35,.15); --m-tab-on-border:#F5A623;
+  --m-shadow:0 -8px 24px rgba(0,0,0,.3); --m-err:#F87171; --m-ok:#4ADE80; --m-minus:#9AA3AF;
+}
+.moiWrap{min-height:100vh;background:var(--m-bg);color:var(--m-text);font-family:-apple-system,'Segoe UI',system-ui,Roboto,sans-serif;padding-bottom:24px;}
 .moiCenter{display:flex;align-items:center;justify-content:center;}
-.moiSpinner{width:32px;height:32px;border:3px solid #E3E6EA;border-top-color:#B45309;border-radius:50%;animation:moiSpin .8s linear infinite;}
+.moiSpinner{width:32px;height:32px;border:3px solid var(--m-border);border-top-color:var(--m-accent);border-radius:50%;animation:moiSpin .8s linear infinite;}
 @keyframes moiSpin{to{transform:rotate(360deg);}}
-.moiHead{display:flex;align-items:center;gap:12px;padding:20px 16px 14px;background:#fff;border-bottom:1px solid #E3E6EA;position:sticky;top:0;z-index:10;}
+.moiHead{display:flex;align-items:center;gap:12px;padding:20px 16px 14px;background:var(--m-bg2);border-bottom:1px solid var(--m-border);position:sticky;top:0;z-index:10;}
 .moiLogo{font-size:32px;}
 .moiName{font-size:17px;font-weight:800;}
-.moiTagline{font-size:12px;color:#6B7280;}
+.moiTagline{font-size:12px;color:var(--m-muted);}
+.moiThemeBtn{width:38px;height:38px;border-radius:50%;border:1px solid var(--m-border);background:var(--m-bg3);font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
 .moiTabs{display:flex;gap:8px;padding:12px 16px 0;}
-.moiTab{flex:1;padding:10px;border-radius:10px;border:1px solid #E3E6EA;background:#fff;font-size:13px;font-weight:700;color:#6B7280;cursor:pointer;}
-.moiTab.on{background:#FEF3C7;border-color:#FCD34D;color:#B45309;}
+.moiTab{flex:1;padding:10px;border-radius:10px;border:1px solid var(--m-border);background:var(--m-bg2);font-size:13px;font-weight:700;color:var(--m-muted);cursor:pointer;}
+.moiTab.on{background:var(--m-tab-on-bg);border-color:var(--m-tab-on-border);color:var(--m-accent);}
 .moiBody{padding:14px 0;}
-.moiCard{background:#fff;border:1px solid #E3E6EA;border-radius:14px;padding:16px;margin:0 16px 14px;}
+.moiCard{background:var(--m-bg2);border:1px solid var(--m-border);border-radius:14px;padding:16px;margin:0 16px 14px;}
 .moiCardTitle{font-size:14px;font-weight:800;margin-bottom:10px;}
-.moiHint{font-size:12px;color:#6B7280;}
-.moiInput{width:100%;padding:12px 14px;border:1px solid #E3E6EA;border-radius:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;background:#FAFBFC;}
-.moiBtn{width:100%;padding:13px;border-radius:10px;border:1px solid #E3E6EA;background:#fff;font-size:14px;font-weight:700;cursor:pointer;color:#14181F;}
+.moiHint{font-size:12px;color:var(--m-muted);}
+.moiInput{width:100%;padding:12px 14px;border:1px solid var(--m-border);border-radius:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;background:var(--m-bg3);color:var(--m-text);}
+.moiBtn{width:100%;padding:13px;border-radius:10px;border:1px solid var(--m-border);background:var(--m-bg2);font-size:14px;font-weight:700;cursor:pointer;color:var(--m-text);}
 .moiBtnPrimary{background:linear-gradient(135deg,#D97706,#F59E0B);color:#fff;border:none;}
 .moiBtn:disabled{opacity:.6;}
-.moiErr{color:#B42318;font-size:13px;margin-bottom:10px;}
+.moiErr{color:var(--m-err);font-size:13px;margin-bottom:10px;}
 .moiBalanceCard{text-align:center;}
-.moiBalance{font-size:30px;font-weight:800;color:#067647;margin:6px 0;}
-.moiRewardOk{color:#067647;font-size:13px;font-weight:700;margin-top:6px;}
-.moiMoveRow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #F1F3F5;}
+.moiBalance{font-size:30px;font-weight:800;color:var(--m-ok);margin:6px 0;}
+.moiRewardOk{color:var(--m-ok);font-size:13px;font-weight:700;margin-top:6px;}
+.moiMoveRow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--m-border2);}
 .moiMoveKind{font-size:13px;font-weight:600;}
-.moiPlus{color:#067647;font-weight:800;}
-.moiMinus{color:#4B5563;font-weight:800;}
+.moiPlus{color:var(--m-ok);font-weight:800;}
+.moiMinus{color:var(--m-minus);font-weight:800;}
 .moiCatRow{display:flex;gap:8px;overflow-x:auto;padding:0 16px 12px;-webkit-overflow-scrolling:touch;}
-.moiCatChip{flex:0 0 auto;padding:9px 14px;border-radius:20px;border:1px solid #E3E6EA;background:#fff;font-size:13px;font-weight:700;color:#6B7280;white-space:nowrap;cursor:pointer;}
-.moiCatChip.on{background:#B45309;border-color:#B45309;color:#fff;}
+.moiCatChip{flex:0 0 auto;padding:9px 14px;border-radius:20px;border:1px solid var(--m-border);background:var(--m-bg2);font-size:13px;font-weight:700;color:var(--m-muted);white-space:nowrap;cursor:pointer;}
+.moiCatChip.on{background:var(--m-accent);border-color:var(--m-accent);color:#fff;}
 .moiGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:0 16px;}
-.moiItem{background:#fff;border:1px solid #E3E6EA;border-radius:14px;padding:14px 10px;text-align:center;position:relative;cursor:pointer;aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
+.moiItem{background:var(--m-bg2);border:1px solid var(--m-border);border-radius:14px;padding:14px 10px;text-align:center;position:relative;cursor:pointer;aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
 .moiItemEmoji{font-size:32px;}
 .moiItemName{font-size:12px;font-weight:700;line-height:1.25;}
-.moiItemPrice{font-size:13px;font-weight:800;color:#B45309;}
+.moiItemPrice{font-size:13px;font-weight:800;color:var(--m-accent);}
 .moiItemAdd{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;background:#F59E0B;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
-.moiCart{background:#fff;border-top:2px solid #E3E6EA;border-radius:18px 18px 0 0;margin-top:16px;padding:16px;position:sticky;bottom:0;box-shadow:0 -8px 24px rgba(0,0,0,.06);}
-.moiCartRow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F1F3F5;font-size:13px;}
+.moiCart{background:var(--m-bg2);border-top:2px solid var(--m-border);border-radius:18px 18px 0 0;margin-top:16px;padding:16px;position:sticky;bottom:0;box-shadow:var(--m-shadow);}
+.moiCartRow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--m-border2);font-size:13px;}
 .moiQty{display:flex;align-items:center;gap:8px;}
-.moiQty button{width:26px;height:26px;border-radius:50%;border:1px solid #E3E6EA;background:#FAFBFC;font-weight:800;cursor:pointer;}
+.moiQty button{width:26px;height:26px;border-radius:50%;border:1px solid var(--m-border);background:var(--m-bg3);color:var(--m-text);font-weight:800;cursor:pointer;}
 .moiTotalRow{display:flex;justify-content:space-between;font-weight:800;font-size:15px;padding:10px 0;}
 .moiOrderTypeRow{display:flex;gap:8px;margin-bottom:10px;overflow-x:auto;}
 .moiOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;z-index:100;}
-.moiSheet{background:#fff;border-radius:18px 18px 0 0;padding:18px;width:100%;max-width:480px;margin:0 auto;}
+.moiSheet{background:var(--m-bg2);border-radius:18px 18px 0 0;padding:18px;width:100%;max-width:480px;margin:0 auto;}
 .moiVariantBtn{display:flex;justify-content:space-between;margin-bottom:8px;}
 .moiConfirm{text-align:center;}
-.moiFooter{text-align:center;color:#9AA3AF;font-size:11px;padding:20px 0 6px;}
+.moiFooter{text-align:center;color:var(--m-muted2);font-size:11px;padding:20px 0 6px;}
 `
