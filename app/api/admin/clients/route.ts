@@ -10,10 +10,14 @@ import { serverError } from '@/lib/apiError'
 
 export const runtime = 'nodejs'
 
-const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || 'servio-admin-iheb-2026'
+// No fallback: a hardcoded default here would let anyone who's ever seen
+// this source (public GitHub repo) call every admin action on every tenant
+// the moment ADMIN_SECRET_KEY is unset in the deployment env — fail closed
+// instead, same as cron/wallet-rewards's existing correct pattern.
+const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || ''
 
 function checkAdmin(body: any) {
-  return body?.admin_key === ADMIN_KEY
+  return !!ADMIN_KEY && body?.admin_key === ADMIN_KEY
 }
 
 export async function POST(req: Request) {

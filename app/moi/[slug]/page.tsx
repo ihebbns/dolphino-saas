@@ -67,6 +67,24 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [orderType, setOrderType] = useState('emporter')
+
+  // Table QR ordering: a table's printed QR code encodes ?table=N&sec=SEC.
+  // Read directly from window.location rather than next/navigation's
+  // useSearchParams — this page already does all its data fetching from
+  // client-side effects, and reading the URL directly here avoids pulling in
+  // a Suspense boundary just for two query params. Table orders are always
+  // dine-in, so the type selector becomes moot once a table is present (the
+  // server enforces this too — see /api/public/[slug]/order).
+  const [tableNum, setTableNum] = useState<number | null>(null)
+  const [tableSec, setTableSec] = useState('')
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      const t = parseInt(sp.get('table') || '')
+      if (Number.isFinite(t) && t > 0) { setTableNum(t); setOrderType('sur_place') }
+      setTableSec(sp.get('sec') || '')
+    } catch {}
+  }, [])
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [confirmed, setConfirmed] = useState<any>(null)
@@ -125,7 +143,15 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   const currency = info?.currency || 'DT'
 
   async function submitOrder() {
-    if (!name.trim() || !phone.trim()) { setMsg('Nom et téléphone requis'); return }
+    // A table order's identity is the table itself — the customer is sitting
+    // right there, staff can just look over. Forcing a phone number here is
+    // friction with no purpose (nobody's calling them) and is exactly the
+    // kind of thing that makes a "scan and order" flow feel like a chore
+    // instead of instant. Pickup/delivery still need both — that customer
+    // has to actually be reached.
+    const isTableOrder = tableNum != null
+    const effectiveName = name.trim() || (isTableOrder ? `Table ${tableNum}` : '')
+    if (!isTableOrder && (!name.trim() || !phone.trim())) { setMsg('Nom et téléphone requis'); return }
     if (!cart.length) { setMsg('Panier vide'); return }
     setSubmitting(true); setMsg('')
     try { localStorage.setItem('servio_moi_phone_' + slug, phone.trim()); localStorage.setItem('servio_moi_name_' + slug, name.trim()) } catch {}
@@ -133,8 +159,9 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
       const res = await fetch(`/api/public/${slug}/order`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: phone.trim(), name: name.trim(), orderType, note: note.trim(),
+          phone: phone.trim(), name: effectiveName, orderType, note: note.trim(),
           items: cart.map(l => ({ id: l.id, variantLabel: l.variantLabel, qty: l.qty })),
+          tableNum, tableSec,
         }),
       })
       const data = await res.json()
@@ -379,13 +406,21 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                   ))}
                   <div className="moiTotalRow"><span>Total</span><span>{total.toFixed(3)} {currency}</span></div>
 
-                  <div className="moiOrderTypeRow">
-                    {ORDER_TYPES.map(t => (
-                      <button key={t.id} className={'moiCatChip' + (orderType === t.id ? ' on' : '')} onClick={() => setOrderType(t.id)}>{t.label}</button>
-                    ))}
-                  </div>
-                  <input className="moiInput" placeholder="Votre nom" value={name} onChange={e => setName(e.target.value)} />
-                  <input className="moiInput" type="tel" placeholder="Votre téléphone" value={phone} onChange={e => setPhone(e.target.value)} />
+                  {tableNum != null ? (
+                    <div className="moiHint" style={{ textAlign: 'center', margin: '8px 0', fontWeight: 700 }}>
+                      🍽️ Commande pour la Table {tableNum}{tableSec ? ` — ${tableSec}` : ''}
+                    </div>
+                  ) : (
+                    <div className="moiOrderTypeRow">
+                      {ORDER_TYPES.map(t => (
+                        <button key={t.id} className={'moiCatChip' + (orderType === t.id ? ' on' : '')} onClick={() => setOrderType(t.id)}>{t.label}</button>
+                      ))}
+                    </div>
+                  )}
+                  <input className="moiInput" placeholder={tableNum != null ? 'Votre nom (optionnel)' : 'Votre nom'} value={name} onChange={e => setName(e.target.value)} />
+                  {tableNum == null && (
+                    <input className="moiInput" type="tel" placeholder="Votre téléphone" value={phone} onChange={e => setPhone(e.target.value)} />
+                  )}
                   <input className="moiInput" placeholder="Note (optionnel)" value={note} onChange={e => setNote(e.target.value)} />
                   {msg && <div className="moiErr">{msg}</div>}
                   <button className="moiBtn moiBtnPrimary" onClick={submitOrder} disabled={submitting}>

@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     if (!rows.length) return cors(NextResponse.json({ ok: false }))
 
     const r = rows[0]
-    if (r.plan === 'suspended') return cors(NextResponse.json({ ok: true, version: null }))
+    if (r.plan === 'suspended' || r.plan === 'suspended_exe') return cors(NextResponse.json({ ok: true, version: null }))
 
     const config = r.config || {}
     const version = config.appVersion || null

@@ -16,7 +16,7 @@ export async function GET(req: Request) {
 
   try {
     const rows = await sql`
-      SELECT config FROM restaurants WHERE api_key = ${key} AND plan != 'suspended' LIMIT 1
+      SELECT config FROM restaurants WHERE api_key = ${key} AND plan NOT IN ('suspended','suspended_exe') LIMIT 1
     `
     if (!rows.length) return new NextResponse('Not found', { status: 404 })
 

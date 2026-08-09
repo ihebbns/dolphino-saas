@@ -78,7 +78,8 @@ export async function GET(req: Request) {
     if (!rest) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 403 }))
 
     const pending = await sql`
-      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, created_at
+      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, created_at,
+             table_num, table_sec
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status = 'pending'
       ORDER BY created_at ASC`
@@ -86,11 +87,18 @@ export async function GET(req: Request) {
     // claimed_by/claimed_at travel to the till so it can gray out a row
     // another till is actively encaissé-ing — a stale claim (>3 min) reads
     // as unclaimed here too, matching the same window 'claim' itself uses.
+    // table_num IS NULL is deliberate, not redundant with paid=FALSE — a
+    // table-routed order's payment is tracked by the TABLE's own checkout,
+    // never by this queue. Excluding it here (not just relying on its paid
+    // flag staying accurate) means even a bug elsewhere can't resurrect a
+    // "🧾 Encaisser" button for money the table itself will collect —
+    // the exact double-billing shape this queue exists to prevent.
     const unpaid = await sql`
       SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at, ready,
+             table_num, table_sec,
              CASE WHEN claimed_at > NOW() - INTERVAL '3 minutes' THEN claimed_by ELSE NULL END AS claimed_by
       FROM online_orders
-      WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE
+      WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE AND table_num IS NULL
       ORDER BY responded_at ASC`
 
     // Separate from `unpaid` on purpose — paid and ready are independent
@@ -98,8 +106,11 @@ export async function GET(req: Request) {
     // accepted-and-cooking long before anyone's collected payment). Without
     // this, an order paid early would vanish from the till entirely with no
     // way left to ever mark it ready.
+    // items_json included so the till can reprint this order's kitchen
+    // ticket from the "En préparation" list at any point, not only in the
+    // few seconds right after accepting it (before this query ever runs).
     const preparing = await sql`
-      SELECT id, client_name, order_type, total::float AS total, responded_at, paid
+      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, responded_at, paid, table_num, table_sec
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
       ORDER BY responded_at ASC`
@@ -110,7 +121,8 @@ export async function GET(req: Request) {
     // without the POS's local session context.
     const recent = await sql`
       SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note,
-             status, responded_by, responded_at, paid, paid_by, paid_at, ready, ready_by, ready_at, created_at
+             status, responded_by, responded_at, paid, paid_by, paid_at, ready, ready_by, ready_at, created_at,
+             table_num, table_sec
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status != 'pending'
       ORDER BY responded_at DESC LIMIT 100`

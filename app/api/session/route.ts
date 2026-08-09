@@ -22,7 +22,7 @@ export async function OPTIONS() {
 export async function GET(req: Request) {
   const key = getApiKey(req)
   if (!key) return cors(NextResponse.json({ ok:false, error:'API key required' }, { status:401 }))
-  const rows = await sql`SELECT id FROM restaurants WHERE api_key=${key} AND plan!='suspended' LIMIT 1`
+  const rows = await sql`SELECT id FROM restaurants WHERE api_key=${key} AND plan NOT IN ('suspended','suspended_exe') LIMIT 1`
   if (!rows.length) return cors(NextResponse.json({ ok:false, error:'Invalid key' }, { status:403 }))
   const rid = rows[0].id
 
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const key = getApiKey(req)
   if (!key) return cors(NextResponse.json({ ok:false, error:'API key required' }, { status:401 }))
-  const rows = await sql`SELECT id FROM restaurants WHERE api_key=${key} AND plan!='suspended' LIMIT 1`
+  const rows = await sql`SELECT id FROM restaurants WHERE api_key=${key} AND plan NOT IN ('suspended','suspended_exe') LIMIT 1`
   if (!rows.length) return cors(NextResponse.json({ ok:false, error:'Invalid key' }, { status:403 }))
   const rid = rows[0].id
 

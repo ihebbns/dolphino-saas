@@ -17,13 +17,17 @@ import { sql } from '@/lib/db'
 
 export const runtime = 'edge'
 
-const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || 'servio-admin-iheb-2026'
+// No fallback: a hardcoded default here would let anyone who's ever seen
+// this source (public GitHub repo) call every admin action on every tenant
+// the moment ADMIN_SECRET_KEY is unset in the deployment env — fail closed
+// instead, same as cron/wallet-rewards's existing correct pattern.
+const ADMIN_KEY = process.env.ADMIN_SECRET_KEY || ''
 
 export async function POST(req: Request) {
   let body: any
   try { body = await req.json() } catch { return NextResponse.json({ ok: false, error: 'Bad JSON' }, { status: 400 }) }
 
-  if (body.admin_key !== ADMIN_KEY) {
+  if (!ADMIN_KEY || body.admin_key !== ADMIN_KEY) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
 

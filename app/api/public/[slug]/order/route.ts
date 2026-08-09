@@ -3,7 +3,14 @@
 // public ordering page. Lands as a 'pending' row in online_orders for
 // staff to accept/reject from the till (see /api/me/online-orders).
 //
-// Body: { phone, name, items:[{id, variantLabel?, qty}], orderType, note? }
+// Body: { phone, name, items:[{id, variantLabel?, qty}], orderType, note?,
+//         tableNum?, tableSec? }
+//
+// tableNum/tableSec come from a table's QR code (/moi/<slug>?table=N&sec=SEC)
+// — when present, the till's accept flow merges the items straight onto
+// that table's running tab instead of the generic pickup/delivery queue
+// (see window.tblMergeOnlineOrder in the table-service POS). Forces
+// orderType to 'sur_place' since a table order is definitionally dine-in.
 //
 // SECURITY: this is an unauthenticated public endpoint. The one rule that
 // matters — prices and item existence are ALWAYS recomputed from the live
@@ -28,9 +35,16 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
 
   const phone = clip(body?.phone, 40).replace(/\s+/g, '')
   const name = clip(body?.name, 120).trim()
-  const orderType = ORDER_TYPES.includes(body?.orderType) ? body.orderType : 'emporter'
   const note = clip(body?.note, 300)
   const reqItems: any[] = Array.isArray(body?.items) ? body.items.slice(0, 50) : []
+
+  const tableNumRaw = parseInt(String(body?.tableNum))
+  const tableNum = Number.isFinite(tableNumRaw) && tableNumRaw > 0 ? tableNumRaw : null
+  const tableSec = tableNum != null ? clip(body?.tableSec, 80) : null
+  // A table order is dine-in by definition — the customer is sitting at it
+  // right now, regardless of whatever the ordering page's own type selector
+  // (built before table-QR ordering existed) happened to send.
+  const orderType = tableNum != null ? 'sur_place' : (ORDER_TYPES.includes(body?.orderType) ? body.orderType : 'emporter')
 
   if (!slug) return NextResponse.json({ ok: false, error: 'Lien invalide' }, { status: 400 })
   // Phone is optional here (kiosk orders are a walk-up name-only flow) — the
@@ -52,11 +66,16 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
 
     // Flatten the live menu into a lookup by item id, keeping each variant's
     // own price — this is the ONLY source of truth for what gets charged.
+    // Also keep the category name each item came from (Object.entries, not
+    // .values) — the till's kitchen-zone routing matches on category
+    // (ZONE1_CATS/ZONE2_CATS/etc. check item.cat), and without it here an
+    // online/QR order's items carry no category at all, so they can silently
+    // match NO kitchen zone and never print a kitchen ticket anywhere.
     const menuRaw = (rest[0].menu_json && typeof rest[0].menu_json === 'object') ? rest[0].menu_json : {}
     const byId = new Map<string, any>()
-    for (const catVal of Object.values<any>(menuRaw)) {
+    for (const [catName, catVal] of Object.entries<any>(menuRaw)) {
       const items = Array.isArray(catVal) ? catVal : (catVal?.items ?? [])
-      for (const it of items) if (it?.id) byId.set(String(it.id), it)
+      for (const it of items) if (it?.id) byId.set(String(it.id), { ...it, __cat: catName })
     }
 
     // Same rupture flag the till itself blocks a sale on — a stale client
@@ -89,7 +108,7 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
       }
       if (!(price > 0)) continue
 
-      orderItems.push({ id: menuItem.id, name: menuItem.name, e: menuItem.e || '🍽️', p: price, qty, variant: variantLabel })
+      orderItems.push({ id: menuItem.id, name: menuItem.name, e: menuItem.e || '🍽️', p: price, qty, variant: variantLabel, cat: menuItem.__cat || '' })
       total += price * qty
     }
 
@@ -102,8 +121,8 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
     total = Math.round(total * 1000) / 1000
 
     const [row] = await sql`
-      INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note)
-      VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note})
+      INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec)
+      VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note}, ${tableNum}, ${tableSec})
       RETURNING id`
 
     return NextResponse.json({

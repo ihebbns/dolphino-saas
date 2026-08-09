@@ -41,7 +41,7 @@ export async function POST(req: Request) {
   if (!r || !passwordOk)
     return cors(NextResponse.json({ ok:false, error:'Email ou mot de passe incorrect' }, { status:401 }))
 
-  if (r.plan === 'suspended')
+  if (r.plan === 'suspended' || r.plan === 'suspended_dash')
     return cors(NextResponse.json({ ok:false, error:'Compte suspendu' }, { status:403 }))
 
   const token = await signToken({ rid:r.id, name:r.name, key:r.api_key })

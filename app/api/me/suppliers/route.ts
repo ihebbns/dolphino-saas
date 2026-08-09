@@ -293,7 +293,7 @@ export async function POST(req: Request) {
       // balance is the supplier's current balance — used by computeUrgency
       // to suppress the badge once fully paid. We pass the supplier balance
       // as a proxy: any positive balance means there is still something owed.
-      const [sup] = await sql`SELECT balance::float FROM suppliers WHERE id = ${supplierId} LIMIT 1`
+      const [sup] = await sql`SELECT balance::float FROM suppliers WHERE id = ${supplierId} AND restaurant_id = ${rid} LIMIT 1`
       const supplierBalance = sup?.balance ?? 0
 
       const deliveries = [...stockDel, ...ingDel]

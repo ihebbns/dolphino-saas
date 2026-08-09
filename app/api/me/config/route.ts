@@ -45,9 +45,9 @@ export async function GET(req: Request) {
   try {
     const rows = await sql`
       SELECT name, city, phone, plan, plan_tier, trial_ends_at, config, menu_json
-      FROM restaurants WHERE api_key = ${key} LIMIT 1
+      FROM restaurants WHERE api_key = ${key} AND plan NOT IN ('suspended','suspended_dash') LIMIT 1
     `
-    if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable' }, { status: 404 }))
+    if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 404 }))
     const r = rows[0]
     const config = (r.config && typeof r.config === 'object') ? r.config : {}
     return cors(NextResponse.json({
@@ -70,8 +70,8 @@ export async function POST(req: Request) {
   if (!key) return cors(NextResponse.json({ ok: false, error: 'Clé manquante' }, { status: 400 }))
 
   try {
-    const rows = await sql`SELECT config FROM restaurants WHERE api_key = ${key} LIMIT 1`
-    if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable' }, { status: 404 }))
+    const rows = await sql`SELECT config FROM restaurants WHERE api_key = ${key} AND plan NOT IN ('suspended','suspended_dash') LIMIT 1`
+    if (!rows.length) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 404 }))
 
     const current = (rows[0].config && typeof rows[0].config === 'object') ? rows[0].config : {}
     const nextConfig: any = { ...current }
