@@ -4,7 +4,7 @@
 // staff to accept/reject from the till (see /api/me/online-orders).
 //
 // Body: { phone, name, items:[{id, variantLabel?, qty}], orderType, note?,
-//         tableNum?, tableSec? }
+//         tableNum?, tableSec?, payMethod?, pin? }
 //
 // tableNum/tableSec come from a table's QR code (/moi/<slug>?table=N&sec=SEC)
 // — when present, the till's accept flow merges the items straight onto
@@ -17,13 +17,28 @@
 // menu_json server-side. A public endpoint can never be trusted to report
 // its own total; every field from the request body is treated as "which
 // item, how many", never "how much it costs".
+//
+// ── PAYING WITH WALLET BALANCE (payMethod: 'wallet') ──────────────────────
+// Deliberately requires BOTH modules.wallet AND modules.walletPinProtected
+// to be on — spending real balance off a bare phone number (no PIN) would
+// be exactly the "anyone who knows your number can touch your money" gap
+// the PIN system exists to close. A restaurant that hasn't turned on PIN
+// protection simply can't offer wallet-pay online; cash-on-pickup/delivery
+// (the default, unchanged) is always available regardless.
+// The PIN is re-verified HERE, server-side, against the live wallets row —
+// never trusted from whatever the client claims it already checked. Balance
+// is deducted with a single atomic `UPDATE ... WHERE balance >= total`, so
+// a double-submit or a concurrent order can't both succeed against a
+// balance that only covers one of them.
 // ═══════════════════════════════════════════════════
 
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { serverError } from '@/lib/apiError'
+import { verifyWalletPin } from '@/lib/walletPin'
+import { randomUUID } from 'crypto'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 const clip = (v: any, n: number) => String(v ?? '').slice(0, n)
 const ORDER_TYPES = ['sur_place', 'emporter', 'livraison']
@@ -37,6 +52,8 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   const name = clip(body?.name, 120).trim()
   const note = clip(body?.note, 300)
   const reqItems: any[] = Array.isArray(body?.items) ? body.items.slice(0, 50) : []
+  const payMethod = body?.payMethod === 'wallet' ? 'wallet' : 'cash'
+  const pin = clip(body?.pin, 4)
 
   const tableNumRaw = parseInt(String(body?.tableNum))
   const tableNum = Number.isFinite(tableNumRaw) && tableNumRaw > 0 ? tableNumRaw : null
@@ -52,6 +69,15 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   // it doubles as the wallet-lookup identity there; this is just the floor.
   if (!name) return NextResponse.json({ ok: false, error: 'Nom requis' }, { status: 400 })
   if (!reqItems.length) return NextResponse.json({ ok: false, error: 'Panier vide' }, { status: 400 })
+  if (payMethod === 'wallet' && !phone) return NextResponse.json({ ok: false, error: 'Numéro requis pour payer par fidélité' }, { status: 400 })
+  // A table's bill is shared/split/tipped at checkout — "these items were
+  // already paid separately online" has no clean place to go there without
+  // double-charging whoever settles the table. Wallet-pay is pickup/
+  // delivery only; the /moi UI already only offers the toggle in that case,
+  // this is the server-side backstop against a modified/replayed request.
+  if (payMethod === 'wallet' && tableNum != null) {
+    return NextResponse.json({ ok: false, error: 'Le paiement par fidélité n\'est pas disponible pour une commande à table' }, { status: 400 })
+  }
 
   try {
     const rest = await sql`
@@ -120,13 +146,59 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
     }
     total = Math.round(total * 1000) / 1000
 
+    // ── Pay with wallet balance instead of cash-on-pickup ─────────────────
+    let paidNow = false
+    let walletClientKey: string | null = null
+    if (payMethod === 'wallet') {
+      if (modules.wallet !== true || modules.walletPinProtected !== true) {
+        return NextResponse.json({ ok: false, error: 'Le paiement par fidélité n\'est pas disponible pour ce commerce' }, { status: 403 })
+      }
+      const result = await verifyWalletPin(sql, rid, phone, pin)
+      if (result.ok === false) {
+        if (result.reason === 'not_found') return NextResponse.json({ ok: false, error: 'Aucune carte fidélité trouvée pour ce numéro' }, { status: 404 })
+        if (result.reason === 'no_pin') return NextResponse.json({ ok: false, error: 'Configurez d\'abord votre code PIN dans "Mon compte"' }, { status: 400 })
+        if (result.reason === 'locked') return NextResponse.json({ ok: false, error: 'Compte fidélité temporairement bloqué — réessayez plus tard', locked: true, lockedUntil: result.lockedUntil }, { status: 423 })
+        if (result.reason === 'wrong') return NextResponse.json({ ok: false, error: 'Code PIN incorrect', attemptsLeft: result.attemptsLeft }, { status: 401 })
+        return NextResponse.json({ ok: false, error: 'Code PIN invalide' }, { status: 400 })
+      }
+
+      // Atomic check-and-deduct — the WHERE guard means a double-submit or a
+      // concurrent order for the same wallet can never both succeed against
+      // a balance that only covers one of them (whichever request's UPDATE
+      // commits first wins; the other sees balance already too low).
+      const [deducted] = await sql`
+        UPDATE wallets SET balance = balance - ${total}
+        WHERE restaurant_id = ${rid} AND client_key = ${result.client.client_key} AND balance >= ${total}
+        RETURNING balance::float AS balance`
+      if (!deducted) {
+        return NextResponse.json({ ok: false, error: `Solde insuffisant (${result.client.balance.toFixed(3)} DT disponible, ${total.toFixed(3)} DT requis)` }, { status: 400 })
+      }
+      walletClientKey = result.client.client_key
+      paidNow = true
+
+      const itemsSummary = clip(orderItems.map(it => `${it.qty}x ${it.name}`).join(', '), 400)
+      try {
+        await sql`
+          INSERT INTO wallet_movements (restaurant_id, client_key, kind, delta, items_summary, reason, actor, client_ts, client_uid)
+          VALUES (${rid}, ${walletClientKey}, 'spend', ${-total}, ${itemsSummary}, 'Commande en ligne', 'Client (en ligne)', NOW(), ${randomUUID()})`
+      } catch (e: any) {
+        // Balance is already deducted at this point — the movement row is
+        // the audit trail, not the source of truth for the balance itself.
+        // Losing it would make reconciliation harder but never re-credits
+        // or double-charges anything; logging it beats silently swallowing
+        // a real inconsistency.
+        console.error('[public order] wallet_movements insert failed after deduct', e?.message || e)
+      }
+    }
+
     const [row] = await sql`
-      INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec)
-      VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note}, ${tableNum}, ${tableSec})
+      INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at)
+      VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note}, ${tableNum}, ${tableSec},
+              ${paidNow}, ${paidNow ? 'Client (fidélité)' : null}, ${paidNow ? new Date().toISOString() : null})
       RETURNING id`
 
     return NextResponse.json({
-      ok: true, order_id: row.id, total, items: orderItems,
+      ok: true, order_id: row.id, total, items: orderItems, paid: paidNow,
       // Order still went through with whatever WAS available — the client
       // shows this as a heads-up, not a failure.
       droppedOutOfStock: droppedOutOfStock.length ? droppedOutOfStock : undefined,

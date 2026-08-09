@@ -30,14 +30,14 @@ export async function POST(req: Request) {
   try {
     clients = await sql`
       SELECT id, name, owner_email, api_key, city, phone, plan, plan_tier,
-             suspend_at, created_at, business_type,
+             suspend_at, created_at, business_type, public_slug,
              next_contact, last_contact, admin_notes, needs, crm_status, monthly_price
       FROM restaurants
       ORDER BY next_contact ASC NULLS LAST, created_at DESC
     `
   } catch {
     clients = await sql`
-      SELECT id, name, owner_email, api_key, city, phone, plan, suspend_at, created_at
+      SELECT id, name, owner_email, api_key, city, phone, plan, suspend_at, created_at, public_slug
       FROM restaurants
       ORDER BY created_at DESC
     `
@@ -142,6 +142,35 @@ export async function PATCH(req: Request) {
       }
       cfg.modules = next
       await sql`UPDATE restaurants SET config = ${JSON.stringify(cfg)}::jsonb WHERE id = ${id}`
+    }
+
+    // ── Public ordering slug (admin only) ─────────────────────────────
+    // Not in `allowed` above — this needs its own URL-safe validation and
+    // has a real unique index (idx_restaurants_public_slug), unlike the
+    // generic text fields, which the bare UPDATE loop above doesn't handle.
+    if (body.public_slug !== undefined) {
+      // Keep underscores valid, not just hyphens — the local wizard's own
+      // slugify (tools/new-client/server.mjs) produces underscore-separated
+      // slugs (e.g. "test_cafe_servio-jfx3"), and existing clients already
+      // have those stored. A stricter charset here would silently mangle an
+      // untouched existing slug the first time an admin saves this form.
+      const slug = String(body.public_slug || '').trim().toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '').slice(0, 60)
+      try {
+        if (!slug) {
+          await sql`UPDATE restaurants SET public_slug = NULL WHERE id = ${id}`
+        } else {
+          await sql`UPDATE restaurants SET public_slug = ${slug} WHERE id = ${id}`
+        }
+      } catch (e: any) {
+        const msg = String(e?.message || e)
+        if (msg.toLowerCase().includes('unique') || msg.includes('duplicate') || msg.includes('23505')) {
+          return NextResponse.json({ ok:false, error: `Le lien "${slug}" est déjà utilisé par un autre client — choisissez-en un autre` }, { status:409 })
+        }
+        throw e
+      }
+      return NextResponse.json({ ok: true, public_slug: slug || null })
     }
 
     return NextResponse.json({ ok: true })

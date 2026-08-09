@@ -1,33 +1,53 @@
 // ═══════════════════════════════════════════════════
-// GET /api/public/[slug]/wallet?phone=XXXXXXXX — a customer looking up their
-// OWN card balance/history/reward progress on the public ordering page.
+// GET /api/public/[slug]/wallet?phone=XXXXXXXX&pin=NNNN — a customer looking
+// up their OWN card balance/history/reward progress on the public ordering
+// page.
 //
-// ── PRIVACY NOTE (v1 limitation, documented on purpose) ──────────────────
-// Identification is the phone number alone — there is no OTP/SMS
-// verification in this pass (that needs a paid SMS gateway, a separate
-// decision). This means anyone who knows (or guesses) a real customer's
-// phone number can see that customer's balance and purchase history. This
-// is an accepted, common tradeoff for small-business loyalty portals (the
-// same trust level as a physical loyalty card), but it should be upgraded
-// to phone+OTP before this is pitched as handling anything more sensitive
-// than a small prepaid balance. Nothing here allows a WRITE (no spend, no
-// balance change) — read-only, and ordering itself carries no payment
-// step (see /api/public/[slug]/order), so the blast radius of a guessed
-// phone number is "sees a stranger's spending", not "loses money".
+// ── PRIVACY (v2 — self-service PIN, admin-togglable per restaurant) ──────
+// v1 identified a customer by phone number ALONE — anyone who knew or
+// guessed a real customer's phone number could see that customer's balance,
+// purchase history, and reward tier. No spend/order path was ever reachable
+// from it (read-only), but it was still a real privacy gap, reported by a
+// client.
+//
+// Fix: when `restaurants.config.modules.walletPinProtected === true` (an
+// admin-only per-client toggle, off by default so nothing changes for a
+// client who hasn't opted in), a phone lookup now also needs a 4-digit PIN:
+//   - First-ever lookup for a phone with no PIN set yet: pass `pin` to set
+//     one right there (self-service, not identity-verified — this is not an
+//     OTP/SMS system, doesn't claim to be one; it's the same trust level as
+//     a physical loyalty card's own PIN pad).
+//   - Every lookup after that requires the correct PIN.
+//   - 5 wrong PINs locks the phone out for 15 minutes (a 4-digit PIN is only
+//     10,000 combinations — the lockout is what makes guessing impractical).
+//   - A locked-out customer can be unlocked by the developer from /admin
+//     (POST /api/admin/wallet-pin-reset) — a support action, not something
+//     the public page can do to itself.
+// When the toggle is OFF, behavior is byte-for-byte what v1 did — this is
+// an opt-in hardening, not a forced breaking change for every client.
+//
+// Still true from v1: this route never writes a balance or a movement (PIN
+// columns aside) — read-only, and ordering itself carries no payment step
+// (see /api/public/[slug]/order), so even a fully-open wallet lookup could
+// never spend anything.
 // ═══════════════════════════════════════════════════
 
 import { NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
 import { sql } from '@/lib/db'
-import { serverError } from '@/lib/apiError'
+import { serverError, isMissingSchema } from '@/lib/apiError'
 import { tierFor, REWARD_TIERS, previousPeriod } from '@/lib/walletRewards'
+import { verifyWalletPin, PIN_RE } from '@/lib/walletPin'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 const clip = (v: any, n: number) => String(v ?? '').slice(0, n)
 
 export async function GET(req: Request, { params }: { params: { slug: string } }) {
   const slug = String(params.slug || '').slice(0, 60)
-  const phone = clip(new URL(req.url).searchParams.get('phone'), 40).replace(/\s+/g, '')
+  const url = new URL(req.url)
+  const phone = clip(url.searchParams.get('phone'), 40).replace(/\s+/g, '')
+  const pinInput = clip(url.searchParams.get('pin'), 4)
   if (!slug) return NextResponse.json({ ok: false, error: 'Lien invalide' }, { status: 400 })
   if (!phone) return NextResponse.json({ ok: false, error: 'Numéro requis' }, { status: 400 })
 
@@ -41,14 +61,45 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
     if (modules.wallet !== true) {
       return NextResponse.json({ ok: true, found: false, walletDisabled: true })
     }
+    const pinProtected = modules.walletPinProtected === true
 
     const clients = await sql`
-      SELECT client_key, name, balance::float AS balance
+      SELECT client_key, name, balance::float AS balance, pin_hash, pin_locked_until
       FROM wallets
       WHERE restaurant_id = ${rid} AND phone = ${phone} AND archived = FALSE
       LIMIT 1`
     if (!clients.length) return NextResponse.json({ ok: true, found: false })
     const client = clients[0]
+
+    // ── PIN gate (only when this restaurant opted in) ────────────────────
+    if (pinProtected) {
+      if (client.pin_locked_until && new Date(client.pin_locked_until) > new Date()) {
+        return NextResponse.json({ ok: true, found: true, locked: true, lockedUntil: client.pin_locked_until })
+      }
+
+      if (!client.pin_hash) {
+        // No PIN set yet — this lookup establishes one instead of revealing
+        // anything. Only a plain phone (no pin) just asks "does this need
+        // setup", still with zero balance/history in the response. Setting
+        // one is unique to THIS route (see lib/walletPin.ts's header note
+        // for why /order never does this itself).
+        if (!pinInput) return NextResponse.json({ ok: true, found: true, needsPinSetup: true })
+        if (!PIN_RE.test(pinInput)) return NextResponse.json({ ok: false, error: 'Le code doit contenir 4 chiffres' }, { status: 400 })
+        const hash = await bcrypt.hash(pinInput, 10)
+        await sql`UPDATE wallets SET pin_hash = ${hash}, pin_set_at = NOW(), pin_fail_count = 0, pin_locked_until = NULL
+                  WHERE restaurant_id = ${rid} AND client_key = ${client.client_key}`
+        // fall through — setup succeeded, show the balance same as a normal
+        // successful lookup below.
+      } else {
+        if (!pinInput) return NextResponse.json({ ok: true, found: true, pinRequired: true })
+        const result = await verifyWalletPin(sql, rid, phone, pinInput)
+        if (result.ok === false) {
+          if (result.reason === 'locked') return NextResponse.json({ ok: true, found: true, locked: true, lockedUntil: result.lockedUntil })
+          if (result.reason === 'wrong') return NextResponse.json({ ok: true, found: true, pinRequired: true, error: 'Code PIN incorrect', attemptsLeft: result.attemptsLeft })
+          return NextResponse.json({ ok: true, found: true, pinRequired: true })
+        }
+      }
+    }
 
     const movements = await sql`
       SELECT kind, delta::float, reason, client_ts
@@ -85,6 +136,12 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
       },
     })
   } catch (e: any) {
+    // walletPinProtected turned on before migration-wallet-pin.sql ran: fail
+    // CLOSED (no data) rather than silently falling back to the unprotected
+    // v1 response — the whole point of this endpoint is not to leak.
+    if (isMissingSchema(e)) {
+      return NextResponse.json({ ok: true, found: true, pinRequired: true, error: 'Protection PIN non initialisée — contactez le développeur' })
+    }
     return NextResponse.json(serverError('public wallet', e), { status: 500 })
   }
 }

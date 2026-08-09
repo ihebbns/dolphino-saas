@@ -9,10 +9,12 @@
 // to the home screen, and used one-handed.
 //
 // Identification is the phone number alone (see the privacy note in
-// /api/public/[slug]/wallet) — no password, no OTP in this pass. Ordering
-// itself never touches money (no payment step here), so the blast radius
-// of a guessed phone number is limited to "sees someone else's spending",
-// not "loses money" — still a real limitation, upgrade path noted there.
+// /api/public/[slug]/wallet) — no password, no OTP in this pass. Cash
+// orders never touch money here (paid at pickup/delivery, same as before).
+// Paying WITH wallet balance (payMethod:'wallet') is the one path that
+// does move money, and it's gated on a PIN re-verified server-side on
+// every submit — see /api/public/[slug]/order's header for why that's
+// required (a bare phone number must never be enough to spend anything).
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
 
@@ -90,9 +92,19 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   const [confirmed, setConfirmed] = useState<any>(null)
   const [msg, setMsg] = useState('')
 
+  // Pay with wallet balance instead of cash-on-pickup — only offered when
+  // the restaurant has BOTH wallet and PIN protection on (walletPayEnabled,
+  // see /api/public/[slug]/menu): spending real balance off a bare phone
+  // number with no PIN would reopen exactly the gap the PIN system closed.
+  const [payMethod, setPayMethod] = useState<'cash' | 'wallet'>('cash')
+  const [orderPin, setOrderPin] = useState('')
+
   const [accountPhone, setAccountPhone] = useState('')
   const [account, setAccount] = useState<any>(null)
   const [accountLoading, setAccountLoading] = useState(false)
+  const [pinInput, setPinInput] = useState('')
+  const [pinConfirm, setPinConfirm] = useState('')
+  const [pinError, setPinError] = useState('')
 
   useEffect(() => {
     fetch(`/api/public/${slug}/menu`)
@@ -151,7 +163,11 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
     // has to actually be reached.
     const isTableOrder = tableNum != null
     const effectiveName = name.trim() || (isTableOrder ? `Table ${tableNum}` : '')
-    if (!isTableOrder && (!name.trim() || !phone.trim())) { setMsg('Nom et téléphone requis'); return }
+    const payingWithWallet = payMethod === 'wallet'
+    // Wallet-pay needs a phone regardless of order type (it identifies WHICH
+    // wallet to charge) — cash orders keep the existing table-order exemption.
+    if ((!isTableOrder || payingWithWallet) && (!name.trim() || !phone.trim())) { setMsg('Nom et téléphone requis'); return }
+    if (payingWithWallet && !/^\d{4}$/.test(orderPin)) { setMsg('Code PIN à 4 chiffres requis pour payer par fidélité'); return }
     if (!cart.length) { setMsg('Panier vide'); return }
     setSubmitting(true); setMsg('')
     try { localStorage.setItem('servio_moi_phone_' + slug, phone.trim()); localStorage.setItem('servio_moi_name_' + slug, name.trim()) } catch {}
@@ -162,10 +178,11 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
           phone: phone.trim(), name: effectiveName, orderType, note: note.trim(),
           items: cart.map(l => ({ id: l.id, variantLabel: l.variantLabel, qty: l.qty })),
           tableNum, tableSec,
+          payMethod, pin: payingWithWallet ? orderPin : undefined,
         }),
       })
       const data = await res.json()
-      if (data.ok) { setConfirmed(data); setCart([]) }
+      if (data.ok) { setConfirmed(data); setCart([]); setOrderPin('') }
       else setMsg(data.error || 'Erreur')
     } catch { setMsg('Impossible de contacter le serveur') }
     setSubmitting(false)
@@ -231,10 +248,30 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   async function lookupAccount() {
     if (!accountPhone.trim()) return
     setAccountLoading(true)
+    setPinInput(''); setPinConfirm(''); setPinError('')
     try { localStorage.setItem('servio_moi_phone_' + slug, accountPhone.trim()) } catch {}
     try {
       const res = await fetch(`/api/public/${slug}/wallet?phone=${encodeURIComponent(accountPhone.trim())}`)
       setAccount(await res.json())
+    } catch { setAccount({ ok: false }) }
+    setAccountLoading(false)
+  }
+
+  // Same lookup, now carrying the PIN — used both to CREATE a PIN (first-ever
+  // lookup for that phone) and to VERIFY one on every lookup after. The
+  // server tells us which case it was via needsPinSetup/pinRequired on the
+  // PRIOR response; this function doesn't need to know which — it just
+  // resubmits phone+pin and trusts whatever comes back.
+  async function submitPin() {
+    if (!/^\d{4}$/.test(pinInput)) { setPinError('Le code doit contenir 4 chiffres'); return }
+    if (account?.needsPinSetup && pinInput !== pinConfirm) { setPinError('Les deux codes ne correspondent pas'); return }
+    setPinError('')
+    setAccountLoading(true)
+    try {
+      const res = await fetch(`/api/public/${slug}/wallet?phone=${encodeURIComponent(accountPhone.trim())}&pin=${encodeURIComponent(pinInput)}`)
+      const data = await res.json()
+      setAccount(data)
+      if (data.found && !data.needsPinSetup && !data.pinRequired && !data.locked) { setPinInput(''); setPinConfirm('') }
     } catch { setAccount({ ok: false }) }
     setAccountLoading(false)
   }
@@ -272,6 +309,29 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                 {accountLoading ? '…' : 'Voir'}
               </button>
               {account && !account.found && !account.walletDisabled && <div className="moiHint" style={{ marginTop: 10 }}>Aucune carte trouvée pour ce numéro.</div>}
+            </div>
+          ) : account.locked ? (
+            <div className="moiCard">
+              <div className="moiCardTitle">🔒 Compte temporairement bloqué</div>
+              <div className="moiHint">Trop de codes incorrects. Réessayez après {new Date(account.lockedUntil).toLocaleTimeString('fr-TN', { hour: '2-digit', minute: '2-digit' })}.</div>
+              <button className="moiBtn" style={{ marginTop: 10 }} onClick={() => { setAccount(null); setPinInput(''); setPinConfirm('') }}>← Changer de numéro</button>
+            </div>
+          ) : account.needsPinSetup ? (
+            <div className="moiCard">
+              <div className="moiCardTitle">🔐 Créez un code PIN</div>
+              <div className="moiHint" style={{ marginBottom: 10 }}>Protégez votre solde avec un code à 4 chiffres — à saisir à chaque consultation.</div>
+              <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Code à 4 chiffres" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+              <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Confirmez le code" value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))} style={{ marginTop: 8 }} />
+              {pinError && <div className="moiHint" style={{ color: '#e05252', marginTop: 6 }}>{pinError}</div>}
+              <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={submitPin} disabled={accountLoading}>{accountLoading ? '…' : 'Créer le code'}</button>
+            </div>
+          ) : account.pinRequired ? (
+            <div className="moiCard">
+              <div className="moiCardTitle">🔐 Code PIN</div>
+              <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Votre code à 4 chiffres" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+              {account.error && <div className="moiHint" style={{ color: '#e05252', marginTop: 6 }}>{account.error}{account.attemptsLeft != null ? ` (${account.attemptsLeft} essai${account.attemptsLeft > 1 ? 's' : ''} restant${account.attemptsLeft > 1 ? 's' : ''})` : ''}</div>}
+              <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={submitPin} disabled={accountLoading}>{accountLoading ? '…' : 'Valider'}</button>
+              <button className="moiBtn" style={{ marginTop: 8 }} onClick={() => { setAccount(null); setPinInput(''); setPinConfirm('') }}>← Changer de numéro</button>
             </div>
           ) : (
             <>
@@ -347,6 +407,11 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                 <div className="moiErr" style={{ marginTop: 10 }}>⚠️ Indisponible, retiré de la commande : {confirmed.droppedOutOfStock.join(', ')}</div>
               )}
               <div className="moiBalance" style={{ marginTop: 10 }}>{confirmed.total.toFixed(3)} {currency}</div>
+              {confirmed.paid ? (
+                <div className="moiRewardOk">✓ Payée par fidélité</div>
+              ) : (
+                <div className="moiHint">À régler {tableNum != null ? 'à table' : 'à la réception'}</div>
+              )}
 
               {!orderStatus?.ready && orderStatus?.status !== 'rejected' && (
                 pushState === 'granted' ? (
@@ -421,10 +486,27 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                   {tableNum == null && (
                     <input className="moiInput" type="tel" placeholder="Votre téléphone" value={phone} onChange={e => setPhone(e.target.value)} />
                   )}
+
+                  {/* Wallet-pay only makes sense for a single itemized total
+                      addressed to one person — a table's bill is shared,
+                      split, tipped, so "these items were already paid
+                      separately" has nowhere clean to go without double-
+                      charging whoever settles the table later. Pickup/
+                      delivery only. */}
+                  {info?.walletPayEnabled && tableNum == null && (
+                    <div className="moiOrderTypeRow">
+                      <button className={'moiCatChip' + (payMethod === 'cash' ? ' on' : '')} onClick={() => setPayMethod('cash')}>💵 Espèces</button>
+                      <button className={'moiCatChip' + (payMethod === 'wallet' ? ' on' : '')} onClick={() => setPayMethod('wallet')}>💳 Fidélité</button>
+                    </div>
+                  )}
+                  {payMethod === 'wallet' && tableNum == null && (
+                    <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Code PIN fidélité" value={orderPin} onChange={e => setOrderPin(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+                  )}
+
                   <input className="moiInput" placeholder="Note (optionnel)" value={note} onChange={e => setNote(e.target.value)} />
                   {msg && <div className="moiErr">{msg}</div>}
                   <button className="moiBtn moiBtnPrimary" onClick={submitOrder} disabled={submitting}>
-                    {submitting ? '…' : `✓ Commander — ${total.toFixed(3)} ${currency}`}
+                    {submitting ? '…' : payMethod === 'wallet' ? `💳 Payer par fidélité — ${total.toFixed(3)} ${currency}` : `✓ Commander — ${total.toFixed(3)} ${currency}`}
                   </button>
                 </div>
               )}

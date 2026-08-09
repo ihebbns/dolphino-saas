@@ -165,6 +165,132 @@ function ScheduleSection({ apiKey, suspendAt, onAction, onCancel }: { apiKey:str
   )
 }
 
+// ═══════════════ QR & LINK SECTION ═══════════════
+// Everything a manager needs to hand a client their public ordering link
+// without touching a database or asking the developer to look it up: view
+// it, generate/edit it, and print QR codes — the general link for any
+// client, plus one per table if that client's floor plan is already synced
+// (same pos_tables data the till itself pushes via /api/me/tables, so this
+// never needs the client's own EXE to be rebuilt or even present).
+function QrSection({ client, adminKey, hasTables, onSlugSaved }: { client:any, adminKey:string, hasTables:boolean, onSlugSaved:(slug:string|null)=>void }) {
+  const [slugInput, setSlugInput] = useState(client.public_slug || '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [tables, setTables] = useState<any[]>([])
+  const [tablesLoading, setTablesLoading] = useState(false)
+  const [tablesLoaded, setTablesLoaded] = useState(false)
+
+  useEffect(() => { setSlugInput(client.public_slug || ''); setErr('') }, [client.api_key])
+
+  useEffect(() => {
+    if (!hasTables || !client.public_slug || tablesLoaded) return
+    setTablesLoading(true)
+    fetch(`${API}/api/me/tables?key=${encodeURIComponent(client.api_key)}`)
+      .then(r => r.json())
+      .then(d => { if (d.ok) setTables(d.tables || []) })
+      .catch(() => {})
+      .finally(() => { setTablesLoading(false); setTablesLoaded(true) })
+  }, [hasTables, client.public_slug, client.api_key, tablesLoaded])
+
+  function slugify(name: string) {
+    return name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'client'
+  }
+
+  async function saveSlug(value: string) {
+    setSaving(true); setErr('')
+    try {
+      const res = await fetch(`${API}/api/admin/clients`, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ admin_key: adminKey, id: client.id, public_slug: value }),
+      })
+      const data = await res.json()
+      if (data.ok) { setSlugInput(data.public_slug || ''); onSlugSaved(data.public_slug || null); setTablesLoaded(false) }
+      else setErr(data.error || 'Erreur')
+    } catch { setErr('Erreur de connexion') }
+    setSaving(false)
+  }
+
+  function generate() { saveSlug(slugify(client.name) + '-' + Math.random().toString(36).slice(2, 6)) }
+
+  function copyLink() {
+    navigator.clipboard.writeText(`https://servio.tn/moi/${client.public_slug}`).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const qS: React.CSSProperties = { flex:1, background:'var(--card)', border:'1.5px solid var(--div)', borderRadius:'8px', padding:'10px 12px', color:'var(--txt)', fontSize:'13px', outline:'none', fontFamily:'monospace' }
+
+  return (
+    <div>
+      <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Lien de commande public</div>
+
+      <div style={{ display:'flex', gap:'6px', marginBottom:'6px' }}>
+        <input style={qS} value={slugInput} onChange={e=>setSlugInput(e.target.value)} placeholder="ex: cafe-central-a91f" />
+        <button onClick={()=>saveSlug(slugInput)} disabled={saving} style={{ padding:'0 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor: saving ? 'default' : 'pointer', fontSize:'12px', fontWeight:700 }}>
+          {saving ? '…' : '✓ Enregistrer'}
+        </button>
+      </div>
+      {err && <div style={{ color:'var(--red)', fontSize:'11px', marginBottom:'10px' }}>{err}</div>}
+
+      {!client.public_slug && (
+        <button onClick={generate} disabled={saving} style={{ width:'100%', padding:'10px', background:'var(--gold-dim)', border:'1px solid var(--gold)', borderRadius:'8px', color:'var(--gold-l)', cursor: saving ? 'default' : 'pointer', fontSize:'12px', fontWeight:700, marginBottom:'14px' }}>
+          ⚡ Générer un lien automatiquement
+        </button>
+      )}
+
+      {client.public_slug && (
+        <>
+          <div style={{ display:'flex', alignItems:'center', gap:'8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'10px 12px', marginBottom:'14px' }}>
+            <code style={{ flex:1, fontSize:'12px', color:'var(--blue)', wordBreak:'break-all' as const }}>servio.tn/moi/{client.public_slug}</code>
+            <button onClick={copyLink} style={{ padding:'6px 10px', background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'6px', color: copied ? 'var(--green)' : 'var(--muted)', cursor:'pointer', fontSize:'11px', flexShrink:0 }}>
+              {copied ? '✓ Copié' : '📋 Copier'}
+            </button>
+          </div>
+
+          <div id="qr-print-area">
+            <div style={{ textAlign:'center' as const, marginBottom:'14px' }}>
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`https://servio.tn/moi/${client.public_slug}`)}`} alt="QR code" style={{ borderRadius:'8px', border:'1px solid var(--div)' }} />
+              <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'6px' }}>{client.name} — lien général</div>
+            </div>
+
+            {hasTables && (
+              <div style={{ marginTop:'10px' }}>
+                <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>
+                  QR par table {!tablesLoading && tables.length > 0 ? `(${tables.length})` : ''}
+                </div>
+                {tablesLoading ? (
+                  <div style={{ textAlign:'center' as const, color:'var(--muted)', fontSize:'12px', padding:'12px' }}>Chargement…</div>
+                ) : tables.length === 0 ? (
+                  <div style={{ textAlign:'center' as const, color:'var(--muted)', fontSize:'12px', padding:'12px' }}>Aucune table synchronisée pour le moment — le client doit d&apos;abord ouvrir une table sur sa caisse.</div>
+                ) : (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))', gap:'10px' }}>
+                    {tables.map((t:any) => {
+                      const url = `https://servio.tn/moi/${client.public_slug}?table=${t.num}&sec=${encodeURIComponent(t.sec||'')}`
+                      return (
+                        <div key={t.id} style={{ textAlign:'center' as const, background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'8px' }}>
+                          <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(url)}`} alt={`QR Table ${t.num}`} style={{ width:'100%', borderRadius:'4px' }} />
+                          <div style={{ fontSize:'11px', fontWeight:700, marginTop:'4px' }}>Table {t.num}</div>
+                          <div style={{ fontSize:'9px', color:'var(--muted)' }}>{t.sec}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <button onClick={() => window.print()} style={{ width:'100%', padding:'12px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'10px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700', marginTop:'14px' }}>
+            🖨️ Imprimer
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════ PANEL ═══════════════
 function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>void, onLogout:()=>void }) {
   const [clients, setClients] = useState<any[]>([])
@@ -179,10 +305,13 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [moduleSaving, setModuleSaving] = useState(false)
   const [rewardBusy, setRewardBusy] = useState(false)
   const [rewardResult, setRewardResult] = useState<any>(null)
+  const [pinResetPhone, setPinResetPhone] = useState('')
+  const [pinResetBusy, setPinResetBusy] = useState(false)
+  const [pinResetMsg, setPinResetMsg] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [demoRequests, setDemoRequests] = useState<any[]>([])
   const [showDemos, setShowDemos] = useState(false)
-  const [modalTab, setModalTab] = useState<'apercu'|'modules'|'compte'>('apercu')
+  const [modalTab, setModalTab] = useState<'apercu'|'modules'|'qr'|'compte'>('apercu')
   const [overview, setOverview] = useState<{ dashboard:any; wallet:any; orders:any } | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
 
@@ -321,6 +450,25 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
     setRewardBusy(false)
   }
 
+  // Support action for a customer locked out of (or who forgot) their
+  // self-service wallet PIN — see /api/admin/wallet-pin-reset for why this
+  // has to be a developer-side action (no OTP/SMS to reset it themselves).
+  async function resetWalletPin(apiKey: string) {
+    if (!pinResetPhone.trim()) return
+    setPinResetBusy(true)
+    setPinResetMsg('')
+    try {
+      const res = await fetch(`${API}/api/admin/wallet-pin-reset`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_key: key, api_key: apiKey, phone: pinResetPhone.trim() }),
+      })
+      const data = await res.json()
+      if (data.ok) { setPinResetMsg(`✓ Code PIN réinitialisé pour ${data.name} — prochaine consultation en demandera un nouveau`); setPinResetPhone('') }
+      else setPinResetMsg('Erreur: ' + data.error)
+    } catch { setPinResetMsg('Erreur de connexion') }
+    setPinResetBusy(false)
+  }
+
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
 
   useEffect(() => { loadClients(); loadDemoRequests() }, [])
@@ -416,6 +564,11 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
                 <div style={{ flex:1, minWidth:'180px' }}>
                   <div style={{ fontWeight:'700', fontSize:'14px' }}>{c.name}</div>
                   <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'2px' }}>{c.owner_email} · {c.city || ''}</div>
+                  {c.public_slug ? (
+                    <div style={{ fontSize:'10px', color:'var(--blue)', marginTop:'3px', fontFamily:'monospace' }}>🔗 servio.tn/moi/{c.public_slug}</div>
+                  ) : (
+                    <div style={{ fontSize:'10px', color:'var(--muted)', marginTop:'3px', fontStyle:'italic' }}>🔗 Pas de lien de commande — voir Détails</div>
+                  )}
                   {c.suspend_at && <div style={{ fontSize:'10px', color:'var(--orange)', marginTop:'3px' }}>⏰ Auto-suspend: {new Date(c.suspend_at).toLocaleDateString('fr-TN')}</div>}
                 </div>
 
@@ -516,7 +669,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
 
             {/* Tabs */}
             <div style={{ display:'flex', gap:'4px', marginBottom:'18px', background:'var(--card)', borderRadius:'10px', padding:'4px' }}>
-              {[['apercu','📊 Aperçu'],['modules','🧩 Modules'],['compte','⚙️ Compte']].map(([id,label]) => (
+              {[['apercu','📊 Aperçu'],['modules','🧩 Modules'],['qr','🔗 Lien & QR'],['compte','⚙️ Compte']].map(([id,label]) => (
                 <button key={id} onClick={() => setModalTab(id as any)} style={{
                   flex:1, padding:'8px 6px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'12px', fontWeight:'700',
                   background: modalTab===id ? 'var(--panel)' : 'transparent',
@@ -646,8 +799,46 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
                     )}
                   </div>
                 )}
+
+                {/* PIN reset — only relevant once walletPinProtected is on;
+                    the public page has no self-recovery (no OTP/SMS), so a
+                    forgotten/locked-out PIN can only be cleared from here. */}
+                {(moduleCfg.modules['walletPinProtected'] === undefined ? !MODULES_DEFAULT_OFF.has('walletPinProtected') : moduleCfg.modules['walletPinProtected']) && (
+                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--div)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      Réinitialiser un code PIN (client bloqué/oublié)
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input value={pinResetPhone} onChange={e => setPinResetPhone(e.target.value)} placeholder="Téléphone du client" style={{ flex: 1, background: 'var(--card)', border: '1.5px solid var(--div)', borderRadius: '8px', padding: '10px 12px', color: 'var(--txt)', fontSize: '13px', outline: 'none' }} />
+                      <button onClick={() => resetWalletPin(actionClient.api_key)} disabled={pinResetBusy} style={{ padding: '0 14px', background: 'var(--card)', border: '1px solid var(--div)', borderRadius: '8px', color: 'var(--gold-l)', cursor: pinResetBusy ? 'default' : 'pointer', fontSize: '12px', fontWeight: 700 }}>
+                        {pinResetBusy ? '…' : 'Réinitialiser'}
+                      </button>
+                    </div>
+                    {pinResetMsg && <div style={{ marginTop: '8px', fontSize: '12px', color: pinResetMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{pinResetMsg}</div>}
+                  </div>
+                )}
               </div>
             ))}
+
+            {/* ── Lien & QR — public ordering link + printable QR codes ── */}
+            {modalTab === 'qr' && (
+              <>
+                <QrSection
+                  client={actionClient}
+                  adminKey={key}
+                  hasTables={!!moduleCfg && (moduleCfg.modules['tables'] === undefined ? !MODULES_DEFAULT_OFF.has('tables') : moduleCfg.modules['tables'])}
+                  onSlugSaved={(slug) => {
+                    setActionClient((ac: any) => ac ? { ...ac, public_slug: slug } : ac)
+                    setClients(cs => cs.map(c => c.api_key === actionClient.api_key ? { ...c, public_slug: slug } : c))
+                  }}
+                />
+                {!(moduleCfg && (moduleCfg.modules['onlineOrders'] === undefined ? !MODULES_DEFAULT_OFF.has('onlineOrders') : moduleCfg.modules['onlineOrders'])) && (
+                  <div style={{ marginTop:'14px', padding:'10px 12px', background:'var(--red-dim)', border:'1px solid rgba(224,82,82,.3)', borderRadius:'8px', color:'var(--red)', fontSize:'11px' }}>
+                    ⚠ Le module &quot;Commandes en ligne&quot; est désactivé pour ce client — ce lien ne fonctionnera pas tant qu&apos;il n&apos;est pas activé dans l&apos;onglet Modules.
+                  </div>
+                )}
+              </>
+            )}
 
             {/* ── Compte — suspend/schedule/reactivate ── */}
             {modalTab === 'compte' && (
@@ -688,9 +879,11 @@ const MODULES_LIST = [
   { id:'ingredients',    label:'🧪 Ingrédients & recettes', desc:'Coût auto, déduction sur vente' },
   { id:'credits',        label:'📒 Crédit client',          desc:'Ardoises / créances' },
   { id:'wallet',         label:'💳 Fidélité',               desc:'Solde prépayé + bonus 30% à la recharge' },
+  { id:'walletPinProtected', label:'🔐 PIN fidélité',       desc:'Exige un code à 4 chiffres pour consulter le solde en ligne (recommandé — sans PIN, un numéro de téléphone connu suffit à voir le solde de quelqu\'un)' },
   { id:'sessions',       label:'🔒 Clôtures caisse',        desc:'Fond, compté, écart' },
   { id:'delivery',       label:'🛵 Livraison',              desc:'Type de commande + livraison' },
   { id:'tables',         label:'🪑 Plan de salle',          desc:'Tables, zones' },
+  { id:'onlineOrders',   label:'🌐 Commandes en ligne',     desc:'Page publique + QR code (voir onglet Lien & QR)' },
   { id:'kitchenTickets', label:'🧑‍🍳 Tickets cuisine',        desc:'2 zones configurables' },
   { id:'barcode',        label:'⎸⎸ Code-barres',           desc:'Scanner USB, recherche' },
   { id:'printEnabled',   label:'🖨️ Impression tickets',     desc:'Ticket thermique 80mm' },
@@ -701,7 +894,7 @@ const MODULES_LIST = [
 // module absent from every list below defaults ON, because that's what every
 // isXEnabled() on the till actually does: `!(modules && modules.x === false)`
 // treats "key not present" as enabled. Only list the modules that default OFF.
-const MODULES_DEFAULT_OFF = new Set(['tables', 'barcode', 'wallet', 'onlineOrders'])
+const MODULES_DEFAULT_OFF = new Set(['tables', 'barcode', 'wallet', 'onlineOrders', 'walletPinProtected'])
 
 const PRESETS: Record<string, { label:string; emoji:string; modules:string[]; zone1:string; zone2:string; zone1Cats:string; zone2Cats:string }> = {
   cafe:     { label:'Café / Salon de thé',    emoji:'☕', modules:['sessions','credits','kitchenTickets','printEnabled','dashboard'], zone1:'BAR — Boissons', zone2:'CUISINE — Pâtisserie', zone1Cats:'Café,Thé,Jus,Boisson', zone2Cats:'Pâtisserie,Sandwich' },

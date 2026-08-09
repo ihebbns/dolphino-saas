@@ -77,6 +77,9 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
       currency: config.currency || 'DT',
       onlineOrdersEnabled: modules.onlineOrders === true,
       walletEnabled: modules.wallet === true,
+      // Wallet-pay (paying for an order with balance, not just viewing it)
+      // additionally requires PIN protection — see /api/public/[slug]/order.
+      walletPayEnabled: modules.wallet === true && modules.walletPinProtected === true,
       menu,
     })
   } catch (e: any) {

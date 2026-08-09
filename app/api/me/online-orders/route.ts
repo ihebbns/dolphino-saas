@@ -77,9 +77,13 @@ export async function GET(req: Request) {
     const rest = await resolveRestaurant(key)
     if (!rest) return cors(NextResponse.json({ ok: false, error: 'Compte introuvable ou suspendu' }, { status: 403 }))
 
+    // paid is included here now that a customer can pay up front with wallet
+    // balance (see /api/public/[slug]/order) — a pending order can already
+    // be paid before staff ever touch it, and the till needs to know that
+    // the moment it accepts, not discover it later via the unpaid queue.
     const pending = await sql`
       SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, created_at,
-             table_num, table_sec
+             table_num, table_sec, paid, paid_by
       FROM online_orders
       WHERE restaurant_id = ${rest.id} AND status = 'pending'
       ORDER BY created_at ASC`
