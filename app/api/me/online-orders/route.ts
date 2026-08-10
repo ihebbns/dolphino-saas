@@ -200,11 +200,38 @@ export async function POST(req: Request) {
     }
 
     if (action === 'markReady') {
-      const res = await sql`
-        UPDATE online_orders SET ready = TRUE, ready_at = NOW(), ready_by = ${clip(body?.actor, 80)}
-        WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
-        RETURNING id, client_name, client_phone`
+      // daily_num/source let us also flip the matching kds_tickets rows below —
+      // tolerant of either column being absent (pre-daily_num restaurants).
+      let res: any[]
+      try {
+        res = await sql`
+          UPDATE online_orders SET ready = TRUE, ready_at = NOW(), ready_by = ${clip(body?.actor, 80)}
+          WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
+          RETURNING id, client_name, client_phone, daily_num, source`
+      } catch {
+        res = await sql`
+          UPDATE online_orders SET ready = TRUE, ready_at = NOW(), ready_by = ${clip(body?.actor, 80)}
+          WHERE id = ${orderId} AND restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
+          RETURNING id, client_name, client_phone`
+      }
       if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà prête' }, { status: 404 }))
+      // The public pickup board (/ready/[slug]) doesn't read online_orders.ready
+      // at all — it only lights up a number once every kds_tickets row sharing
+      // that order's ticket num is bumped (see printOnlineOrderKitchenTicket's
+      // KIO/WEB-prefixed num and /api/public/[slug]/ready-orders). Without this,
+      // staff clicking "Marquer prêt" at the till silently does nothing the
+      // board can see — this is what actually makes that button work. Ignores
+      // restaurants without daily_num (can't compute the ticket num) or
+      // without migration-kds.sql (table missing) — best-effort, not required
+      // for markReady itself to succeed.
+      if (res[0].daily_num != null) {
+        const ticketNum = (res[0].source === 'kiosk' ? 'KIO' : 'WEB') + String(res[0].daily_num).padStart(3, '0')
+        try {
+          await sql`
+            UPDATE kds_tickets SET bumped = TRUE, bumped_at = NOW(), bumped_by = ${clip(body?.actor, 80)}
+            WHERE restaurant_id = ${rest.id} AND num = ${ticketNum} AND bumped = FALSE`
+        } catch {}
+      }
       // Best-effort, both awaited — /moi's own live polling is the guaranteed
       // path; these are bonus nudges for a customer who's closed the tab.
       // Each is independently inert until its own config exists (WhatsApp
