@@ -245,6 +245,13 @@ function QrSection({ client, adminKey, hasTables, initialKdsPassword, onSlugSave
     })
   }
 
+  const [kioskCopied, setKioskCopied] = useState(false)
+  function copyKioskLink() {
+    navigator.clipboard.writeText(`https://servio.tn/kiosk/${client.public_slug}`).then(() => {
+      setKioskCopied(true); setTimeout(() => setKioskCopied(false), 2000)
+    })
+  }
+
   const qS: React.CSSProperties = { flex:1, background:'var(--card)', border:'1.5px solid var(--div)', borderRadius:'8px', padding:'10px 12px', color:'var(--txt)', fontSize:'13px', outline:'none', fontFamily:'monospace' }
 
   return (
@@ -274,42 +281,61 @@ function QrSection({ client, adminKey, hasTables, initialKdsPassword, onSlugSave
             </button>
           </div>
 
-          <div id="qr-print-area">
-            <div style={{ textAlign:'center' as const, marginBottom:'14px' }}>
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`https://servio.tn/moi/${client.public_slug}`)}`} alt="QR code" style={{ borderRadius:'8px', border:'1px solid var(--div)' }} />
-              <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'6px' }}>{client.name} — lien général</div>
-            </div>
-
-            {hasTables && (
-              <div style={{ marginTop:'10px' }}>
-                <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>
-                  QR par table {!tablesLoading && tables.length > 0 ? `(${tables.length})` : ''}
+          {/* QR codes are a table-service tool — a customer scans one sitting at
+              their table. A counter/fast-food client has no tables to print
+              them for, and takes walk-up orders from the kiosk below instead
+              — printing a QR there would just be a redundant, unused sign. */}
+          {hasTables ? (
+            <>
+              <div id="qr-print-area">
+                <div style={{ textAlign:'center' as const, marginBottom:'14px' }}>
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`https://servio.tn/moi/${client.public_slug}`)}`} alt="QR code" style={{ borderRadius:'8px', border:'1px solid var(--div)' }} />
+                  <div style={{ fontSize:'11px', color:'var(--muted)', marginTop:'6px' }}>{client.name} — lien général</div>
                 </div>
-                {tablesLoading ? (
-                  <div style={{ textAlign:'center' as const, color:'var(--muted)', fontSize:'12px', padding:'12px' }}>Chargement…</div>
-                ) : tables.length === 0 ? (
-                  <div style={{ textAlign:'center' as const, color:'var(--muted)', fontSize:'12px', padding:'12px' }}>Aucune table synchronisée pour le moment — le client doit d&apos;abord ouvrir une table sur sa caisse.</div>
-                ) : (
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))', gap:'10px' }}>
-                    {tables.map((t:any) => {
-                      const url = `https://servio.tn/moi/${client.public_slug}?table=${t.num}&sec=${encodeURIComponent(t.sec||'')}`
-                      return (
-                        <div key={t.id} style={{ textAlign:'center' as const, background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'8px' }}>
-                          <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(url)}`} alt={`QR Table ${t.num}`} style={{ width:'100%', borderRadius:'4px' }} />
-                          <div style={{ fontSize:'11px', fontWeight:700, marginTop:'4px' }}>Table {t.num}</div>
-                          <div style={{ fontSize:'9px', color:'var(--muted)' }}>{t.sec}</div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
 
-          <button onClick={() => window.print()} style={{ width:'100%', padding:'12px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'10px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700', marginTop:'14px' }}>
-            🖨️ Imprimer
-          </button>
+                <div style={{ marginTop:'10px' }}>
+                  <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>
+                    QR par table {!tablesLoading && tables.length > 0 ? `(${tables.length})` : ''}
+                  </div>
+                  {tablesLoading ? (
+                    <div style={{ textAlign:'center' as const, color:'var(--muted)', fontSize:'12px', padding:'12px' }}>Chargement…</div>
+                  ) : tables.length === 0 ? (
+                    <div style={{ textAlign:'center' as const, color:'var(--muted)', fontSize:'12px', padding:'12px' }}>Aucune table synchronisée pour le moment — le client doit d&apos;abord ouvrir une table sur sa caisse.</div>
+                  ) : (
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))', gap:'10px' }}>
+                      {tables.map((t:any) => {
+                        const url = `https://servio.tn/moi/${client.public_slug}?table=${t.num}&sec=${encodeURIComponent(t.sec||'')}`
+                        return (
+                          <div key={t.id} style={{ textAlign:'center' as const, background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'8px' }}>
+                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(url)}`} alt={`QR Table ${t.num}`} style={{ width:'100%', borderRadius:'4px' }} />
+                            <div style={{ fontSize:'11px', fontWeight:700, marginTop:'4px' }}>Table {t.num}</div>
+                            <div style={{ fontSize:'9px', color:'var(--muted)' }}>{t.sec}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button onClick={() => window.print()} style={{ width:'100%', padding:'12px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'10px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700', marginTop:'14px' }}>
+                🖨️ Imprimer
+              </button>
+            </>
+          ) : (
+            <div style={{ marginTop:'4px' }}>
+              <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>🖥️ Écran kiosque</div>
+              <div style={{ fontSize:'11px', color:'var(--muted)', marginBottom:'8px' }}>
+                Un écran tactile monté au comptoir, pour les clients qui commandent sur place — ouvrir ce lien en plein écran sur la tablette/l&apos;écran dédié.
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:'8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'10px 12px' }}>
+                <code style={{ flex:1, fontSize:'12px', color:'var(--blue)', wordBreak:'break-all' as const }}>servio.tn/kiosk/{client.public_slug}</code>
+                <button onClick={copyKioskLink} style={{ padding:'6px 10px', background:'var(--panel)', border:'1px solid var(--div)', borderRadius:'6px', color: kioskCopied ? 'var(--green)' : 'var(--muted)', cursor:'pointer', fontSize:'11px', flexShrink:0 }}>
+                  {kioskCopied ? '✓ Copié' : '📋 Copier'}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop:'22px', paddingTop:'18px', borderTop:'1px solid var(--div)' }}>
             <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Mot de passe écran cuisine</div>
