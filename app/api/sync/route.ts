@@ -36,20 +36,34 @@ export async function POST(req: Request) {
   // Old clients that don't send `cogs` → 0. Never negative.
   const cogs      = Math.max(0, parseFloat(sale.cogs ?? sale.cogs_total) || 0)
 
+  // A void re-posts the SAME sale (same num/business_date/cashier, so it lands
+  // on the existing row via ON CONFLICT) with these fields set locally by the
+  // till — see confirmVoidSale() in the POS. `sales.voided OR EXCLUDED.voided`
+  // below is what makes this monotonic (see migration-sales-void.sql header).
+  const voided    = sale.voided === true
+  const voidReason = String(sale.voidReason ?? '').slice(0, 200)
+  const voidedBy  = String(sale.voidedBy ?? '').slice(0, 80)
+  const voidedAt  = sale.voidedAt ? new Date(sale.voidedAt).toISOString() : null
+
   try {
-    // Attempt 1: fully-migrated DB (has BOTH session_id AND cogs columns)
+    // Attempt 1: fully-migrated DB (has session_id, cogs, AND void columns)
     try {
       await sql`
         INSERT INTO sales
-          (restaurant_id,num,business_date,sale_date,sale_time,items,subtotal,discount,disc_pct,grand,pay_method,received,monnaie,order_type,cli_name,cli_tel,cashier,session_id,cogs)
+          (restaurant_id,num,business_date,sale_date,sale_time,items,subtotal,discount,disc_pct,grand,pay_method,received,monnaie,order_type,cli_name,cli_tel,cashier,session_id,cogs,voided,void_reason,void_by,voided_at)
         VALUES
           (${rid},${num},${bizDate},${(sale.date||'').slice(0,30)},${(sale.time||'').slice(0,30)},
            ${items}::jsonb,${+sale.s||0},${+sale.d||0},${+sale.disc||0},${+sale.g},
            ${(sale.payMode||'cash').slice(0,20)},${+sale.r||+sale.g},${+sale.monnaie||0},
            ${(sale.type||'place').slice(0,20)},${(sale.cliName||'').slice(0,100)},
-           ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)},${sessionId},${cogs})
+           ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)},${sessionId},${cogs},
+           ${voided},${voidReason},${voidedBy},${voidedAt})
         ON CONFLICT (restaurant_id,num,business_date,cashier)
-        DO UPDATE SET session_id = EXCLUDED.session_id, cogs = EXCLUDED.cogs`
+        DO UPDATE SET session_id = EXCLUDED.session_id, cogs = EXCLUDED.cogs,
+          voided      = sales.voided OR EXCLUDED.voided,
+          void_reason = CASE WHEN EXCLUDED.voided THEN EXCLUDED.void_reason ELSE sales.void_reason END,
+          void_by     = CASE WHEN EXCLUDED.voided THEN EXCLUDED.void_by     ELSE sales.void_by     END,
+          voided_at   = CASE WHEN EXCLUDED.voided THEN COALESCE(sales.voided_at, EXCLUDED.voided_at) ELSE sales.voided_at END`
     } catch (cogsErr: any) {
       // Attempt 2: cogs column missing — keep session_id (works after the session_id migration)
       try {

@@ -257,6 +257,38 @@ type RecipeLine = {
 // shape working everywhere instead of introducing a second index dimension.
 export const recipeKey = (itemId: string, variantKey?: string | null) => itemId + '|' + (variantKey || '')
 
+/** Recipe lines for the sold items, keyed by recipeKey(item_id, variant_key). */
+async function lookupRecipeLines(rid: number, lines: SoldLine[]): Promise<Map<string, RecipeLine[]>> {
+  const itemIds = [...new Set(lines.map(l => clip(l.item_id, 64)))]
+  let rows: any[] = []
+  try {
+    rows = await sql`
+      SELECT rl.item_id, rl.variant_key, rl.ing_key, rl.qty::float AS qty,
+             i.conversion_factor::float AS conversion_factor,
+             r.yield_qty::float AS yield_qty, r.enabled, i.tracked
+      FROM recipe_lines rl
+      JOIN recipes     r ON r.restaurant_id = rl.restaurant_id AND r.item_id = rl.item_id
+                         AND r.variant_key = rl.variant_key
+      JOIN ingredients i ON i.restaurant_id = rl.restaurant_id AND i.ing_key = rl.ing_key
+      WHERE rl.restaurant_id = ${rid}
+        AND rl.item_id = ANY(${itemIds})
+        AND r.enabled
+        AND i.tracked
+        AND NOT i.archived
+        AND rl.qty > 0`
+  } catch {
+    return new Map()   // recipes not migrated — nothing to explode
+  }
+  const byItem = new Map<string, RecipeLine[]>()
+  for (const r of rows as RecipeLine[]) {
+    const key = recipeKey(r.item_id, r.variant_key)
+    const arr = byItem.get(key) || []
+    arr.push(r)
+    byItem.set(key, arr)
+  }
+  return byItem
+}
+
 /**
  * Turn sold products into ingredient consumption.
  *
@@ -278,36 +310,8 @@ export async function consumeForSale(
   const lines = (sold || []).filter(l => l && l.item_id && n4(l.qty) > 0)
   if (!lines.length) return 0
 
-  const itemIds = [...new Set(lines.map(l => clip(l.item_id, 64)))]
-
-  let rows: any[] = []
-  try {
-    rows = await sql`
-      SELECT rl.item_id, rl.variant_key, rl.ing_key, rl.qty::float AS qty,
-             i.conversion_factor::float AS conversion_factor,
-             r.yield_qty::float AS yield_qty, r.enabled, i.tracked
-      FROM recipe_lines rl
-      JOIN recipes     r ON r.restaurant_id = rl.restaurant_id AND r.item_id = rl.item_id
-                         AND r.variant_key = rl.variant_key
-      JOIN ingredients i ON i.restaurant_id = rl.restaurant_id AND i.ing_key = rl.ing_key
-      WHERE rl.restaurant_id = ${rid}
-        AND rl.item_id = ANY(${itemIds})
-        AND r.enabled
-        AND i.tracked
-        AND NOT i.archived
-        AND rl.qty > 0`
-  } catch {
-    return 0   // recipes not migrated — nothing to explode
-  }
-  if (!rows.length) return 0
-
-  const byItem = new Map<string, RecipeLine[]>()
-  for (const r of rows as RecipeLine[]) {
-    const key = recipeKey(r.item_id, r.variant_key)
-    const arr = byItem.get(key) || []
-    arr.push(r)
-    byItem.set(key, arr)
-  }
+  const byItem = await lookupRecipeLines(rid, lines)
+  if (!byItem.size) return 0
 
   let applied = 0
   for (const line of lines) {
@@ -334,6 +338,57 @@ export async function consumeForSale(
         kind: 'consume',
         delta: -stockUnits,
         reason: 'Vente',
+        actor: meta.actor,
+        source: meta.source ?? 'pos',
+        itemId: line.item_id,
+        saleUid: line.uid || '',
+        saleNum: line.sale_num ?? meta.saleNum ?? null,
+        clientTs: line.ts ?? null,
+        clientUid: uid,
+      })
+      if (q !== null) applied++
+    }
+  }
+  return applied
+}
+
+/**
+ * The exact inverse of consumeForSale — a voided sale gives its ingredients
+ * back. Same recipe explosion, same per-(sale,ingredient) idempotency, just a
+ * positive delta and a ':void' suffix on the key so voiding a sale can never
+ * collide with (or be mistaken for a duplicate of) its own original
+ * consumption — both rows exist side by side, an immutable pair.
+ */
+export async function reverseForSale(
+  rid: number,
+  sold: SoldLine[],
+  meta: { actor?: string; source?: 'pos' | 'web'; saleNum?: number | null } = {},
+): Promise<number> {
+  const lines = (sold || []).filter(l => l && l.item_id && n4(l.qty) > 0)
+  if (!lines.length) return 0
+
+  const byItem = await lookupRecipeLines(rid, lines)
+  if (!byItem.size) return 0
+
+  let applied = 0
+  for (const line of lines) {
+    const id = clip(line.item_id, 64)
+    const recipe = byItem.get(recipeKey(id, line.variant_key)) ?? byItem.get(recipeKey(id, ''))
+    if (!recipe) continue
+
+    for (const rl of recipe) {
+      const factor = rl.conversion_factor > 0 ? rl.conversion_factor : 1
+      const yieldQty = rl.yield_qty > 0 ? rl.yield_qty : 1
+      const stockUnits = (n4(line.qty) * rl.qty) / yieldQty / factor
+      if (!(stockUnits > 0)) continue
+
+      const uid = line.uid ? clip(line.uid + ':' + rl.ing_key + ':void', 160) : ''
+
+      const q = await recordIngMovement(rid, {
+        ingKey: rl.ing_key,
+        kind: 'adjust',
+        delta: stockUnits,
+        reason: 'Annulation vente',
         actor: meta.actor,
         source: meta.source ?? 'pos',
         itemId: line.item_id,

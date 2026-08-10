@@ -172,7 +172,7 @@ function ScheduleSection({ apiKey, suspendAt, onAction, onCancel }: { apiKey:str
 // client, plus one per table if that client's floor plan is already synced
 // (same pos_tables data the till itself pushes via /api/me/tables, so this
 // never needs the client's own EXE to be rebuilt or even present).
-function QrSection({ client, adminKey, hasTables, onSlugSaved }: { client:any, adminKey:string, hasTables:boolean, onSlugSaved:(slug:string|null)=>void }) {
+function QrSection({ client, adminKey, hasTables, initialKdsPassword, onSlugSaved }: { client:any, adminKey:string, hasTables:boolean, initialKdsPassword:string, onSlugSaved:(slug:string|null)=>void }) {
   const [slugInput, setSlugInput] = useState(client.public_slug || '')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -180,6 +180,12 @@ function QrSection({ client, adminKey, hasTables, onSlugSaved }: { client:any, a
   const [tables, setTables] = useState<any[]>([])
   const [tablesLoading, setTablesLoading] = useState(false)
   const [tablesLoaded, setTablesLoaded] = useState(false)
+
+  const [kdsPassword, setKdsPassword] = useState(initialKdsPassword)
+  const [kdsInput, setKdsInput] = useState(initialKdsPassword)
+  const [kdsSaving, setKdsSaving] = useState(false)
+  const [kdsErr, setKdsErr] = useState('')
+  useEffect(() => { setKdsPassword(initialKdsPassword); setKdsInput(initialKdsPassword) }, [initialKdsPassword])
 
   useEffect(() => { setSlugInput(client.public_slug || ''); setErr('') }, [client.api_key])
 
@@ -213,6 +219,25 @@ function QrSection({ client, adminKey, hasTables, onSlugSaved }: { client:any, a
   }
 
   function generate() { saveSlug(slugify(client.name) + '-' + Math.random().toString(36).slice(2, 6)) }
+
+  async function saveKdsPassword(value: string) {
+    setKdsSaving(true); setKdsErr('')
+    try {
+      const res = await fetch(`${API}/api/admin/clients`, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ admin_key: adminKey, id: client.id, kds_password: value }),
+      })
+      const data = await res.json()
+      if (data.ok) { setKdsPassword(value); setKdsInput(value) }
+      else setKdsErr(data.error || 'Erreur')
+    } catch { setKdsErr('Erreur de connexion') }
+    setKdsSaving(false)
+  }
+
+  function generateKdsPassword() {
+    const pw = Math.random().toString(36).slice(2, 8)
+    saveKdsPassword(pw)
+  }
 
   function copyLink() {
     navigator.clipboard.writeText(`https://servio.tn/moi/${client.public_slug}`).then(() => {
@@ -285,6 +310,28 @@ function QrSection({ client, adminKey, hasTables, onSlugSaved }: { client:any, a
           <button onClick={() => window.print()} style={{ width:'100%', padding:'12px', background:'linear-gradient(135deg,var(--gold),var(--gold-l))', border:'none', borderRadius:'10px', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:'700', marginTop:'14px' }}>
             🖨️ Imprimer
           </button>
+
+          <div style={{ marginTop:'22px', paddingTop:'18px', borderTop:'1px solid var(--div)' }}>
+            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Mot de passe écran cuisine</div>
+            <div style={{ fontSize:'11px', color:'var(--muted)', marginBottom:'8px' }}>
+              Ouvrir <code>servio.tn/kitchen/{client.public_slug}</code> sur n&apos;importe quel écran/tablette et entrer ce mot de passe — pas de clé technique.
+            </div>
+            <div style={{ display:'flex', gap:'6px', marginBottom:'6px' }}>
+              <input style={qS} value={kdsInput} onChange={e=>setKdsInput(e.target.value)} placeholder="ex: cuisine26" />
+              <button onClick={()=>saveKdsPassword(kdsInput)} disabled={kdsSaving} style={{ padding:'0 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor: kdsSaving ? 'default' : 'pointer', fontSize:'12px', fontWeight:700 }}>
+                {kdsSaving ? '…' : '✓ Enregistrer'}
+              </button>
+            </div>
+            {kdsErr && <div style={{ color:'var(--red)', fontSize:'11px', marginBottom:'6px' }}>{kdsErr}</div>}
+            {!kdsPassword && (
+              <button onClick={generateKdsPassword} disabled={kdsSaving} style={{ width:'100%', padding:'10px', background:'var(--gold-dim)', border:'1px solid var(--gold)', borderRadius:'8px', color:'var(--gold-l)', cursor: kdsSaving ? 'default' : 'pointer', fontSize:'12px', fontWeight:700 }}>
+                ⚡ Générer un mot de passe automatiquement
+              </button>
+            )}
+            {kdsPassword && (
+              <div style={{ fontSize:'11px', color:'var(--green)' }}>✓ Mot de passe actif : <code>{kdsPassword}</code></div>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -827,6 +874,7 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
                   client={actionClient}
                   adminKey={key}
                   hasTables={!!moduleCfg && (moduleCfg.modules['tables'] === undefined ? !MODULES_DEFAULT_OFF.has('tables') : moduleCfg.modules['tables'])}
+                  initialKdsPassword={(moduleCfg?.config?.kdsPassword) || ''}
                   onSlugSaved={(slug) => {
                     setActionClient((ac: any) => ac ? { ...ac, public_slug: slug } : ac)
                     setClients(cs => cs.map(c => c.api_key === actionClient.api_key ? { ...c, public_slug: slug } : c))

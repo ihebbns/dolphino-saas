@@ -17,6 +17,7 @@
 // required (a bare phone number must never be enough to spend anything).
 // ═══════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useState } from 'react'
+import './moi.css'
 
 type Variant = { label: string; price: number }
 type MenuItem = { id: string; name: string; e: string; price: number; variants: Variant[] | null; available?: boolean }
@@ -105,6 +106,7 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   const [pinInput, setPinInput] = useState('')
   const [pinConfirm, setPinConfirm] = useState('')
   const [pinError, setPinError] = useState('')
+  const [myOrders, setMyOrders] = useState<any[] | null>(null)
 
   useEffect(() => {
     fetch(`/api/public/${slug}/menu`)
@@ -182,7 +184,15 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
         }),
       })
       const data = await res.json()
-      if (data.ok) { setConfirmed(data); setCart([]); setOrderPin('') }
+      if (data.ok) {
+        setConfirmed(data); setCart([])
+        // Once logged in via the account gate, orderPin IS the session's
+        // verified credential (kept alive for my-orders polling below) —
+        // clearing it here would silently kill that poll after the very
+        // first order. Only a one-off wallet-pay PIN (no account gate)
+        // should be wiped after use.
+        if (!requiresAccountLogin) setOrderPin('')
+      }
       else setMsg(data.error || 'Erreur')
     } catch { setMsg('Impossible de contacter le serveur') }
     setSubmitting(false)
@@ -245,6 +255,38 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
     } catch { setPushState('denied') }
   }
 
+  const [signupName, setSignupName] = useState('')
+
+  // A phone with no wallet row at all used to be a dead end — a wallet only
+  // ever came from staff creating one at the till. Once ordering itself
+  // requires an account (requiresAccountLogin below), that dead end would
+  // lock a brand-new customer out of ordering entirely. This self-registers
+  // one, same starting point (balance 0) a staff-created card would have —
+  // see /api/public/[slug]/wallet's `canCreate` branch for the server side.
+  async function createAccount() {
+    if (!signupName.trim()) { setPinError('Nom requis'); return }
+    if (account?.pinRequiredForSignup) {
+      if (!/^\d{4}$/.test(pinInput)) { setPinError('Le code doit contenir 4 chiffres'); return }
+      if (pinInput !== pinConfirm) { setPinError('Les deux codes ne correspondent pas'); return }
+    }
+    setPinError('')
+    setAccountLoading(true)
+    try {
+      const qs = new URLSearchParams({ phone: accountPhone.trim(), name: signupName.trim() })
+      if (account?.pinRequiredForSignup) qs.set('pin', pinInput)
+      const res = await fetch(`/api/public/${slug}/wallet?${qs.toString()}`)
+      const data = await res.json()
+      setAccount(data)
+      if (data.found && !data.needsPinSetup && !data.pinRequired && !data.locked) {
+        setPhone(accountPhone.trim())
+        if (data.name) setName(data.name)
+        if (account?.pinRequiredForSignup) setOrderPin(pinInput)
+        setPinInput(''); setPinConfirm(''); setSignupName('')
+      }
+    } catch { setAccount({ ok: false }) }
+    setAccountLoading(false)
+  }
+
   async function lookupAccount() {
     if (!accountPhone.trim()) return
     setAccountLoading(true)
@@ -271,17 +313,201 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
       const res = await fetch(`/api/public/${slug}/wallet?phone=${encodeURIComponent(accountPhone.trim())}&pin=${encodeURIComponent(pinInput)}`)
       const data = await res.json()
       setAccount(data)
-      if (data.found && !data.needsPinSetup && !data.pinRequired && !data.locked) { setPinInput(''); setPinConfirm('') }
+      if (data.found && !data.needsPinSetup && !data.pinRequired && !data.locked) {
+        // Logged in — carry the identity straight into the order form so the
+        // customer never re-types it, and the already-verified PIN straight
+        // into wallet-pay so it isn't asked twice in the same session.
+        setPhone(accountPhone.trim())
+        if (data.name) setName(data.name)
+        setOrderPin(pinInput)
+        setPinInput(''); setPinConfirm('')
+      }
     } catch { setAccount({ ok: false }) }
     setAccountLoading(false)
   }
 
-  if (loading) return <div className="moiWrap moiCenter" data-theme={theme}><style>{MOI_CSS}</style><div className="moiSpinner" /></div>
-  if (loadError || !info) return <div className="moiWrap moiCenter" data-theme={theme}><style>{MOI_CSS}</style><div className="moiErr">{loadError || 'Erreur'}</div></div>
+  // The general online-ordering link (no ?table=) requires a logged-in
+  // account (phone + PIN) once the restaurant has the wallet module on —
+  // ordering there always shows the customer's card and lets them pay by
+  // balance or cash, so "who is this" has to be settled before the menu
+  // even shows. Table QR / kiosk orders stay guest — the customer is
+  // physically there, staff can see who placed it. Restaurants with no
+  // wallet module have no card to gate behind, so that link keeps the
+  // simple guest name+phone flow (already enforced server-side).
+  const requiresAccountLogin = !!info?.walletEnabled && tableNum == null
+  const accountReady = !!account?.found && !account?.needsPinSetup && !account?.pinRequired && !account?.locked
+
+  // Live order history for the logged-in account — every order this phone
+  // has ever placed at this restaurant, not just the one in this browser
+  // tab (that single-order tracker below still exists for the immediate
+  // post-checkout screen). Reuses the already-verified PIN so the customer
+  // isn't asked for it again just to see their own history.
+  useEffect(() => {
+    if (!accountReady) { setMyOrders(null); return }
+    let stopped = false
+    async function poll() {
+      try {
+        const res = await fetch(`/api/public/${slug}/my-orders?phone=${encodeURIComponent(accountPhone.trim())}&pin=${encodeURIComponent(orderPin)}`)
+        const data = await res.json()
+        if (!stopped && data.ok) setMyOrders(data.orders)
+      } catch {}
+    }
+    poll()
+    const iv = setInterval(poll, 8000)
+    return () => { stopped = true; clearInterval(iv) }
+  }, [accountReady, accountPhone, orderPin, slug])
+
+  const orderStatusLabel = (o: any) => o.status === 'rejected' ? '❌ Refusée' : o.ready ? '🍽️ Prête' : o.status === 'accepted' ? '👨‍🍳 En préparation' : '⏳ Envoyée'
+
+  const accountPanel = (
+    <>
+      {!account?.found ? (
+        account?.canCreate ? (
+          <div className="moiCard">
+            <div className="moiCardTitle">✨ Créer votre compte</div>
+            <div className="moiHint" style={{ marginBottom: 10 }}>Aucun compte pour ce numéro — créez-en un pour commander{account.pinRequiredForSignup ? ' et le protéger avec un code PIN' : ''}.</div>
+            <input className="moiInput" placeholder="Votre nom" value={signupName} onChange={e => setSignupName(e.target.value)} autoFocus />
+            {account.pinRequiredForSignup && (
+              <>
+                <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Créez un code à 4 chiffres" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+                <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Confirmez le code" value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+              </>
+            )}
+            {pinError && <div className="moiHint" style={{ color: '#e05252', marginTop: 6 }}>{pinError}</div>}
+            <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={createAccount} disabled={accountLoading}>{accountLoading ? '…' : '✓ Créer mon compte'}</button>
+            <button className="moiBtn" style={{ marginTop: 8 }} onClick={() => { setAccount(null); setSignupName(''); setPinInput(''); setPinConfirm(''); setPinError('') }}>← Changer de numéro</button>
+          </div>
+        ) : (
+          <div className="moiCard">
+            <div className="moiCardTitle">{requiresAccountLogin ? 'Se connecter' : 'Voir mon solde'}</div>
+            <input className="moiInput" type="tel" placeholder="Votre numéro de téléphone" value={accountPhone} onChange={e => setAccountPhone(e.target.value)} />
+            <button className="moiBtn moiBtnPrimary" onClick={lookupAccount} disabled={accountLoading}>
+              {accountLoading ? '…' : 'Continuer'}
+            </button>
+            {account?.walletDisabled && <div className="moiHint" style={{ marginTop: 10 }}>Compte non disponible pour ce commerce.</div>}
+          </div>
+        )
+      ) : account.locked ? (
+        <div className="moiCard">
+          <div className="moiCardTitle">🔒 Compte temporairement bloqué</div>
+          <div className="moiHint">Trop de codes incorrects. Réessayez après {new Date(account.lockedUntil).toLocaleTimeString('fr-TN', { hour: '2-digit', minute: '2-digit' })}.</div>
+          <button className="moiBtn" style={{ marginTop: 10 }} onClick={() => { setAccount(null); setPinInput(''); setPinConfirm('') }}>← Changer de numéro</button>
+        </div>
+      ) : account.needsPinSetup ? (
+        <div className="moiCard">
+          <div className="moiCardTitle">🔐 Créez un code PIN</div>
+          <div className="moiHint" style={{ marginBottom: 10 }}>Protégez votre compte avec un code à 4 chiffres — à saisir à chaque connexion.</div>
+          <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Code à 4 chiffres" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+          <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Confirmez le code" value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))} style={{ marginTop: 8 }} />
+          {pinError && <div className="moiHint" style={{ color: '#e05252', marginTop: 6 }}>{pinError}</div>}
+          <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={submitPin} disabled={accountLoading}>{accountLoading ? '…' : 'Créer le code'}</button>
+        </div>
+      ) : account.pinRequired ? (
+        <div className="moiCard">
+          <div className="moiCardTitle">🔐 Code PIN</div>
+          <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Votre code à 4 chiffres" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+          {account.error && <div className="moiHint" style={{ color: '#e05252', marginTop: 6 }}>{account.error}{account.attemptsLeft != null ? ` (${account.attemptsLeft} essai${account.attemptsLeft > 1 ? 's' : ''} restant${account.attemptsLeft > 1 ? 's' : ''})` : ''}</div>}
+          <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={submitPin} disabled={accountLoading}>{accountLoading ? '…' : 'Valider'}</button>
+          <button className="moiBtn" style={{ marginTop: 8 }} onClick={() => { setAccount(null); setPinInput(''); setPinConfirm('') }}>← Changer de numéro</button>
+        </div>
+      ) : (
+        <>
+          <div className="moiPremiumWrap">
+            <div className="moiPremiumCard">
+              <div className="moiPremiumTop">
+                <span className="moiPremiumChip" />
+                <span className="moiPremiumBrand">{info.name}</span>
+              </div>
+              <div className="moiPremiumBalanceLabel">Solde disponible</div>
+              <div className="moiPremiumBalance">{account.balance.toFixed(3)}<span className="moiPremiumCur">{currency}</span></div>
+              <div className="moiPremiumBottom">
+                <div className="moiPremiumName">{account.name}</div>
+                <div className="moiPremiumPhone">•••• {accountPhone.trim().slice(-4)}</div>
+              </div>
+            </div>
+          </div>
+          {account.reward?.current_tier_pct != null && (
+            <div className="moiPremiumRewardRow">🎁 {(account.reward.current_tier_pct * 100).toFixed(0)}% de récompense sur vos rechargements ce mois-ci</div>
+          )}
+          {account.reward && (
+            <div className="moiCard">
+              <div className="moiCardTitle">🎁 Récompense du mois</div>
+              <div className="moiHint">{account.reward.current_month_spend.toFixed(3)} {currency} rechargés ce mois-ci</div>
+              {account.reward.next_tier_min != null && (
+                <div className="moiHint" style={{ marginTop: 6 }}>
+                  Encore {account.reward.missing_for_next.toFixed(3)} {currency} pour passer à {(account.reward.next_tier_pct * 100).toFixed(0)}%
+                </div>
+              )}
+            </div>
+          )}
+          <div className="moiCard">
+            <div className="moiCardTitle">🧾 Mes commandes</div>
+            {myOrders === null ? (
+              <div className="moiHint">Chargement…</div>
+            ) : myOrders.length === 0 ? (
+              <div className="moiHint">Aucune commande pour le moment</div>
+            ) : myOrders.map((o: any) => (
+              <div key={o.id} className="moiMoveRow">
+                <div>
+                  <div className="moiMoveKind">
+                    {o.table_num ? `Table ${o.table_num}` : o.order_type === 'livraison' ? '🛵 Livraison' : o.order_type === 'sur_place' ? '🏠 Sur place' : '🥡 À emporter'}
+                    {' — '}{(o.items || []).length} article{(o.items || []).length > 1 ? 's' : ''}
+                  </div>
+                  <div className="moiHint">{new Date(o.created_at).toLocaleString('fr-TN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · {orderStatusLabel(o)}{o.paid ? ' · payée' : ''}</div>
+                </div>
+                <div>{o.total.toFixed(3)} {currency}</div>
+              </div>
+            ))}
+          </div>
+          <div className="moiCard">
+            <div className="moiCardTitle">Historique fidélité</div>
+            {account.movements.length === 0 ? <div className="moiHint">Aucun mouvement</div> : account.movements.map((m: any, i: number) => (
+              <div key={i} className="moiMoveRow">
+                <div>
+                  <div className="moiMoveKind">{m.kind === 'topup' ? '📥 Rechargement' : m.kind === 'spend' ? '🛒 Achat' : m.kind === 'bonus' ? '🎁 Récompense' : 'Correction'}</div>
+                  <div className="moiHint">{new Date(m.client_ts).toLocaleDateString('fr-TN')}</div>
+                </div>
+                <div className={m.delta > 0 ? 'moiPlus' : 'moiMinus'}>{m.delta > 0 ? '+' : '−'}{Math.abs(m.delta).toFixed(3)}</div>
+              </div>
+            ))}
+          </div>
+          {!requiresAccountLogin && (
+            <button className="moiBtn" style={{ margin: '0 16px 16px' }} onClick={() => { setAccount(null) }}>← Changer de numéro</button>
+          )}
+        </>
+      )}
+    </>
+  )
+
+  if (loading) return <div className="moiWrap moiCenter" data-theme={theme}><div className="moiSpinner" /></div>
+  if (loadError || !info) return <div className="moiWrap moiCenter" data-theme={theme}><div className="moiErr">{loadError || 'Erreur'}</div></div>
+
+  if (requiresAccountLogin && !accountReady) {
+    return (
+      <div className="moiWrap" data-theme={theme}>
+        
+        <header className="moiHead">
+          <div className="moiLogo">{info.logo}</div>
+          <div style={{ flex: 1 }}>
+            <div className="moiName">{info.name}</div>
+            {info.tagline && <div className="moiTagline">{info.tagline}</div>}
+          </div>
+          <button className="moiThemeBtn" onClick={toggleTheme}>{theme === 'dark' ? '☀️' : '🌙'}</button>
+        </header>
+        <div className="moiBody">
+          <div className="moiCard">
+            <div className="moiHint">Connectez-vous avec votre numéro pour commander, voir votre solde fidélité et suivre vos commandes.</div>
+          </div>
+          {accountPanel}
+        </div>
+        <div className="moiFooter">Propulsé par Servio ⚡</div>
+      </div>
+    )
+  }
 
   return (
     <div className="moiWrap" data-theme={theme}>
-      <style>{MOI_CSS}</style>
+      
 
       <header className="moiHead">
         <div className="moiLogo">{info.logo}</div>
@@ -300,76 +526,7 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
       )}
 
       {tab === 'account' && info.walletEnabled && (
-        <div className="moiBody">
-          {!account?.found ? (
-            <div className="moiCard">
-              <div className="moiCardTitle">Voir mon solde</div>
-              <input className="moiInput" type="tel" placeholder="Votre numéro de téléphone" value={accountPhone} onChange={e => setAccountPhone(e.target.value)} />
-              <button className="moiBtn moiBtnPrimary" onClick={lookupAccount} disabled={accountLoading}>
-                {accountLoading ? '…' : 'Voir'}
-              </button>
-              {account && !account.found && !account.walletDisabled && <div className="moiHint" style={{ marginTop: 10 }}>Aucune carte trouvée pour ce numéro.</div>}
-            </div>
-          ) : account.locked ? (
-            <div className="moiCard">
-              <div className="moiCardTitle">🔒 Compte temporairement bloqué</div>
-              <div className="moiHint">Trop de codes incorrects. Réessayez après {new Date(account.lockedUntil).toLocaleTimeString('fr-TN', { hour: '2-digit', minute: '2-digit' })}.</div>
-              <button className="moiBtn" style={{ marginTop: 10 }} onClick={() => { setAccount(null); setPinInput(''); setPinConfirm('') }}>← Changer de numéro</button>
-            </div>
-          ) : account.needsPinSetup ? (
-            <div className="moiCard">
-              <div className="moiCardTitle">🔐 Créez un code PIN</div>
-              <div className="moiHint" style={{ marginBottom: 10 }}>Protégez votre solde avec un code à 4 chiffres — à saisir à chaque consultation.</div>
-              <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Code à 4 chiffres" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))} />
-              <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Confirmez le code" value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))} style={{ marginTop: 8 }} />
-              {pinError && <div className="moiHint" style={{ color: '#e05252', marginTop: 6 }}>{pinError}</div>}
-              <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={submitPin} disabled={accountLoading}>{accountLoading ? '…' : 'Créer le code'}</button>
-            </div>
-          ) : account.pinRequired ? (
-            <div className="moiCard">
-              <div className="moiCardTitle">🔐 Code PIN</div>
-              <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Votre code à 4 chiffres" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))} />
-              {account.error && <div className="moiHint" style={{ color: '#e05252', marginTop: 6 }}>{account.error}{account.attemptsLeft != null ? ` (${account.attemptsLeft} essai${account.attemptsLeft > 1 ? 's' : ''} restant${account.attemptsLeft > 1 ? 's' : ''})` : ''}</div>}
-              <button className="moiBtn moiBtnPrimary" style={{ marginTop: 10 }} onClick={submitPin} disabled={accountLoading}>{accountLoading ? '…' : 'Valider'}</button>
-              <button className="moiBtn" style={{ marginTop: 8 }} onClick={() => { setAccount(null); setPinInput(''); setPinConfirm('') }}>← Changer de numéro</button>
-            </div>
-          ) : (
-            <>
-              <div className="moiCard moiBalanceCard">
-                <div className="moiHint">Bonjour {account.name}</div>
-                <div className="moiBalance">{account.balance.toFixed(3)} {currency}</div>
-                <div className="moiHint">solde disponible</div>
-              </div>
-              {account.reward && (
-                <div className="moiCard">
-                  <div className="moiCardTitle">🎁 Récompense du mois</div>
-                  <div className="moiHint">{account.reward.current_month_spend.toFixed(3)} {currency} rechargés ce mois-ci</div>
-                  {account.reward.current_tier_pct != null && (
-                    <div className="moiRewardOk">✓ Vous gagnerez {(account.reward.current_tier_pct * 100).toFixed(0)}% ce mois-ci</div>
-                  )}
-                  {account.reward.next_tier_min != null && (
-                    <div className="moiHint" style={{ marginTop: 6 }}>
-                      Encore {account.reward.missing_for_next.toFixed(3)} {currency} pour passer à {(account.reward.next_tier_pct * 100).toFixed(0)}%
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="moiCard">
-                <div className="moiCardTitle">Historique</div>
-                {account.movements.length === 0 ? <div className="moiHint">Aucun mouvement</div> : account.movements.map((m: any, i: number) => (
-                  <div key={i} className="moiMoveRow">
-                    <div>
-                      <div className="moiMoveKind">{m.kind === 'topup' ? '📥 Rechargement' : m.kind === 'spend' ? '🛒 Achat' : m.kind === 'bonus' ? '🎁 Récompense' : 'Correction'}</div>
-                      <div className="moiHint">{new Date(m.client_ts).toLocaleDateString('fr-TN')}</div>
-                    </div>
-                    <div className={m.delta > 0 ? 'moiPlus' : 'moiMinus'}>{m.delta > 0 ? '+' : '−'}{Math.abs(m.delta).toFixed(3)}</div>
-                  </div>
-                ))}
-              </div>
-              <button className="moiBtn" style={{ margin: '0 16px 16px' }} onClick={() => { setAccount(null) }}>← Changer de numéro</button>
-            </>
-          )}
-        </div>
+        <div className="moiBody">{accountPanel}</div>
       )}
 
       {tab === 'order' && (
@@ -483,7 +640,7 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                     </div>
                   )}
                   <input className="moiInput" placeholder={tableNum != null ? 'Votre nom (optionnel)' : 'Votre nom'} value={name} onChange={e => setName(e.target.value)} />
-                  {tableNum == null && (
+                  {tableNum == null && !requiresAccountLogin && (
                     <input className="moiInput" type="tel" placeholder="Votre téléphone" value={phone} onChange={e => setPhone(e.target.value)} />
                   )}
 
@@ -499,7 +656,7 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                       <button className={'moiCatChip' + (payMethod === 'wallet' ? ' on' : '')} onClick={() => setPayMethod('wallet')}>💳 Fidélité</button>
                     </div>
                   )}
-                  {payMethod === 'wallet' && tableNum == null && (
+                  {payMethod === 'wallet' && tableNum == null && !requiresAccountLogin && (
                     <input className="moiInput" type="tel" inputMode="numeric" maxLength={4} placeholder="Code PIN fidélité" value={orderPin} onChange={e => setOrderPin(e.target.value.replace(/\D/g, '').slice(0, 4))} />
                   )}
 
@@ -533,66 +690,3 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
     </div>
   )
 }
-
-const MOI_CSS = `
-.moiWrap[data-theme="light"]{
-  --m-bg:#F6F7F9; --m-bg2:#FFFFFF; --m-bg3:#FAFBFC; --m-text:#14181F; --m-muted:#6B7280; --m-muted2:#9AA3AF;
-  --m-border:#E3E6EA; --m-border2:#F1F3F5; --m-accent:#B45309; --m-tab-on-bg:#FEF3C7; --m-tab-on-border:#FCD34D;
-  --m-shadow:0 -8px 24px rgba(0,0,0,.06); --m-err:#B42318; --m-ok:#067647; --m-minus:#4B5563;
-}
-.moiWrap[data-theme="dark"]{
-  --m-bg:#0F1115; --m-bg2:#171A23; --m-bg3:#1B1E28; --m-text:#FFFFFF; --m-muted:#9AA3AF; --m-muted2:#6B7280;
-  --m-border:#262B36; --m-border2:#1E212B; --m-accent:#F5A623; --m-tab-on-bg:rgba(245,166,35,.15); --m-tab-on-border:#F5A623;
-  --m-shadow:0 -8px 24px rgba(0,0,0,.3); --m-err:#F87171; --m-ok:#4ADE80; --m-minus:#9AA3AF;
-}
-.moiWrap{min-height:100vh;background:var(--m-bg);color:var(--m-text);font-family:-apple-system,'Segoe UI',system-ui,Roboto,sans-serif;padding-bottom:24px;}
-.moiCenter{display:flex;align-items:center;justify-content:center;}
-.moiSpinner{width:32px;height:32px;border:3px solid var(--m-border);border-top-color:var(--m-accent);border-radius:50%;animation:moiSpin .8s linear infinite;}
-@keyframes moiSpin{to{transform:rotate(360deg);}}
-.moiHead{display:flex;align-items:center;gap:12px;padding:20px 16px 14px;background:var(--m-bg2);border-bottom:1px solid var(--m-border);position:sticky;top:0;z-index:10;}
-.moiLogo{font-size:32px;}
-.moiName{font-size:17px;font-weight:800;}
-.moiTagline{font-size:12px;color:var(--m-muted);}
-.moiThemeBtn{width:38px;height:38px;border-radius:50%;border:1px solid var(--m-border);background:var(--m-bg3);font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
-.moiTabs{display:flex;gap:8px;padding:12px 16px 0;}
-.moiTab{flex:1;padding:10px;border-radius:10px;border:1px solid var(--m-border);background:var(--m-bg2);font-size:13px;font-weight:700;color:var(--m-muted);cursor:pointer;}
-.moiTab.on{background:var(--m-tab-on-bg);border-color:var(--m-tab-on-border);color:var(--m-accent);}
-.moiBody{padding:14px 0;}
-.moiCard{background:var(--m-bg2);border:1px solid var(--m-border);border-radius:14px;padding:16px;margin:0 16px 14px;}
-.moiCardTitle{font-size:14px;font-weight:800;margin-bottom:10px;}
-.moiHint{font-size:12px;color:var(--m-muted);}
-.moiInput{width:100%;padding:12px 14px;border:1px solid var(--m-border);border-radius:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;background:var(--m-bg3);color:var(--m-text);}
-.moiBtn{width:100%;padding:13px;border-radius:10px;border:1px solid var(--m-border);background:var(--m-bg2);font-size:14px;font-weight:700;cursor:pointer;color:var(--m-text);}
-.moiBtnPrimary{background:linear-gradient(135deg,#D97706,#F59E0B);color:#fff;border:none;}
-.moiBtn:disabled{opacity:.6;}
-.moiErr{color:var(--m-err);font-size:13px;margin-bottom:10px;}
-.moiBalanceCard{text-align:center;}
-.moiBalance{font-size:30px;font-weight:800;color:var(--m-ok);margin:6px 0;}
-.moiRewardOk{color:var(--m-ok);font-size:13px;font-weight:700;margin-top:6px;}
-.moiMoveRow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--m-border2);}
-.moiMoveKind{font-size:13px;font-weight:600;}
-.moiPlus{color:var(--m-ok);font-weight:800;}
-.moiMinus{color:var(--m-minus);font-weight:800;}
-.moiCatRow{display:flex;gap:8px;overflow-x:auto;padding:0 16px 12px;-webkit-overflow-scrolling:touch;}
-.moiCatChip{flex:0 0 auto;padding:9px 14px;border-radius:20px;border:1px solid var(--m-border);background:var(--m-bg2);font-size:13px;font-weight:700;color:var(--m-muted);white-space:nowrap;cursor:pointer;}
-.moiCatChip.on{background:var(--m-accent);border-color:var(--m-accent);color:#fff;}
-.moiGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:0 16px;}
-.moiItem{background:var(--m-bg2);border:1px solid var(--m-border);border-radius:14px;padding:14px 10px;text-align:center;position:relative;cursor:pointer;aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
-.moiItemEmoji{font-size:32px;}
-.moiItemName{font-size:12px;font-weight:700;line-height:1.25;}
-.moiItemPrice{font-size:13px;font-weight:800;color:var(--m-accent);}
-.moiItemAdd{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;background:#F59E0B;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
-.moiItem.out{opacity:.5;filter:grayscale(.5);}
-.moiItemOutBadge{position:absolute;top:6px;right:6px;background:var(--m-err);color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px;}
-.moiCart{background:var(--m-bg2);border-top:2px solid var(--m-border);border-radius:18px 18px 0 0;margin-top:16px;padding:16px;position:sticky;bottom:0;box-shadow:var(--m-shadow);}
-.moiCartRow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--m-border2);font-size:13px;}
-.moiQty{display:flex;align-items:center;gap:8px;}
-.moiQty button{width:26px;height:26px;border-radius:50%;border:1px solid var(--m-border);background:var(--m-bg3);color:var(--m-text);font-weight:800;cursor:pointer;}
-.moiTotalRow{display:flex;justify-content:space-between;font-weight:800;font-size:15px;padding:10px 0;}
-.moiOrderTypeRow{display:flex;gap:8px;margin-bottom:10px;overflow-x:auto;}
-.moiOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;z-index:100;}
-.moiSheet{background:var(--m-bg2);border-radius:18px 18px 0 0;padding:18px;width:100%;max-width:480px;margin:0 auto;}
-.moiVariantBtn{display:flex;justify-content:space-between;margin-bottom:8px;}
-.moiConfirm{text-align:center;}
-.moiFooter{text-align:center;color:var(--m-muted2);font-size:11px;padding:20px 0 6px;}
-`

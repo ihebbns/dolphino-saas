@@ -48,6 +48,7 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
   const url = new URL(req.url)
   const phone = clip(url.searchParams.get('phone'), 40).replace(/\s+/g, '')
   const pinInput = clip(url.searchParams.get('pin'), 4)
+  const signupName = clip(url.searchParams.get('name'), 120).trim()
   if (!slug) return NextResponse.json({ ok: false, error: 'Lien invalide' }, { status: 400 })
   if (!phone) return NextResponse.json({ ok: false, error: 'Numéro requis' }, { status: 400 })
 
@@ -68,8 +69,40 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
       FROM wallets
       WHERE restaurant_id = ${rid} AND phone = ${phone} AND archived = FALSE
       LIMIT 1`
-    if (!clients.length) return NextResponse.json({ ok: true, found: false })
-    const client = clients[0]
+
+    let client: any
+    if (!clients.length) {
+      // No wallet row for this phone at all — previously a dead end ("Aucune
+      // carte trouvée"), which only worked because a wallet always started
+      // life as something staff created at the till. Once the general online
+      // order flow requires an account to place an order (see requiresAccountLogin
+      // in /moi/[slug]), that dead end would lock out every brand-new customer.
+      // Self-service signup here closes it: first call with just a phone asks
+      // "does this need a name", the follow-up with name (+ PIN, if this
+      // restaurant protects PINs) creates the wallet row itself, balance 0 —
+      // the exact same starting point a staff-created card would have.
+      if (!signupName) return NextResponse.json({ ok: true, found: false, canCreate: true, pinRequiredForSignup: pinProtected })
+      if (pinProtected && !PIN_RE.test(pinInput)) return NextResponse.json({ ok: false, error: 'Le code doit contenir 4 chiffres' }, { status: 400 })
+
+      // Same slug shape the till itself uses for a new wallet's client_key
+      // (see walletSlug()/ensureWalletIds() in the POS) — a web-signed-up
+      // account is indistinguishable from a till-created one once synced,
+      // and collision handling matches what the till already does locally.
+      const base = ('w_' + signupName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')).slice(0, 60) || 'w_sans-nom'
+      const existing = await sql`SELECT client_key FROM wallets WHERE restaurant_id = ${rid} AND client_key LIKE ${base + '%'}`
+      const used = new Set(existing.map((r: any) => r.client_key))
+      let candidate = base, n = 2
+      while (used.has(candidate)) { candidate = `${base}-${n}`; n++ }
+
+      const pinHash = pinProtected ? await bcrypt.hash(pinInput, 10) : null
+      await sql`
+        INSERT INTO wallets (restaurant_id, client_key, name, phone, balance, pin_hash, pin_set_at)
+        VALUES (${rid}, ${candidate}, ${signupName}, ${phone}, 0, ${pinHash}, ${pinHash ? new Date().toISOString() : null})`
+
+      client = { client_key: candidate, name: signupName, balance: 0, pin_hash: pinHash, pin_locked_until: null }
+    } else {
+      client = clients[0]
+    }
 
     // ── PIN gate (only when this restaurant opted in) ────────────────────
     if (pinProtected) {

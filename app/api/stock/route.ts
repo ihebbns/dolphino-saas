@@ -15,8 +15,12 @@
 //                            → mark/unmark items as out of stock. No lock check —
 //                              availability is always editable from both POS and web.
 //                              Last-write-wins via client ts; 'out' wins ties (safety).
-// PATCH ?key=XXX body={sold:[{item_id, qty, uid?, ts?}], actor?, terminalId?, sessionId?, saleNum?}
-//                            → record a sale's stock consumption (called by EXE)
+// PATCH ?key=XXX body={sold:[{item_id, qty, uid?, ts?}], actor?, terminalId?, sessionId?, saleNum?, void?}
+//                            → record a sale's stock consumption (called by EXE).
+//                              void:true reverses it (a voided sale gives its stock AND its
+//                              ingredients back) — same trackMode routing, opposite sign, a
+//                              distinct idempotency key per line so it can never collide with
+//                              (or be mistaken for a duplicate of) the original consumption.
 //
 // ── LEDGER ─────────────────────────────────────────────────────────────
 // Every quantity change is appended to stock_movements (see
@@ -37,7 +41,7 @@ import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import { recordMovement, ledgerReady, POS_KINDS, resolveTrackModes, isTrackMode } from '@/lib/stock'
-import { consumeForSale } from '@/lib/ingredients'
+import { consumeForSale, reverseForSale } from '@/lib/ingredients'
 
 export const runtime = 'edge'
 
@@ -623,6 +627,7 @@ export async function PATCH(req: Request) {
   const terminalId = String(body.terminalId ?? '').slice(0, 64)
   const sessionId  = String(body.sessionId ?? '').slice(0, 64)
   const saleNum    = Number.isFinite(parseInt(String(body.saleNum))) ? parseInt(String(body.saleNum)) : null
+  const isVoid     = body.void === true
 
   const useLedger = await ledgerReady()
 
@@ -650,23 +655,34 @@ export async function PATCH(req: Request) {
     if (mode === 'none')   { skippedUntracked++;  continue }
 
     if (useLedger) {
-      // Append a negative 'sale' movement. `uid` makes an offline replay safe;
-      // `ts` keeps ordering correct when movements arrive late or out of order.
+      // Append a 'sale' (negative) or, when voiding, a 'return' (positive)
+      // movement. `uid` makes an offline replay safe; a void gets its own
+      // ':void' suffix so it can never collide with — or be silently dropped
+      // as a duplicate of — the original sale's own uid.
       const applied = await recordMovement(rid, {
         itemId: id,
-        kind: 'sale',
-        delta: -qty,
-        reason: '',
+        kind: isVoid ? 'return' : 'sale',
+        delta: isVoid ? qty : -qty,
+        reason: isVoid ? 'Annulation vente' : '',
         actor,
         source: 'pos',
         terminalId,
         sessionId,
         saleNum,
         clientTs: it.ts ?? null,
-        clientUid: it.uid ?? '',
+        clientUid: it.uid ? (isVoid ? it.uid + ':void' : it.uid) : '',
       })
       if (applied === null) duplicates++
       else updated++
+    } else if (isVoid) {
+      // Legacy path — migration not run yet.
+      await sql`
+        UPDATE stock
+        SET quantity   = quantity + ${qty},
+            updated_at = NOW()
+        WHERE restaurant_id = ${rid} AND item_id = ${id}
+      `
+      updated++
     } else {
       // Legacy path — migration not run yet. Same behaviour as before.
       await sql`
@@ -711,9 +727,11 @@ export async function PATCH(req: Request) {
         variant_key: String(it.variant ?? it.variant_key ?? '').slice(0, 40),
       }))
     if (recipeLines.length) {
-      ingredients = await consumeForSale(rid, recipeLines, { actor, source: 'pos', saleNum })
+      ingredients = isVoid
+        ? await reverseForSale(rid, recipeLines, { actor, source: 'pos', saleNum })
+        : await consumeForSale(rid, recipeLines, { actor, source: 'pos', saleNum })
     }
-  } catch { /* never block a sale on its ingredient explosion */ }
+  } catch { /* never block a sale (or its void) on the ingredient explosion */ }
 
   return cors(NextResponse.json({
     ok: true,
@@ -728,5 +746,6 @@ export async function PATCH(req: Request) {
     // "nothing happened" apart from "it was configured that way".
     recipeMode: skippedRecipeMode,
     untracked: skippedUntracked,
+    void: isVoid,
   }))
 }

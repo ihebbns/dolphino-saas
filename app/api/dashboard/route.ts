@@ -55,7 +55,7 @@ export async function GET(req: Request) {
       COALESCE(SUM(CASE WHEN order_type='take'  THEN 1 ELSE 0 END),0)::int AS emporter,
       COALESCE(SUM(CASE WHEN order_type='del'   THEN 1 ELSE 0 END),0)::int AS livraison,
       COALESCE(SUM(CASE WHEN order_type='table' THEN 1 ELSE 0 END),0)::int AS table_service
-    FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date`
+    FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date AND NOT voided`
 
   // ═══ Comparaison vs même jour semaine dernière ═══
   const [lastWeekSameDay] = await sql`
@@ -64,7 +64,8 @@ export async function GET(req: Request) {
       COALESCE(SUM(grand),0)::float AS revenue
     FROM sales
     WHERE restaurant_id=${rid}
-      AND business_date = (${date}::date - INTERVAL '7 days')`
+      AND business_date = (${date}::date - INTERVAL '7 days')
+      AND NOT voided`
 
   // ═══ Revenu par heure (peak hours) ═══
   const hourly = await sql`
@@ -76,7 +77,7 @@ export async function GET(req: Request) {
       COUNT(*)::int AS orders,
       COALESCE(SUM(grand),0)::float AS revenue
     FROM sales
-    WHERE restaurant_id=${rid} AND business_date=${date}::date
+    WHERE restaurant_id=${rid} AND business_date=${date}::date AND NOT voided
     GROUP BY hour ORDER BY hour`
 
   // ═══ Semaine (7 derniers jours) ═══
@@ -89,10 +90,11 @@ export async function GET(req: Request) {
     WHERE restaurant_id=${rid}
       AND business_date >= (${date}::date - INTERVAL '6 days')
       AND business_date <= ${date}::date
+      AND NOT voided
     GROUP BY business_date ORDER BY business_date ASC`
 
   // ═══ Top produits (best sellers) ═══
-  const allSales = await sql`SELECT items FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date`
+  const allSales = await sql`SELECT items FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date AND NOT voided`
   const productStats: Record<string, { qty: number, revenue: number }> = {}
   for (const row of allSales) {
     for (const it of (row.items || [])) {
@@ -180,7 +182,8 @@ export async function GET(req: Request) {
     FROM sales
     WHERE restaurant_id=${rid}
       AND business_date >= (${date}::date - INTERVAL '6 days')
-      AND business_date <= ${date}::date`
+      AND business_date <= ${date}::date
+      AND NOT voided`
   const trendMap: Record<string, { revenue: number; cogs: number }> = {}
   for (const row of trendSales) {
     const d = row.day
@@ -198,12 +201,16 @@ export async function GET(req: Request) {
     profitTrend.push({ day: key, revenue: e.revenue, cogs: e.cogs, netProfit: e.revenue - e.cogs })
   }
 
-  // ═══ Ventes récentes (50 dernières) ═══
+  // ═══ Ventes récentes (jusqu'à 1000) ═══
+  // Voided sales stay in this list (visible + traceable, per the void's own
+  // audit intent) — they're just excluded from every revenue/KPI aggregate
+  // above so a cancelled sale can never inflate the day's numbers.
   const recent = await sql`
     SELECT num, sale_time, order_type, grand::float, pay_method,
            cashier, disc_pct, cli_name, cli_tel,
            received::float, monnaie::float, session_id,
-           items, jsonb_array_length(items) AS item_count
+           items, jsonb_array_length(items) AS item_count,
+           voided, void_reason, void_by, voided_at
     FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date
     ORDER BY num DESC LIMIT 1000`
 
@@ -215,7 +222,7 @@ export async function GET(req: Request) {
       COALESCE(SUM(grand),0)::float AS revenue,
       COALESCE(AVG(grand),0)::float AS avg_ticket
     FROM sales
-    WHERE restaurant_id=${rid} AND business_date=${date}::date AND cashier != ''
+    WHERE restaurant_id=${rid} AND business_date=${date}::date AND cashier != '' AND NOT voided
     GROUP BY cashier ORDER BY revenue DESC`
 
   // ═══ Sessions caisse ═══

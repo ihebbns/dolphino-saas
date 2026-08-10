@@ -173,6 +173,25 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ ok: true, public_slug: slug || null })
     }
 
+    // ── Kitchen screen password (admin only) ──────────────────────────
+    // Deliberately NOT the restaurant's api_key/syncKey — that credential
+    // grants full POS-sync access and is a clumsy string for non-technical
+    // kitchen staff to type on a shared tablet. This is a separate, simple
+    // password scoped to /kitchen/[slug] only, which itself can only ever
+    // view tickets and bump them (see /api/public/[slug]/kds) — never touch
+    // anything else the real api_key could. Stored in config (no migration
+    // needed), same as public_slug is stored as a real column for its own
+    // uniqueness needs but this has none.
+    if (body.kds_password !== undefined) {
+      const pw = String(body.kds_password || '').trim().slice(0, 40)
+      const [row] = await sql`SELECT config FROM restaurants WHERE id = ${id} LIMIT 1`
+      const cfg = (row?.config && typeof row.config === 'object') ? row.config : {}
+      if (pw) cfg.kdsPassword = pw
+      else delete cfg.kdsPassword
+      await sql`UPDATE restaurants SET config = ${JSON.stringify(cfg)}::jsonb WHERE id = ${id}`
+      return NextResponse.json({ ok: true, kds_password: pw || null })
+    }
+
     return NextResponse.json({ ok: true })
   } catch (e: any) {
     return NextResponse.json(serverError('admin/clients', e), { status:500 })

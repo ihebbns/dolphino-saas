@@ -48,7 +48,7 @@ export async function GET(req: Request) {
   try {
     const rows = await sql`
       SELECT plan, name, city, phone, config, menu_json, suspend_at,
-             trial_ends_at, stripe_subscription_id
+             trial_ends_at, stripe_subscription_id, public_slug
       FROM restaurants
       WHERE api_key = ${key}
       LIMIT 1
@@ -115,6 +115,12 @@ export async function GET(req: Request) {
       zone2Cats: ['Libanais', 'Sandwichs', 'Tacos', 'Plat', 'Brik', 'Panini'],
       boissonCats: ['Boisson'],
       ...dbConfig,
+      // publicSlug lives on its own column (real UNIQUE index), never inside
+      // the config JSONB blob — always sourced from here, after the dbConfig
+      // spread, so a stale/absent value baked into an old EXE self-heals the
+      // moment the admin sets or changes it in /admin, no rebuild needed.
+      // See checkLicense() on the POS side for where this gets applied.
+      publicSlug: r.public_slug || '',
     }
     // Only send cloud modules for self-service clients who actually have them.
     // Baked per-client EXEs (no modules in DB) keep their compiled-in config —

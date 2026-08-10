@@ -335,6 +335,12 @@ function OrderDetail({ order, onClose }: { order: any, onClose: ()=>void }) {
           <span style={{padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:'var(--gold-dim)',color:'var(--gold-l)'}}>{payMap[order.pay_method]||order.pay_method}</span>
           {order.disc_pct > 0 && <span style={{padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:'var(--red-dim)',color:'var(--red)'}}>Remise -{order.disc_pct}%</span>}
         </div>
+        {order.voided && (
+          <div style={{padding:'10px 12px',background:'var(--red-dim)',border:'1px solid rgba(224,82,82,.3)',borderRadius:8,fontSize:12,marginBottom:12,color:'var(--red)'}}>
+            🗑️ <strong>Vente annulée</strong>{order.void_by ? ` par ${order.void_by}` : ''}{order.voided_at ? ` · ${new Date(order.voided_at).toLocaleString('fr-TN')}` : ''}
+            {order.void_reason && <div style={{marginTop:4,color:'var(--muted)'}}>Motif : {order.void_reason}</div>}
+          </div>
+        )}
         {order.cli_name && <div style={{padding:'8px 12px',background:'var(--card)',borderRadius:8,fontSize:13,marginBottom:12}}>👤 {order.cli_name}{order.cli_tel ? ` · 📞 ${order.cli_tel}` : ''}</div>}
         {/* Items */}
         <div style={{fontSize:11,color:'var(--muted)',textTransform:'uppercase',letterSpacing:1,fontWeight:600,marginBottom:8}}>Articles</div>
@@ -367,10 +373,17 @@ function OrderDetail({ order, onClose }: { order: any, onClose: ()=>void }) {
 // ════════════════ ORDERS TABLE ════════════════
 function OrdersTable({ orders, search, onSearch }: { orders: any[], search: string, onSearch:(s:string)=>void }) {
   const [selected, setSelected] = useState<any>(null)
-  const filtered = orders.filter((r:any) =>
-    !search || r.cashier?.toLowerCase().includes(search.toLowerCase()) ||
-    String(r.num).includes(search)
-  )
+  // Every sale stays traceable here regardless of status — the filter decides
+  // what's SHOWN, never what's fetched. Default 'active' matches what staff
+  // expect to see first; 'Annulées'/'Toutes' are one click away for tracing.
+  const [voidFilter, setVoidFilter] = useState<'active' | 'voided' | 'all'>('active')
+  const voidCount = orders.filter((r: any) => r.voided).length
+  const filtered = orders
+    .filter((r: any) => voidFilter === 'all' ? true : voidFilter === 'voided' ? r.voided : !r.voided)
+    .filter((r:any) =>
+      !search || r.cashier?.toLowerCase().includes(search.toLowerCase()) ||
+      String(r.num).includes(search)
+    )
   // 'table' is a real order_type in the universal build; 'credit' is a real
   // pay_method once the credit module is on. Both must be labelled or the row
   // falls back to showing the raw database value.
@@ -385,6 +398,12 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
       <div className={s.filters}>
         <input className={s.filterSearch} placeholder="🔍 Rechercher par #, caissier..."
           value={search} onChange={e=>onSearch(e.target.value)}/>
+        <select value={voidFilter} onChange={e=>setVoidFilter(e.target.value as any)}
+          style={{padding:'8px 10px',borderRadius:8,border:'1px solid var(--div)',background:'var(--card)',color:'var(--txt)',fontSize:12}}>
+          <option value="active">Actives</option>
+          <option value="voided">🗑️ Annulées{voidCount ? ` (${voidCount})` : ''}</option>
+          <option value="all">Toutes</option>
+        </select>
         <span style={{fontSize:12,color:'var(--muted)'}}>{filtered.length} commandes</span>
       </div>
       <div className={s.tableWrap}>
@@ -393,18 +412,23 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
             ? <div className={s.empty}><div className={s.emptyIcon}>🧾</div><div className={s.emptyText}>Aucune commande</div></div>
             : <table className={s.table}>
                 <thead><tr>
-                  <th>#</th><th>Heure</th><th>Type</th><th>Articles</th><th>Total</th><th>Paiement</th><th>Caissier</th>
+                  <th>#</th><th>Heure</th><th>Type</th><th>Articles</th><th>Total</th><th>Paiement</th><th>Caissier</th><th>Statut</th>
                 </tr></thead>
                 <tbody>
                   {filtered.map((r:any, i:number) => (
-                    <tr key={i} onClick={()=>setSelected(r)} style={{cursor:'pointer'}}>
-                      <td className={s.num}>#{String(r.num).padStart(3,'0')}</td>
+                    <tr key={i} onClick={()=>setSelected(r)}
+                      style={{cursor:'pointer', opacity: r.voided ? 0.6 : 1, background: r.voided ? 'var(--red-dim)' : undefined}}>
+                      <td className={s.num} style={r.voided ? {textDecoration:'line-through'} : undefined}>#{String(r.num).padStart(3,'0')}</td>
                       <td className={s.muted}>{r.sale_time}</td>
                       <td><span className={`${s.badge} ${typeCls[r.order_type]||s.bPlace}`}>{typeMap[r.order_type]||r.order_type}</span></td>
                       <td>{r.item_count} art.{r.disc_pct>0?<span style={{color:'var(--red)',fontSize:11}}> -{r.disc_pct}%</span>:null}</td>
-                      <td className={s.bold}>{f(r.grand)} DT</td>
+                      <td className={s.bold} style={r.voided ? {textDecoration:'line-through'} : undefined}>{f(r.grand)} DT</td>
                       <td><span className={`${s.badge} ${payCls[r.pay_method]||s.bCash}`}>{payMap[r.pay_method]||r.pay_method}</span></td>
                       <td className={s.muted}>{r.cashier}</td>
+                      <td>{r.voided
+                        ? <span style={{padding:'3px 9px',borderRadius:12,fontSize:11,fontWeight:700,background:'var(--red-dim)',color:'var(--red)',border:'1px solid rgba(224,82,82,.3)'}}>🗑️ Annulée</span>
+                        : <span style={{fontSize:11,color:'var(--green)'}}>✓ Active</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -884,7 +908,11 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
   const load = useCallback(async (d: string) => {
     setLoading(true); setSyncMsg('Actualisation...')
     try {
-      const res  = await fetch(`${API}/api/dashboard?date=${d}&key=${apiKey}`)
+      // no-store: this is a live/polled dashboard (30s auto-refresh + manual
+      // "Actualiser") — the browser's default heuristic HTTP caching can
+      // otherwise serve a stale response for this exact URL+key+date for a
+      // while, which silently defeats both the poll and the refresh button.
+      const res  = await fetch(`${API}/api/dashboard?date=${d}&key=${apiKey}`, { cache: 'no-store' })
       if (res.status === 401 || res.status === 403) { onLogout(); return }
       const json = await res.json()
       if (!json.ok) { setSyncMsg('Erreur: ' + json.error); setLoading(false); return }
