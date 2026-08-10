@@ -81,12 +81,25 @@ export async function GET(req: Request) {
     // balance (see /api/public/[slug]/order) — a pending order can already
     // be paid before staff ever touch it, and the till needs to know that
     // the moment it accepts, not discover it later via the unpaid queue.
-    const pending = await sql`
-      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, created_at,
-             table_num, table_sec, paid, paid_by
-      FROM online_orders
-      WHERE restaurant_id = ${rest.id} AND status = 'pending'
-      ORDER BY created_at ASC`
+    // daily_num/source feed the kitchen ticket prefix at accept time (see
+    // printOnlineOrderKitchenTicket in the POS) — tolerant of either column
+    // being absent (migrations not run yet) so the whole queue doesn't 500.
+    let pending: any[]
+    try {
+      pending = await sql`
+        SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, created_at,
+               table_num, table_sec, paid, paid_by, daily_num, source
+        FROM online_orders
+        WHERE restaurant_id = ${rest.id} AND status = 'pending'
+        ORDER BY created_at ASC`
+    } catch {
+      pending = await sql`
+        SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, created_at,
+               table_num, table_sec, paid, paid_by
+        FROM online_orders
+        WHERE restaurant_id = ${rest.id} AND status = 'pending'
+        ORDER BY created_at ASC`
+    }
 
     // claimed_by/claimed_at travel to the till so it can gray out a row
     // another till is actively encaissé-ing — a stale claim (>3 min) reads

@@ -54,6 +54,12 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   const reqItems: any[] = Array.isArray(body?.items) ? body.items.slice(0, 50) : []
   const payMethod = body?.payMethod === 'wallet' ? 'wallet' : 'cash'
   const pin = clip(body?.pin, 4)
+  // Which page placed this order — kiosk (walk-up touchscreen) vs moi (the
+  // general account-gated link/QR). Purely a label: staff-facing kitchen
+  // tickets and the public pickup board use it, nothing here changes
+  // behavior by source. Defaults to 'moi' since that's every entry point
+  // except the kiosk explicitly sending 'kiosk'.
+  const source = body?.source === 'kiosk' ? 'kiosk' : 'moi'
 
   const tableNumRaw = parseInt(String(body?.tableNum))
   const tableNum = Number.isFinite(tableNumRaw) && tableNumRaw > 0 ? tableNumRaw : null
@@ -201,17 +207,19 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
     for (let attempt = 0; ; attempt++) {
       try {
         ;[row] = await sql`
-          INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at, daily_num)
+          INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at, daily_num, source)
           SELECT ${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}::jsonb, ${total}, ${note}, ${tableNum}, ${tableSec},
                  ${paidNow}, ${paidNow ? 'Client (fidélité)' : null}, ${paidNow ? new Date().toISOString() : null},
-                 COALESCE((SELECT MAX(daily_num) FROM online_orders WHERE restaurant_id = ${rid} AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date), 0) + 1
-          RETURNING id, daily_num`
+                 COALESCE((SELECT MAX(daily_num) FROM online_orders WHERE restaurant_id = ${rid} AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date), 0) + 1,
+                 ${source}
+          RETURNING id, daily_num, source`
         break
       } catch (e: any) {
         const isMissingCol = String(e?.code) === '42703' || /does not exist|undefined_column/i.test(String(e?.message || ''))
         if (isMissingCol) {
-          // migration-online-orders-daily-num.sql not run yet — fall back to
-          // the pre-daily_num shape rather than failing every online order.
+          // migration-online-orders-daily-num.sql and/or
+          // migration-online-orders-source.sql not run yet — fall back to
+          // the older shape rather than failing every online order.
           ;[row] = await sql`
             INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at)
             VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note}, ${tableNum}, ${tableSec},

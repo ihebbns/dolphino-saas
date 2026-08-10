@@ -1,18 +1,30 @@
 // ═══════════════════════════════════════════════════
 // GET /api/public/[slug]/ready-orders — the list a pickup board (/ready/[slug])
-// polls: every order marked "ready" (see POST /api/me/online-orders
-// {action:'markReady'}) today, that hasn't gone stale.
+// polls: every order number that's fully done in the kitchen right now.
+//
+// Reuses kds_tickets (the same rows the till's own KDS overlay and the
+// kitchen screen — servio.tn/kitchen/<slug> — already bump) rather than a
+// separate "mark ready" action, on purpose: kitchen staff already bump a
+// ticket the instant it's done, for EVERY order however it was placed
+// (typed at the till, kiosk, or online) — that single existing action is
+// now also what puts a number on this board, no new step for anyone.
+//
+// One order can have several tickets (one per kitchen zone/station) — it's
+// only "ready" once ALL of them are bumped, hence GROUP BY num with
+// bool_and(bumped). tbl_num IS NULL excludes dine-in table orders — food
+// gets carried to the table, nobody's calling a table's number from a
+// board. Scoped to TODAY so the board (and daily_num, and the ticket
+// prefix below) all agree on what "today" resets against.
+//
+// The ticket's own `num` already carries its channel as a prefix — see
+// printOnlineOrderKitchenTicket() in the POS: 'KIO001' (kiosk), 'WEB001'
+// (moi/online link), or a plain digit sequence (typed at the till/caisse).
+// Parsed back out here into a clean {source, display} pair so the board
+// never has to know about the prefix convention itself.
 //
 // Unauthenticated by design, same posture as menu/order-status — a pickup
 // board runs on a screen mounted in the dining room, nothing here is a
 // secret (a ticket number + a first name), and it's read-only.
-//
-// Scoped to TODAY (created_at::date = current business day) rather than a
-// rolling time window — this is what makes the board clear itself out
-// automatically at the next day's first order instead of needing an explicit
-// "picked up" action staff would have to remember to tap. daily_num already
-// resets the same way (see migration-online-orders-daily-num.sql), so the
-// two line up: today's board shows today's numbers, nothing else.
 // ═══════════════════════════════════════════════════
 
 import { NextResponse } from 'next/server'
@@ -20,6 +32,20 @@ import { sql } from '@/lib/db'
 import { serverError, isMissingSchema } from '@/lib/apiError'
 
 export const runtime = 'edge'
+
+function parseTicketNum(raw: string): { source: 'kiosk' | 'moi' | 'caisse'; display: string } {
+  const s = String(raw || '')
+  if (s.startsWith('KIO')) {
+    const n = parseInt(s.slice(3), 10)
+    return { source: 'kiosk', display: Number.isFinite(n) ? String(n) : s.slice(3) }
+  }
+  if (s.startsWith('WEB')) {
+    const n = parseInt(s.slice(3), 10)
+    return { source: 'moi', display: Number.isFinite(n) ? String(n) : s.slice(3) }
+  }
+  const n = parseInt(s, 10)
+  return { source: 'caisse', display: Number.isFinite(n) ? String(n) : s }
+}
 
 export async function GET(req: Request, { params }: { params: { slug: string } }) {
   const slug = String(params.slug || '').slice(0, 60)
@@ -32,22 +58,25 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
 
     try {
       const rows = await sql`
-        SELECT daily_num, client_name, ready_at
-        FROM online_orders
+        SELECT num, MAX(cli_name) AS cli_name, MIN(sent_at) AS sent_at, MAX(bumped_at) AS ready_at
+        FROM kds_tickets
         WHERE restaurant_id = ${rest[0].id}
-          AND ready = TRUE
-          AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
-          AND daily_num IS NOT NULL
-        ORDER BY ready_at DESC
+          AND tbl_num IS NULL
+          AND num != ''
+          AND (sent_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+        GROUP BY num
+        HAVING bool_and(bumped)
+        ORDER BY MAX(bumped_at) DESC
         LIMIT 40`
       return NextResponse.json({
         ok: true, ready: true,
         restaurant_name: rest[0].name,
-        orders: rows.map((r: any) => ({ daily_num: r.daily_num, first_name: String(r.client_name || '').split(' ')[0], ready_at: r.ready_at })),
+        orders: rows.map((r: any) => {
+          const { source, display } = parseTicketNum(r.num)
+          return { display_num: display, source, first_name: String(r.cli_name || '').split(' ')[0], ready_at: r.ready_at }
+        }),
       })
     } catch (e: any) {
-      // daily_num column not migrated yet — the board has nothing numeric to
-      // show, so say so plainly rather than erroring the page.
       if (isMissingSchema(e)) return NextResponse.json({ ok: true, ready: false, note: 'Écran non initialisé — contactez le développeur' })
       throw e
     }

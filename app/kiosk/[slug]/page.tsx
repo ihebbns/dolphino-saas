@@ -156,6 +156,7 @@ export default function KioskPage({ params }: { params: { slug: string } }) {
         body: JSON.stringify({
           phone: phone.trim(), name: name.trim(), orderType, note: note.trim(),
           items: cartList.map(l => ({ id: l.id, variantLabel: l.variantLabel, qty: l.qty })),
+          source: 'kiosk',
         }),
       })
       const data = await res.json()
