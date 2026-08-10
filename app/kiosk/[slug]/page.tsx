@@ -302,6 +302,18 @@ export default function KioskPage({ params }: { params: { slug: string } }) {
               {confirmed.droppedOutOfStock && (
                 <div className="kioErr" style={{ marginTop: 10 }}>⚠️ Indisponible, retiré de la commande : {confirmed.droppedOutOfStock.join(', ')}</div>
               )}
+              {/* The number to remember/watch for — id is a global platform-wide
+                  counter, meaningless to a customer; daily_num is this
+                  restaurant's own ticket count for today, same as a printed
+                  paper ticket number. Absent only on a not-yet-migrated
+                  server (see the route's fallback), so guard for that. */}
+              {confirmed.daily_num != null && (
+                <div className="kioOrderNumCard">
+                  <div className="kioConfirmCardLabel">Votre numéro</div>
+                  <div className="kioOrderNum">#{confirmed.daily_num}</div>
+                  <div className="kioHint" style={{ fontSize: 13 }}>Surveillez l&apos;écran des commandes prêtes</div>
+                </div>
+              )}
               <div className="kioConfirmCard">
                 <div className="kioConfirmCardLabel">Total à régler</div>
                 <div className="kioConfirmTotal">{confirmed.total.toFixed(3)} {currency}</div>
@@ -474,6 +486,8 @@ const KIOSK_CSS = `
 .kioConfirmCard{margin-top:22px;padding:22px 32px;border-radius:20px;background:var(--k-bg2);border:1px solid var(--k-border);min-width:260px;}
 .kioConfirmCardLabel{font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--k-muted2);margin-bottom:6px;}
 .kioConfirmTotal{font-size:34px;font-weight:900;color:#F5A623;}
+.kioOrderNumCard{margin-top:22px;padding:20px 40px;border-radius:20px;background:linear-gradient(135deg,rgba(245,166,35,.14),rgba(245,166,35,.04));border:2px solid #F5A623;min-width:260px;}
+.kioOrderNum{font-size:56px;font-weight:900;color:#F5A623;letter-spacing:1px;line-height:1.1;}
 
 /* ── Variant picker sheet ── */
 .kioOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;z-index:100;}

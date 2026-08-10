@@ -337,6 +337,21 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
   const requiresAccountLogin = !!info?.walletEnabled && tableNum == null
   const accountReady = !!account?.found && !account?.needsPinSetup && !account?.pinRequired && !account?.locked
 
+  // Once logged in, the account already knows who's ordering — asking again
+  // for a name/phone on the checkout form (see the cart below, both inputs
+  // are hidden once requiresAccountLogin && accountReady) would just be
+  // re-collecting an answer the account gate already has. Seeding `phone`
+  // here matters even when its own input is hidden: submitOrder() still
+  // validates/sends it, and lookupAccount() (the no-PIN path, restaurants
+  // with wallet on but walletPinProtected off) never sets it itself — only
+  // submitPin() did, so a non-PIN-protected restaurant's logged-in customer
+  // could never actually place an order without this.
+  useEffect(() => {
+    if (!accountReady) return
+    if (account?.name) setName(account.name)
+    if (accountPhone.trim()) setPhone(accountPhone.trim())
+  }, [accountReady, account?.name, accountPhone])
+
   // Live order history for the logged-in account — every order this phone
   // has ever placed at this restaurant, not just the one in this browser
   // tab (that single-order tracker below still exists for the immediate
@@ -639,7 +654,9 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                       ))}
                     </div>
                   )}
-                  <input className="moiInput" placeholder={tableNum != null ? 'Votre nom (optionnel)' : 'Votre nom'} value={name} onChange={e => setName(e.target.value)} />
+                  {!(requiresAccountLogin && accountReady) && (
+                    <input className="moiInput" placeholder={tableNum != null ? 'Votre nom (optionnel)' : 'Votre nom'} value={name} onChange={e => setName(e.target.value)} />
+                  )}
                   {tableNum == null && !requiresAccountLogin && (
                     <input className="moiInput" type="tel" placeholder="Votre téléphone" value={phone} onChange={e => setPhone(e.target.value)} />
                   )}

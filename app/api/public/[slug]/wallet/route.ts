@@ -36,7 +36,7 @@ import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { sql } from '@/lib/db'
 import { serverError, isMissingSchema } from '@/lib/apiError'
-import { tierFor, REWARD_TIERS, previousPeriod } from '@/lib/walletRewards'
+import { tierFor, resolveTiers, previousPeriod } from '@/lib/walletRewards'
 import { verifyWalletPin, PIN_RE } from '@/lib/walletPin'
 
 export const runtime = 'nodejs'
@@ -152,8 +152,9 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
       WHERE restaurant_id = ${rid} AND client_key = ${client.client_key}
         AND kind = 'topup' AND paid_amount IS NOT NULL AND client_ts >= ${monthStart}`
     const currentSpend = Number(thisMonth?.spend || 0)
-    const currentTier = tierFor(currentSpend)
-    const nextTier = [...REWARD_TIERS].reverse().find(t => t.min > currentSpend) || null
+    const tiers = resolveTiers(rest[0].config)
+    const currentTier = tierFor(currentSpend, tiers)
+    const nextTier = [...tiers].reverse().find(t => t.min > currentSpend) || null
 
     return NextResponse.json({
       ok: true, found: true,

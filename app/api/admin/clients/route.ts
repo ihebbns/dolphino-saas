@@ -182,6 +182,29 @@ export async function PATCH(req: Request) {
     // anything else the real api_key could. Stored in config (no migration
     // needed), same as public_slug is stored as a real column for its own
     // uniqueness needs but this has none.
+    // Per-restaurant loyalty reward tiers — see lib/walletRewards.ts's
+    // resolveTiers() for how these get read back (falls back to
+    // DEFAULT_REWARD_TIERS when absent/invalid, so clearing this is safe).
+    // Validated here too, not just client-side: a malformed tier saved to
+    // config must never corrupt the monthly reward run silently.
+    if (body.reward_tiers !== undefined) {
+      const raw = Array.isArray(body.reward_tiers) ? body.reward_tiers : []
+      const cleaned: { min: number; pct: number }[] = []
+      for (const t of raw) {
+        const min = Number(t?.min)
+        const pct = Number(t?.pct)
+        if (Number.isFinite(min) && min >= 0 && Number.isFinite(pct) && pct > 0 && pct <= 1) {
+          cleaned.push({ min, pct })
+        }
+      }
+      const [row] = await sql`SELECT config FROM restaurants WHERE id = ${id} LIMIT 1`
+      const cfg = (row?.config && typeof row.config === 'object') ? row.config : {}
+      if (cleaned.length) cfg.rewardTiers = cleaned.sort((a, b) => b.min - a.min)
+      else delete cfg.rewardTiers
+      await sql`UPDATE restaurants SET config = ${JSON.stringify(cfg)}::jsonb WHERE id = ${id}`
+      return NextResponse.json({ ok: true, reward_tiers: cfg.rewardTiers || null })
+    }
+
     if (body.kds_password !== undefined) {
       const pw = String(body.kds_password || '').trim().slice(0, 40)
       const [row] = await sql`SELECT config FROM restaurants WHERE id = ${id} LIMIT 1`

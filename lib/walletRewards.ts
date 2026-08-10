@@ -11,10 +11,12 @@
 // compounding loop. A topup with no paid_amount recorded (pre-migration rows)
 // is excluded rather than treated as 0 — unknown is not the same as zero.
 //
-// TIERS is intentionally ONE hardcoded array, the same "change this one
-// number" pattern as WALLET_TOPUP_BONUS on the till — these are starting
-// defaults the client needs to sign off on before they go live with real
-// money, not something to make configurable prematurely.
+// DEFAULT_REWARD_TIERS is the starting point every restaurant gets before an
+// admin sets their own — restaurants.config.rewardTiers overrides it (see
+// resolveTiers below). Per-restaurant configurability was added after the
+// original "one hardcoded number" design because owners actually wanted
+// different thresholds for different businesses (a fast-food counter and a
+// destination restaurant see very different average recharge amounts).
 // ═══════════════════════════════════════════════════
 
 import { sql } from '@/lib/db'
@@ -23,14 +25,39 @@ export type Tier = { min: number; pct: number }
 
 // Highest threshold first — the first (and only) match wins, tiers are NOT
 // cumulative. 200 DT/month -> 3%, 500 DT/month -> 6%, 1000 DT/month -> 10%.
-export const REWARD_TIERS: Tier[] = [
+export const DEFAULT_REWARD_TIERS: Tier[] = [
   { min: 1000, pct: 0.10 },
   { min: 500, pct: 0.06 },
   { min: 200, pct: 0.03 },
 ]
 
-export function tierFor(qualifyingSpend: number): Tier | null {
-  for (const t of REWARD_TIERS) if (qualifyingSpend >= t.min) return t
+/** Back-compat alias — existing callers importing REWARD_TIERS keep working. */
+export const REWARD_TIERS = DEFAULT_REWARD_TIERS
+
+/**
+ * Pull this restaurant's own tiers out of its config, falling back to the
+ * defaults when absent or malformed. Always returns tiers sorted highest-min
+ * first, since tierFor()'s first-match-wins loop depends on that order — an
+ * admin editing the list in any order must not silently break qualification.
+ */
+export function resolveTiers(config: any): Tier[] {
+  const raw = config && typeof config === 'object' ? config.rewardTiers : null
+  if (!Array.isArray(raw) || !raw.length) return DEFAULT_REWARD_TIERS
+
+  const cleaned: Tier[] = []
+  for (const t of raw) {
+    const min = Number(t?.min)
+    const pct = Number(t?.pct)
+    if (Number.isFinite(min) && min >= 0 && Number.isFinite(pct) && pct > 0 && pct <= 1) {
+      cleaned.push({ min, pct })
+    }
+  }
+  if (!cleaned.length) return DEFAULT_REWARD_TIERS
+  return cleaned.sort((a, b) => b.min - a.min)
+}
+
+export function tierFor(qualifyingSpend: number, tiers: Tier[] = DEFAULT_REWARD_TIERS): Tier | null {
+  for (const t of tiers) if (qualifyingSpend >= t.min) return t
   return null
 }
 
@@ -70,6 +97,9 @@ export type RewardResult = {
 export async function computeAndApplyRewards(rid: number, period: string): Promise<RewardResult[]> {
   const { start, end } = periodBounds(period)
 
+  const [rest] = await sql`SELECT config FROM restaurants WHERE id = ${rid} LIMIT 1`
+  const tiers = resolveTiers(rest?.config)
+
   const rows = await sql`
     SELECT w.client_key, w.name,
            COALESCE(SUM(m.paid_amount), 0)::float AS qualifying_spend
@@ -87,7 +117,7 @@ export async function computeAndApplyRewards(rid: number, period: string): Promi
 
   for (const r of rows) {
     const spend = Number(r.qualifying_spend)
-    const tier = tierFor(spend)
+    const tier = tierFor(spend, tiers)
     if (!tier) {
       results.push({ client_key: r.client_key, name: r.name, qualifying_spend: spend, tier_pct: null, amount: 0, applied: false, reason: 'sous le premier palier' })
       continue

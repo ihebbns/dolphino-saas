@@ -358,6 +358,16 @@ function QrSection({ client, adminKey, hasTables, initialKdsPassword, onSlugSave
               <div style={{ fontSize:'11px', color:'var(--green)' }}>✓ Mot de passe actif : <code>{kdsPassword}</code></div>
             )}
           </div>
+
+          <div style={{ marginTop:'22px', paddingTop:'18px', borderTop:'1px solid var(--div)' }}>
+            <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>📺 Écran commandes prêtes</div>
+            <div style={{ fontSize:'11px', color:'var(--muted)', marginBottom:'8px' }}>
+              Un écran monté près du comptoir/cuisine, affichant les numéros prêts à récupérer — sans mot de passe, à laisser ouvert en permanence.
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', padding:'10px 12px' }}>
+              <code style={{ flex:1, fontSize:'12px', color:'var(--blue)', wordBreak:'break-all' as const }}>servio.tn/ready/{client.public_slug}</code>
+            </div>
+          </div>
         </>
       )}
     </div>
@@ -378,6 +388,14 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [moduleSaving, setModuleSaving] = useState(false)
   const [rewardBusy, setRewardBusy] = useState(false)
   const [rewardResult, setRewardResult] = useState<any>(null)
+  // Editable draft of this client's reward tiers — strings while being typed,
+  // parsed/validated only on save. Seeded from moduleCfg once it loads (see
+  // loadModules), pre-filled with the platform defaults when the client has
+  // never customized them, so the admin edits what's actually in effect
+  // rather than staring at a blank list.
+  const [rewardTiersDraft, setRewardTiersDraft] = useState<{ min: string; pct: string }[]>([])
+  const [rewardTiersSaving, setRewardTiersSaving] = useState(false)
+  const [rewardTiersMsg, setRewardTiersMsg] = useState('')
   const [pinResetPhone, setPinResetPhone] = useState('')
   const [pinResetBusy, setPinResetBusy] = useState(false)
   const [pinResetMsg, setPinResetMsg] = useState('')
@@ -472,6 +490,14 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       if (data.ok) {
         const config = data.config || {}
         setModuleCfg({ config, modules: { ...(config.modules || {}) } })
+        // Mirrors lib/walletRewards.ts's DEFAULT_REWARD_TIERS — shown when the
+        // client hasn't customized their own, so the editor starts from what's
+        // actually in effect rather than an empty list.
+        const savedTiers = Array.isArray(config.rewardTiers) && config.rewardTiers.length
+          ? config.rewardTiers
+          : [{ min: 1000, pct: 0.10 }, { min: 500, pct: 0.06 }, { min: 200, pct: 0.03 }]
+        setRewardTiersDraft(savedTiers.map((t: any) => ({ min: String(t.min), pct: String(Math.round(t.pct * 100)) })))
+        setRewardTiersMsg('')
       } else flash('Erreur: ' + data.error)
     } catch { flash('Erreur de connexion') }
     setModuleLoading(false)
@@ -521,6 +547,37 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       else flash('Erreur: ' + data.error)
     } catch { flash('Erreur de connexion') }
     setRewardBusy(false)
+  }
+
+  function addRewardTier() {
+    setRewardTiersDraft(prev => [...prev, { min: '', pct: '' }])
+  }
+  function removeRewardTier(i: number) {
+    setRewardTiersDraft(prev => prev.filter((_, idx) => idx !== i))
+  }
+  function updateRewardTier(i: number, field: 'min' | 'pct', value: string) {
+    setRewardTiersDraft(prev => prev.map((t, idx) => idx === i ? { ...t, [field]: value } : t))
+  }
+  async function saveRewardTiers(apiKey: string) {
+    setRewardTiersSaving(true); setRewardTiersMsg('')
+    // pct stored as a fraction (0.10) but edited as a whole percent (10) —
+    // matches how the value is actually used everywhere else (tierFor()
+    // multiplies qualifying spend by pct directly).
+    const tiers = rewardTiersDraft
+      .map(t => ({ min: parseFloat(t.min), pct: parseFloat(t.pct) / 100 }))
+      .filter(t => Number.isFinite(t.min) && t.min >= 0 && Number.isFinite(t.pct) && t.pct > 0 && t.pct <= 1)
+    try {
+      const res = await fetch(`${API}/api/admin/clients`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_key: key, id: actionClient.id, reward_tiers: tiers }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setRewardTiersMsg('✓ Paliers enregistrés')
+        setModuleCfg(prev => prev ? { ...prev, config: { ...prev.config, rewardTiers: data.reward_tiers } } : prev)
+      } else setRewardTiersMsg('Erreur: ' + data.error)
+    } catch { setRewardTiersMsg('Erreur de connexion') }
+    setRewardTiersSaving(false)
   }
 
   // Support action for a customer locked out of (or who forgot) their
@@ -850,6 +907,31 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
                     <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                       Récompense mensuelle (Fidélité)
                     </div>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '10px' }}>
+                      Bonus crédité automatiquement selon le total rechargé dans le mois. Paliers non cumulables — seul le plus haut palier atteint compte.
+                    </div>
+                    {rewardTiersDraft.map((t, i) => (
+                      <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+                        <input type="number" min="0" value={t.min} onChange={e => updateRewardTier(i, 'min', e.target.value)} placeholder="Montant"
+                          style={{ flex: 1, background: 'var(--card)', border: '1.5px solid var(--div)', borderRadius: '8px', padding: '8px 10px', color: 'var(--txt)', fontSize: '12px', outline: 'none' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>DT →</span>
+                        <input type="number" min="0" max="100" value={t.pct} onChange={e => updateRewardTier(i, 'pct', e.target.value)} placeholder="%"
+                          style={{ width: '64px', background: 'var(--card)', border: '1.5px solid var(--div)', borderRadius: '8px', padding: '8px 10px', color: 'var(--txt)', fontSize: '12px', outline: 'none' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>%</span>
+                        <button onClick={() => removeRewardTier(i)} title="Retirer ce palier"
+                          style={{ padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--div)', borderRadius: '6px', color: 'var(--red)', cursor: 'pointer', fontSize: '12px', flexShrink: 0 }}>✕</button>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                      <button onClick={addRewardTier} style={{ flex: 1, padding: '8px', background: 'var(--card)', border: '1px solid var(--div)', borderRadius: '8px', color: 'var(--gold-l)', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>
+                        + Ajouter un palier
+                      </button>
+                      <button onClick={() => saveRewardTiers(actionClient.api_key)} disabled={rewardTiersSaving}
+                        style={{ flex: 1, padding: '8px', background: 'linear-gradient(135deg,var(--gold),var(--gold-l))', border: 'none', borderRadius: '8px', color: '#fff', cursor: rewardTiersSaving ? 'default' : 'pointer', fontSize: '12px', fontWeight: 700, opacity: rewardTiersSaving ? 0.7 : 1 }}>
+                        {rewardTiersSaving ? '…' : '✓ Enregistrer les paliers'}
+                      </button>
+                    </div>
+                    {rewardTiersMsg && <div style={{ fontSize: '11px', marginBottom: '10px', color: rewardTiersMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{rewardTiersMsg}</div>}
                     <button
                       onClick={() => runRewards(actionClient.api_key)}
                       disabled={rewardBusy}

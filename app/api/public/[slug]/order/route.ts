@@ -191,14 +191,41 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
       }
     }
 
-    const [row] = await sql`
-      INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at)
-      VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note}, ${tableNum}, ${tableSec},
-              ${paidNow}, ${paidNow ? 'Client (fidélité)' : null}, ${paidNow ? new Date().toISOString() : null})
-      RETURNING id`
+    // daily_num is the human-facing pickup number ("order #12"), reset every
+    // day per restaurant — id is a global BIGSERIAL, useless to call out at a
+    // counter. Computed inside the INSERT itself to keep the race window as
+    // small as possible; the unique index (migration-online-orders-daily-num.sql)
+    // is the real guarantee, so a same-instant collision just retries once
+    // instead of ever handing two customers the same number.
+    let row: any
+    for (let attempt = 0; ; attempt++) {
+      try {
+        ;[row] = await sql`
+          INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at, daily_num)
+          SELECT ${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}::jsonb, ${total}, ${note}, ${tableNum}, ${tableSec},
+                 ${paidNow}, ${paidNow ? 'Client (fidélité)' : null}, ${paidNow ? new Date().toISOString() : null},
+                 COALESCE((SELECT MAX(daily_num) FROM online_orders WHERE restaurant_id = ${rid} AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date), 0) + 1
+          RETURNING id, daily_num`
+        break
+      } catch (e: any) {
+        const isMissingCol = String(e?.code) === '42703' || /does not exist|undefined_column/i.test(String(e?.message || ''))
+        if (isMissingCol) {
+          // migration-online-orders-daily-num.sql not run yet — fall back to
+          // the pre-daily_num shape rather than failing every online order.
+          ;[row] = await sql`
+            INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at)
+            VALUES (${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}, ${total}, ${note}, ${tableNum}, ${tableSec},
+                    ${paidNow}, ${paidNow ? 'Client (fidélité)' : null}, ${paidNow ? new Date().toISOString() : null})
+            RETURNING id`
+          break
+        }
+        const isDup = String(e?.code) === '23505' || /duplicate|unique/i.test(String(e?.message || ''))
+        if (!isDup || attempt >= 4) throw e
+      }
+    }
 
     return NextResponse.json({
-      ok: true, order_id: row.id, total, items: orderItems, paid: paidNow,
+      ok: true, order_id: row.id, daily_num: row.daily_num, total, items: orderItems, paid: paidNow,
       // Order still went through with whatever WAS available — the client
       // shows this as a heads-up, not a failure.
       droppedOutOfStock: droppedOutOfStock.length ? droppedOutOfStock : undefined,
