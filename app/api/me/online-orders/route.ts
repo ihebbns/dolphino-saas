@@ -42,8 +42,7 @@ import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getApiKey } from '@/lib/auth'
 import { serverError } from '@/lib/apiError'
-import { whatsappConfigured, sendWhatsAppOrderReady } from '@/lib/whatsapp'
-import { sendOrderReadyPush } from '@/lib/webpush'
+import { notifyOrderReady } from '@/lib/orderReady'
 
 // Node runtime, not edge — the web-push package (see lib/webpush.ts) needs
 // real Node crypto internals to sign VAPID requests, which edge's Web
@@ -232,20 +231,10 @@ export async function POST(req: Request) {
             WHERE restaurant_id = ${rest.id} AND num = ${ticketNum} AND bumped = FALSE`
         } catch {}
       }
-      // Best-effort, both awaited — /moi's own live polling is the guaranteed
-      // path; these are bonus nudges for a customer who's closed the tab.
-      // Each is independently inert until its own config exists (WhatsApp
-      // needs WHATSAPP_TOKEN/WHATSAPP_PHONE_ID; push needs the VAPID keys and
-      // an actual subscription for this order). Neither's failure can fail
-      // markReady itself — a notification not going out is not the same
-      // problem as the order not actually being marked ready.
-      if (whatsappConfigured() && res[0].client_phone) {
-        await sendWhatsAppOrderReady(res[0].client_phone, res[0].client_name, orderId).catch(() => {})
-      }
-      await sendOrderReadyPush(orderId, {
-        title: 'Commande prête ! 🍽️',
-        body: `${res[0].client_name}, votre commande #${orderId} est prête.`,
-      }).catch(() => {})
+      // /moi's own live polling is the guaranteed path; this is a bonus
+      // nudge for a customer who's closed the tab — its failure can't fail
+      // markReady itself, see notifyOrderReady's own doc comment.
+      await notifyOrderReady({ id: orderId, client_name: res[0].client_name, client_phone: res[0].client_phone })
       return cors(NextResponse.json({ ok: true }))
     }
 

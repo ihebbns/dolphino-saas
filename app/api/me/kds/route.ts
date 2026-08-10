@@ -29,8 +29,13 @@ import { getApiKey } from '@/lib/auth'
 import {
   isMissingSchema, serverError, notReadyPayload, missingRelations,
 } from '@/lib/apiError'
+import { notifyOrderReady } from '@/lib/orderReady'
 
-export const runtime = 'edge'
+// Node runtime, not edge — notifyOrderReady pulls in the web-push package
+// (see lib/webpush.ts), which needs real Node crypto internals to sign
+// VAPID requests. This route isn't a latency-sensitive hot path (a human
+// tapping "bump" or the till polling every ~20s), so the switch costs
+// nothing that matters.
 
 const cors = (r: NextResponse) => {
   r.headers.set('Access-Control-Allow-Origin', '*')
@@ -120,9 +125,45 @@ export async function POST(req: Request) {
     if (body.action === 'bump') {
       const ticketKey = clip(body.ticket_key, 64)
       if (!ticketKey) return cors(NextResponse.json({ ok: false, error: 'ticket_key requis' }, { status: 400 }))
-      await sql`
-        UPDATE kds_tickets SET bumped = TRUE, bumped_at = NOW(), bumped_by = ${clip(body.actor, 80)}
-        WHERE restaurant_id = ${rid} AND ticket_key = ${ticketKey} AND bumped = FALSE`
+      const actor = clip(body.actor, 80)
+      const bumped = await sql`
+        UPDATE kds_tickets SET bumped = TRUE, bumped_at = NOW(), bumped_by = ${actor}
+        WHERE restaurant_id = ${rid} AND ticket_key = ${ticketKey} AND bumped = FALSE
+        RETURNING num`
+      // Kitchen finishing the LAST ticket for an online/kiosk order (num
+      // prefixed KIO/WEB, see printOnlineOrderKitchenTicket in the POS) is
+      // the same "this order is done" signal as staff tapping "Marquer
+      // prêt" — fire it from HERE too, so the customer's own tracking page
+      // and notification update no matter which device did the actual
+      // bumping (the till's own embedded KDS overlay, or this standalone
+      // /kitchen/[slug] screen — either one calls this same endpoint).
+      // `bumped.length` guards this to a REAL false->true transition only
+      // (never a re-bump of an already-done ticket), so two devices racing
+      // to bump the same ticket, or a retried request, can't double-fire.
+      if (bumped.length) {
+        const num = String(bumped[0].num || '')
+        const prefix = num.slice(0, 3)
+        if (prefix === 'KIO' || prefix === 'WEB') {
+          try {
+            const doneRows = await sql`
+              SELECT bool_and(bumped) AS all_done FROM kds_tickets
+              WHERE restaurant_id = ${rid} AND num = ${num}
+                AND (sent_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date`
+            if (doneRows[0]?.all_done) {
+              const dailyNum = parseInt(num.slice(3), 10)
+              if (Number.isFinite(dailyNum)) {
+                const ready = await sql`
+                  UPDATE online_orders SET ready = TRUE, ready_at = NOW(), ready_by = ${actor || 'Cuisine'}
+                  WHERE restaurant_id = ${rid} AND daily_num = ${dailyNum} AND status = 'accepted' AND ready = FALSE
+                  RETURNING id, client_name, client_phone`
+                if (ready.length) {
+                  await notifyOrderReady({ id: ready[0].id, client_name: ready[0].client_name, client_phone: ready[0].client_phone })
+                }
+              }
+            }
+          } catch { /* best-effort — the ticket bump itself already succeeded above */ }
+        }
+      }
       return cors(NextResponse.json({ ok: true }))
     }
 
