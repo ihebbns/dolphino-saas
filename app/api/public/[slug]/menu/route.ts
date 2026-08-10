@@ -38,35 +38,47 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
     const r = rows[0]
     const config = (r.config && typeof r.config === 'object') ? r.config : {}
     const modules = (config.modules && typeof config.modules === 'object') ? config.modules : {}
-    const menuRaw = (r.menu_json && typeof r.menu_json === 'object') ? r.menu_json : {}
+    const onlineOrdersEnabled = modules.onlineOrders === true
 
-    // Same gate the POS itself uses (isStockEnabled()) — rupture only means
-    // something once stock is actually being tracked for this client.
-    let outOfStock = new Set<string>()
-    if (modules.stockTracking !== false) {
-      const stockRows = await sql`
-        SELECT item_id FROM stock WHERE restaurant_id = ${r.id} AND is_available = FALSE`
-      outOfStock = new Set(stockRows.map((s: any) => String(s.item_id)))
-    }
-
-    // Strip to exactly what a customer needs to browse and order — no cost,
-    // no barcode, no track_mode, nothing internal. Out-of-stock items stay
-    // visible but flagged, not hidden — same as a real kiosk shows a
-    // grayed-out "sold out" tile rather than making the item vanish.
+    // A restaurant that hasn't turned online ordering on at all shouldn't
+    // have its catalog/pricing sitting in this response either — the UI
+    // already refuses to let anyone order (see /moi's "not available"
+    // screen), but the full menu was still being fetched and handed to the
+    // client underneath that message, visible to anyone who opens the
+    // network tab. No menu, no stock lookup, nothing to leak. walletEnabled
+    // stays accurate either way — checking a loyalty balance is unrelated
+    // to whether this restaurant takes online orders.
     const menu: Record<string, any> = {}
-    for (const [catName, catVal] of Object.entries<any>(menuRaw)) {
-      const items = Array.isArray(catVal) ? catVal : (catVal?.items ?? [])
-      const cleanItems = items
-        .filter((it: any) => it && it.name)
-        .map((it: any) => ({
-          id: String(it.id ?? ''),
-          name: String(it.name).slice(0, 100),
-          e: String(it.e || it.emoji || '🍽️').slice(0, 10),
-          price: itemPrice(it),
-          variants: Array.isArray(it.v) ? it.v.map((v: any) => ({ label: String(v?.l || ''), price: Number(v?.p) || 0 })) : null,
-          available: !outOfStock.has(String(it.id ?? '')),
-        }))
-      if (cleanItems.length) menu[catName] = { icon: catVal?.icon || '📦', items: cleanItems }
+    if (onlineOrdersEnabled) {
+      const menuRaw = (r.menu_json && typeof r.menu_json === 'object') ? r.menu_json : {}
+
+      // Same gate the POS itself uses (isStockEnabled()) — rupture only means
+      // something once stock is actually being tracked for this client.
+      let outOfStock = new Set<string>()
+      if (modules.stockTracking !== false) {
+        const stockRows = await sql`
+          SELECT item_id FROM stock WHERE restaurant_id = ${r.id} AND is_available = FALSE`
+        outOfStock = new Set(stockRows.map((s: any) => String(s.item_id)))
+      }
+
+      // Strip to exactly what a customer needs to browse and order — no cost,
+      // no barcode, no track_mode, nothing internal. Out-of-stock items stay
+      // visible but flagged, not hidden — same as a real kiosk shows a
+      // grayed-out "sold out" tile rather than making the item vanish.
+      for (const [catName, catVal] of Object.entries<any>(menuRaw)) {
+        const items = Array.isArray(catVal) ? catVal : (catVal?.items ?? [])
+        const cleanItems = items
+          .filter((it: any) => it && it.name)
+          .map((it: any) => ({
+            id: String(it.id ?? ''),
+            name: String(it.name).slice(0, 100),
+            e: String(it.e || it.emoji || '🍽️').slice(0, 10),
+            price: itemPrice(it),
+            variants: Array.isArray(it.v) ? it.v.map((v: any) => ({ label: String(v?.l || ''), price: Number(v?.p) || 0 })) : null,
+            available: !outOfStock.has(String(it.id ?? '')),
+          }))
+        if (cleanItems.length) menu[catName] = { icon: catVal?.icon || '📦', items: cleanItems }
+      }
     }
 
     return NextResponse.json({
@@ -75,7 +87,7 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
       logo: config.logo || '🏪',
       tagline: config.tagline || '',
       currency: config.currency || 'DT',
-      onlineOrdersEnabled: modules.onlineOrders === true,
+      onlineOrdersEnabled,
       walletEnabled: modules.wallet === true,
       // Wallet-pay (paying for an order with balance, not just viewing it)
       // additionally requires PIN protection — see /api/public/[slug]/order.
