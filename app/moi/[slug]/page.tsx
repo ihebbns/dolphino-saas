@@ -575,6 +575,19 @@ export default function PublicOrderPage({ params }: { params: { slug: string } }
                   <div className="moiHint">Le commerce va la confirmer sous peu.</div>
                 </>
               )}
+              {/* The number to remember/watch for — id is a global platform-wide
+                  counter, meaningless to a customer; daily_num is this
+                  restaurant's own ticket count for today, same number that
+                  ends up on the pickup board and (once staff check it out)
+                  the receipt. Absent only on a not-yet-migrated server (see
+                  the route's fallback), so guard for that — same pattern as
+                  the kiosk confirmation screen. */}
+              {confirmed.daily_num != null && (
+                <div className="moiOrderNumCard">
+                  <div className="moiOrderNumLabel">Votre numéro</div>
+                  <div className="moiOrderNum">#{confirmed.daily_num}</div>
+                </div>
+              )}
               {confirmed.droppedOutOfStock && (
                 <div className="moiErr" style={{ marginTop: 10 }}>⚠️ Indisponible, retiré de la commande : {confirmed.droppedOutOfStock.join(', ')}</div>
               )}

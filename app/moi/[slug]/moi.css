@@ -60,6 +60,9 @@
 .moiPremiumPhone{font-size:13px;letter-spacing:2px;color:rgba(245,241,232,.6);font-variant-numeric:tabular-nums;}
 .moiPremiumRewardRow{display:flex;align-items:center;gap:6px;margin:0 16px 14px;padding:10px 14px;border-radius:12px;background:var(--m-tab-on-bg);border:1px solid var(--m-tab-on-border);font-size:12px;font-weight:700;color:var(--m-accent);}
 
+.moiOrderNumCard{margin:14px 0;padding:16px 20px;border-radius:16px;background:linear-gradient(135deg,var(--m-tab-on-bg),transparent);border:2px solid var(--m-tab-on-border);text-align:center;}
+.moiOrderNumLabel{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--m-muted);margin-bottom:4px;}
+.moiOrderNum{font-size:40px;font-weight:900;color:var(--m-accent);letter-spacing:.5px;line-height:1.1;}
 .moiBalanceCard{text-align:center;}
 .moiBalance{font-size:30px;font-weight:800;color:var(--m-ok);margin:6px 0;}
 .moiRewardOk{color:var(--m-ok);font-size:13px;font-weight:700;margin-top:6px;}
