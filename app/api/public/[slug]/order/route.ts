@@ -197,11 +197,25 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
       }
     }
 
-    // daily_num is the human-facing pickup number ("order #12"), reset every
-    // day per restaurant — id is a global BIGSERIAL, useless to call out at a
-    // counter. Computed inside the INSERT itself to keep the race window as
-    // small as possible; the unique index (migration-online-orders-daily-num.sql)
-    // is the real guarantee, so a same-instant collision just retries once
+    // daily_num is the human-facing pickup/order number ("order #501"), reset
+    // every day per restaurant — id is a global BIGSERIAL, useless to call
+    // out at a counter. Starts at 501, not 1: this SAME number is reused as
+    // the actual sale's ticket number once staff check the order out (see
+    // encaisser()/finalizeOnlinePaidOrderSale() in the POS) — a regular
+    // counter sale's own number resets from 1 each day and would eventually
+    // collide with a low online daily_num on a busy day. Starting online
+    // orders at 501 keeps the two ranges apart without any coordination
+    // between the till (offline-capable, numbers its own counter sales
+    // locally) and the server (the only place online orders can be created,
+    // since submitting one is already an online action). This is also what
+    // makes the number a customer sees at kiosk/moi checkout the EXACT same
+    // number that ends up on staff's receipt — the original bug report this
+    // fixes: kiosk/online showed one number, the till's checkout screen
+    // showed a completely different one.
+    //
+    // Computed inside the INSERT itself to keep the race window as small as
+    // possible; the unique index (migration-online-orders-daily-num.sql) is
+    // the real guarantee, so a same-instant collision just retries once
     // instead of ever handing two customers the same number.
     let row: any
     for (let attempt = 0; ; attempt++) {
@@ -210,7 +224,7 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
           INSERT INTO online_orders (restaurant_id, client_name, client_phone, order_type, items_json, total, note, table_num, table_sec, paid, paid_by, paid_at, daily_num, source)
           SELECT ${rid}, ${name}, ${phone}, ${orderType}, ${JSON.stringify(orderItems)}::jsonb, ${total}, ${note}, ${tableNum}, ${tableSec},
                  ${paidNow}, ${paidNow ? 'Client (fidélité)' : null}, ${paidNow ? new Date().toISOString() : null},
-                 COALESCE((SELECT MAX(daily_num) FROM online_orders WHERE restaurant_id = ${rid} AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date), 0) + 1,
+                 GREATEST(500, COALESCE((SELECT MAX(daily_num) FROM online_orders WHERE restaurant_id = ${rid} AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date), 0)) + 1,
                  ${source}
           RETURNING id, daily_num, source`
         break

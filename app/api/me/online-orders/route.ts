@@ -110,13 +110,28 @@ export async function GET(req: Request) {
     // flag staying accurate) means even a bug elsewhere can't resurrect a
     // "🧾 Encaisser" button for money the table itself will collect —
     // the exact double-billing shape this queue exists to prevent.
-    const unpaid = await sql`
-      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at, ready,
-             table_num, table_sec,
-             CASE WHEN claimed_at > NOW() - INTERVAL '3 minutes' THEN claimed_by ELSE NULL END AS claimed_by
-      FROM online_orders
-      WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE AND table_num IS NULL
-      ORDER BY responded_at ASC`
+    // daily_num/source travel here too now — this is where encaisserOnlineOrder()
+    // reads the order it's about to check out from, and it needs the SAME
+    // daily_num the customer already saw so the sale it produces carries that
+    // exact number instead of drawing a fresh one from the till's own counter.
+    let unpaid: any[]
+    try {
+      unpaid = await sql`
+        SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at, ready,
+               table_num, table_sec, daily_num, source,
+               CASE WHEN claimed_at > NOW() - INTERVAL '3 minutes' THEN claimed_by ELSE NULL END AS claimed_by
+        FROM online_orders
+        WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE AND table_num IS NULL
+        ORDER BY responded_at ASC`
+    } catch {
+      unpaid = await sql`
+        SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, note, responded_at, ready,
+               table_num, table_sec,
+               CASE WHEN claimed_at > NOW() - INTERVAL '3 minutes' THEN claimed_by ELSE NULL END AS claimed_by
+        FROM online_orders
+        WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND paid = FALSE AND table_num IS NULL
+        ORDER BY responded_at ASC`
+    }
 
     // Separate from `unpaid` on purpose — paid and ready are independent
     // (a kiosk order can be paid via wallet before the kitchen is done, or

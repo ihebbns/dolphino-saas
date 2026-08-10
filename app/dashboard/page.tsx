@@ -378,8 +378,14 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
   // expect to see first; 'Annulées'/'Toutes' are one click away for tracing.
   const [voidFilter, setVoidFilter] = useState<'active' | 'voided' | 'all'>('active')
   const voidCount = orders.filter((r: any) => r.voided).length
+  // Simple on purpose — the owner doesn't think in "kiosk vs moi vs QR", just
+  // "did this come from a customer's phone/screen, or did staff type it in".
+  // The specific channel still shows as a badge per row for anyone who wants it.
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'online' | 'caisse'>('all')
+  const onlineCount = orders.filter((r: any) => r.source && r.source !== 'caisse').length
   const filtered = orders
     .filter((r: any) => voidFilter === 'all' ? true : voidFilter === 'voided' ? r.voided : !r.voided)
+    .filter((r: any) => sourceFilter === 'all' ? true : sourceFilter === 'online' ? (r.source && r.source !== 'caisse') : (!r.source || r.source === 'caisse'))
     .filter((r:any) =>
       !search || r.cashier?.toLowerCase().includes(search.toLowerCase()) ||
       String(r.num).includes(search)
@@ -391,6 +397,7 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
   const payMap:  any = { cash:'💵 Espèces', card:'💳 Carte', mob:'📱 Mobile', credit:'📒 Crédit' }
   const typeCls: any = { place:s.bPlace, take:s.bTake, del:s.bDel, table:s.bPlace }
   const payCls:  any = { cash:s.bCash, card:s.bCard, mob:s.bMob, credit:s.bCredit }
+  const sourceMap: any = { kiosk: '🖥️ Kiosque', moi: '🌐 En ligne' }
 
   return (
     <>
@@ -404,6 +411,12 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
           <option value="voided">🗑️ Annulées{voidCount ? ` (${voidCount})` : ''}</option>
           <option value="all">Toutes</option>
         </select>
+        <select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value as any)}
+          style={{padding:'8px 10px',borderRadius:8,border:'1px solid var(--div)',background:'var(--card)',color:'var(--txt)',fontSize:12}}>
+          <option value="all">Toutes provenances</option>
+          <option value="online">📱 Depuis le téléphone{onlineCount ? ` (${onlineCount})` : ''}</option>
+          <option value="caisse">🏪 Caisse</option>
+        </select>
         <span style={{fontSize:12,color:'var(--muted)'}}>{filtered.length} commandes</span>
       </div>
       <div className={s.tableWrap}>
@@ -412,7 +425,7 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
             ? <div className={s.empty}><div className={s.emptyIcon}>🧾</div><div className={s.emptyText}>Aucune commande</div></div>
             : <table className={s.table}>
                 <thead><tr>
-                  <th>#</th><th>Heure</th><th>Type</th><th>Articles</th><th>Total</th><th>Paiement</th><th>Caissier</th><th>Statut</th>
+                  <th>#</th><th>Heure</th><th>Type</th><th>Articles</th><th>Total</th><th>Paiement</th><th>Caissier</th><th>Provenance</th><th>Statut</th>
                 </tr></thead>
                 <tbody>
                   {filtered.map((r:any, i:number) => (
@@ -425,6 +438,10 @@ function OrdersTable({ orders, search, onSearch }: { orders: any[], search: stri
                       <td className={s.bold} style={r.voided ? {textDecoration:'line-through'} : undefined}>{f(r.grand)} DT</td>
                       <td><span className={`${s.badge} ${payCls[r.pay_method]||s.bCash}`}>{payMap[r.pay_method]||r.pay_method}</span></td>
                       <td className={s.muted}>{r.cashier}</td>
+                      <td>{r.source && r.source !== 'caisse'
+                        ? <span style={{fontSize:11,color:'var(--blue)'}}>{sourceMap[r.source] || r.source}</span>
+                        : <span style={{fontSize:11,color:'var(--muted)'}}>🏪 Caisse</span>}
+                      </td>
                       <td>{r.voided
                         ? <span style={{padding:'3px 9px',borderRadius:12,fontSize:11,fontWeight:700,background:'var(--red-dim)',color:'var(--red)',border:'1px solid rgba(224,82,82,.3)'}}>🗑️ Annulée</span>
                         : <span style={{fontSize:11,color:'var(--green)'}}>✓ Active</span>}

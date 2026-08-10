@@ -44,20 +44,26 @@ export async function POST(req: Request) {
   const voidReason = String(sale.voidReason ?? '').slice(0, 200)
   const voidedBy  = String(sale.voidedBy ?? '').slice(0, 80)
   const voidedAt  = sale.voidedAt ? new Date(sale.voidedAt).toISOString() : null
+  // Which channel this sale started life as — 'caisse' (typed at the till,
+  // the default) unless the POS is finalizing an accepted kiosk/moi order
+  // (see encaisser()/finalizeOnlinePaidOrderSale()), in which case it stamps
+  // the order's own source through. Purely a dashboard filter/badge — never
+  // changes how the sale itself is processed.
+  const source = ['kiosk', 'moi'].includes(String(sale.source)) ? String(sale.source) : 'caisse'
 
   try {
-    // Attempt 1: fully-migrated DB (has session_id, cogs, AND void columns)
+    // Attempt 1: fully-migrated DB (has session_id, cogs, void, AND source columns)
     try {
       await sql`
         INSERT INTO sales
-          (restaurant_id,num,business_date,sale_date,sale_time,items,subtotal,discount,disc_pct,grand,pay_method,received,monnaie,order_type,cli_name,cli_tel,cashier,session_id,cogs,voided,void_reason,void_by,voided_at)
+          (restaurant_id,num,business_date,sale_date,sale_time,items,subtotal,discount,disc_pct,grand,pay_method,received,monnaie,order_type,cli_name,cli_tel,cashier,session_id,cogs,voided,void_reason,void_by,voided_at,source)
         VALUES
           (${rid},${num},${bizDate},${(sale.date||'').slice(0,30)},${(sale.time||'').slice(0,30)},
            ${items}::jsonb,${+sale.s||0},${+sale.d||0},${+sale.disc||0},${+sale.g},
            ${(sale.payMode||'cash').slice(0,20)},${+sale.r||+sale.g},${+sale.monnaie||0},
            ${(sale.type||'place').slice(0,20)},${(sale.cliName||'').slice(0,100)},
            ${(sale.cliTel||'').slice(0,30)},${(sale.cashier||'').slice(0,80)},${sessionId},${cogs},
-           ${voided},${voidReason},${voidedBy},${voidedAt})
+           ${voided},${voidReason},${voidedBy},${voidedAt},${source})
         ON CONFLICT (restaurant_id,num,business_date,cashier)
         DO UPDATE SET session_id = EXCLUDED.session_id, cogs = EXCLUDED.cogs,
           voided      = sales.voided OR EXCLUDED.voided,

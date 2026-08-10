@@ -210,7 +210,7 @@ export async function GET(req: Request) {
            cashier, disc_pct, cli_name, cli_tel,
            received::float, monnaie::float, session_id,
            items, jsonb_array_length(items) AS item_count,
-           voided, void_reason, void_by, voided_at
+           voided, void_reason, void_by, voided_at, source
     FROM sales WHERE restaurant_id=${rid} AND business_date=${date}::date
     ORDER BY num DESC LIMIT 1000`
 
