@@ -130,16 +130,23 @@ export async function POST(req: Request) {
         UPDATE kds_tickets SET bumped = TRUE, bumped_at = NOW(), bumped_by = ${actor}
         WHERE restaurant_id = ${rid} AND ticket_key = ${ticketKey} AND bumped = FALSE
         RETURNING num`
-      // Kitchen finishing the LAST ticket for an online/kiosk order (num
-      // prefixed KIO/WEB, see printOnlineOrderKitchenTicket in the POS) is
-      // the same "this order is done" signal as staff tapping "Marquer
-      // prêt" — fire it from HERE too, so the customer's own tracking page
-      // and notification update no matter which device did the actual
-      // bumping (the till's own embedded KDS overlay, or this standalone
-      // /kitchen/[slug] screen — either one calls this same endpoint).
-      // `bumped.length` guards this to a REAL false->true transition only
-      // (never a re-bump of an already-done ticket), so two devices racing
-      // to bump the same ticket, or a retried request, can't double-fire.
+      // A kds_tickets row only ever exists for an order whose restaurant is
+      // actually using the KDS screen (kitchenOutputMode 'screen' or
+      // 'both', see the POS's autoPrintKitchen) — a ticket-only kitchen
+      // never creates one, so this branch can never fire for them; they
+      // stay on the cashier's explicit "Marquer prêt" button (see
+      // /api/me/online-orders) as their only path, same as always. For a
+      // screen-using kitchen, finishing the LAST ticket for an order IS
+      // the real-world "done" signal (same as Toast/Square auto-releasing
+      // from KDS completion) — release it here too, so staff don't have to
+      // separately press a second button for something the kitchen screen
+      // already just told everyone. The cashier's button stays available
+      // regardless, as a manual override (kitchen forgot to bump, staff
+      // know it's actually ready, whatever). `bumped.length` guards this
+      // to a REAL false->true transition only, so two devices racing to
+      // bump the same ticket — or the cashier's button firing around the
+      // same moment — can't double-release or double-notify (the
+      // online_orders UPDATE below has its own `ready = FALSE` guard too).
       if (bumped.length) {
         const num = String(bumped[0].num || '')
         const prefix = num.slice(0, 3)

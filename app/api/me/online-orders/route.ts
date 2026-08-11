@@ -140,29 +140,24 @@ export async function GET(req: Request) {
     // items_json included so the till can reprint this order's kitchen
     // ticket from the "En préparation" list at any point, not only in the
     // few seconds right after accepting it (before this query ever runs).
-    const preparing = await sql`
-      SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, responded_at, paid, table_num, table_sec
-      FROM online_orders
-      WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
-      ORDER BY responded_at ASC`
-
-    // Kitchen finished it (ready = TRUE, see markReady / the kds bump path)
-    // but staff at the till have no other reason to see it again — nothing
-    // was pulling this into the POS's own view before, so a cashier had no
-    // in-app signal that an order was sitting done, only the physical
-    // pickup board or word of mouth from the kitchen. table_num IS NULL for
-    // the same reason as everywhere else here — a table order's own flow
-    // handles it. Scoped to today so this can't grow unbounded.
-    let ready: any[] = []
+    // daily_num/source let the till match this order against its own local
+    // kitchen-ticket state (KIO/WEB+daily_num) to show the cashier whether
+    // kitchen has actually bumped it yet, right next to "Marquer prêt" —
+    // the informed signal for that judgment call, not an automatic trigger.
+    let preparing: any[]
     try {
-      ready = await sql`
-        SELECT id, client_name, order_type, daily_num, source, ready_at
+      preparing = await sql`
+        SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, responded_at, paid, table_num, table_sec, daily_num, source
         FROM online_orders
-        WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = TRUE AND table_num IS NULL
-          AND (ready_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
-        ORDER BY ready_at DESC
-        LIMIT 20`
-    } catch { /* daily_num/source missing on a pre-migration restaurant — degrade to no ready list, not a 500 */ }
+        WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
+        ORDER BY responded_at ASC`
+    } catch {
+      preparing = await sql`
+        SELECT id, client_name, client_phone, order_type, items_json, total::float AS total, responded_at, paid, table_num, table_sec
+        FROM online_orders
+        WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
+        ORDER BY responded_at ASC`
+    }
 
     // Includes who acted (responded_by / paid_by) and the full order, not just
     // a summary — this is what the manager's /orders audit page reads, so it
@@ -176,7 +171,7 @@ export async function GET(req: Request) {
       WHERE restaurant_id = ${rest.id} AND status != 'pending'
       ORDER BY responded_at DESC LIMIT 100`
 
-    return cors(NextResponse.json({ ok: true, pending, unpaid, preparing, ready, recent }))
+    return cors(NextResponse.json({ ok: true, pending, unpaid, preparing, recent }))
   } catch (e: any) {
     return cors(NextResponse.json(serverError('online-orders GET', e), { status: 500 }))
   }
@@ -232,15 +227,14 @@ export async function POST(req: Request) {
           RETURNING id, client_name, client_phone`
       }
       if (!res.length) return cors(NextResponse.json({ ok: false, error: 'Commande introuvable ou déjà prête' }, { status: 404 }))
-      // The public pickup board (/ready/[slug]) doesn't read online_orders.ready
-      // at all — it only lights up a number once every kds_tickets row sharing
-      // that order's ticket num is bumped (see printOnlineOrderKitchenTicket's
-      // KIO/WEB-prefixed num and /api/public/[slug]/ready-orders). Without this,
-      // staff clicking "Marquer prêt" at the till silently does nothing the
-      // board can see — this is what actually makes that button work. Ignores
-      // restaurants without daily_num (can't compute the ticket num) or
-      // without migration-kds.sql (table missing) — best-effort, not required
-      // for markReady itself to succeed.
+      // The public pickup board (/ready/[slug]) reads online_orders.ready
+      // directly now, so the UPDATE above already makes this button work on
+      // its own. Also bump any matching kds_tickets rows purely so the
+      // KDS screen itself doesn't keep showing a ticket for an order the
+      // cashier already released — a cosmetic follow-up, not required for
+      // markReady or the board. Ignores restaurants without daily_num (can't
+      // compute the ticket num) or without migration-kds.sql (table
+      // missing) — best-effort either way.
       if (res[0].daily_num != null) {
         const ticketNum = (res[0].source === 'kiosk' ? 'KIO' : 'WEB') + String(res[0].daily_num).padStart(3, '0')
         try {
