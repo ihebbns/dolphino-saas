@@ -890,6 +890,42 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
                     </label>
                   )
                 })}
+
+                {/* Sortie cuisine — a restaurant is free to run paper tickets
+                    only, the KDS screen only, or both; this decides what
+                    autoPrintKitchen() actually does on the till (see
+                    kitchenOutputMode in checkLicense()). Only meaningful once
+                    kitchenTickets itself is on. Stored as a plain sibling key
+                    on the same config object modules live in — saveModules
+                    already sends the whole config, so no separate save path. */}
+                {(moduleCfg.modules['kitchenTickets'] === undefined ? !MODULES_DEFAULT_OFF.has('kitchenTickets') : moduleCfg.modules['kitchenTickets']) && (
+                  <div style={{ marginTop:'10px', padding:'10px 6px', borderTop:'1px solid var(--div)' }}>
+                    <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>
+                      🧑‍🍳 Sortie cuisine
+                    </div>
+                    {[
+                      { id:'both',   label:'Ticket + écran',  desc:'Imprime ET envoie sur l’écran cuisine (défaut)' },
+                      { id:'ticket', label:'Ticket seul',     desc:'Imprime uniquement — pas d’écran cuisine' },
+                      { id:'screen', label:'Écran seul',      desc:'Écran cuisine uniquement — aucune impression' },
+                    ].map(opt => {
+                      const current = moduleCfg.config.kitchenOutputMode || 'both'
+                      return (
+                        <label key={opt.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'6px', borderRadius:'8px', cursor:'pointer' }}>
+                          <input
+                            type="radio" name="kitchenOutputMode" checked={current === opt.id}
+                            onChange={() => setModuleCfg(prev => prev ? { ...prev, config: { ...prev.config, kitchenOutputMode: opt.id } } : prev)}
+                            style={{ width:'16px', height:'16px', accentColor:'var(--gold)', flexShrink:0 }}
+                          />
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:'13px', fontWeight:'600' }}>{opt.label}</div>
+                            <div style={{ fontSize:'11px', color:'var(--muted)' }}>{opt.desc}</div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+
                 <button
                   onClick={() => saveModules(actionClient.api_key)}
                   disabled={moduleSaving}
