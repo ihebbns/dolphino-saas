@@ -616,6 +616,27 @@ function tblItemsTotal(items: any[]): number {
   return (items || []).reduce((a, it) => a + (Number(it.p) || 0) * (Number(it.qty) || 0), 0)
 }
 
+// "Since when" a table's been open, formatted like the POS's own tblElapsed()
+// — "42min" / "1h15". Same urgency-color idea as the kitchen tickets already
+// use, just tuned for a table's own timescale (a dine-in table naturally
+// stays open far longer than a kitchen ticket): green under 45min is a
+// normal meal in progress, orange 45–90min is worth a glance, red past 90min
+// is what actually surfaces as an alert below — a table that long usually
+// means forgotten to close, not still eating.
+const TBL_ALERT_MINUTES = 90
+const TBL_WARN_MINUTES = 45
+function tblElapsedMinutes(at: number | null): number {
+  if (!at) return 0
+  return Math.max(0, Math.floor((Date.now() - at) / 60000))
+}
+function tblElapsedLabel(mins: number): string {
+  const h = Math.floor(mins / 60), m = mins % 60
+  return h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m}min`
+}
+function tblElapsedColor(mins: number): string {
+  return mins >= TBL_ALERT_MINUTES ? 'var(--red)' : mins >= TBL_WARN_MINUTES ? '#F5A623' : 'var(--muted)'
+}
+
 function TablesSection({ tables, audit }: { tables: any[]; audit: any[] }) {
   const [selected, setSelected] = useState<string | null>(null)
 
@@ -629,6 +650,7 @@ function TablesSection({ tables, audit }: { tables: any[]; audit: any[] }) {
   }
   const activeCount = tables.filter(t => t.status !== 'free').length
   const totalDT = tables.reduce((a, t) => a + (t.status !== 'free' ? tblItemsTotal(t.items) * (1 - (t.disc || 0) / 100) : 0), 0)
+  const alertTables = tables.filter(t => t.status !== 'free' && tblElapsedMinutes(t.at) >= TBL_ALERT_MINUTES)
 
   const selectedTable = selected ? tables.find(t => t.id === selected) : null
   const selectedAudit = selected
@@ -670,6 +692,24 @@ function TablesSection({ tables, audit }: { tables: any[]; audit: any[] }) {
       <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '14px' }}>
         {activeCount} table{activeCount !== 1 ? 's' : ''} active{activeCount !== 1 ? 's' : ''} · {f(totalDT)} DT en cours · mis à jour toutes les 15s
       </div>
+      {/* Anomaly alert — a table open this long usually means forgotten to
+          close (customer left without the table being freed, a payment step
+          skipped, etc.), not a genuinely 90min+ meal. Click straight into it. */}
+      {alertTables.length > 0 && (
+        <div style={{ marginBottom: '14px', padding: '10px 14px', borderRadius: '10px', background: 'rgba(224,82,82,.1)', border: '1px solid rgba(224,82,82,.3)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--red)', marginBottom: '4px' }}>
+            ⚠️ {alertTables.length} table{alertTables.length > 1 ? 's' : ''} ouverte{alertTables.length > 1 ? 's' : ''} depuis plus de {TBL_ALERT_MINUTES} min — à vérifier
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {alertTables.map(t => (
+              <span key={t.id} onClick={() => setSelected(t.id)}
+                style={{ fontSize: '11px', fontWeight: 700, color: 'var(--red)', cursor: 'pointer', textDecoration: 'underline' }}>
+                Table {t.num} ({t.sec}) — {tblElapsedLabel(tblElapsedMinutes(t.at))}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {[...bySection.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([sec, tables]) => (
         <div key={sec} style={{ marginBottom: '18px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '8px' }}>{sec}</div>
@@ -677,14 +717,18 @@ function TablesSection({ tables, audit }: { tables: any[]; audit: any[] }) {
             {tables.sort((a, b) => a.num - b.num).map(t => {
               const occ = t.status !== 'free'
               const total = occ ? tblItemsTotal(t.items) * (1 - (t.disc || 0) / 100) : 0
+              const mins = occ ? tblElapsedMinutes(t.at) : 0
+              const isAlert = occ && mins >= TBL_ALERT_MINUTES
               return (
                 <div key={t.id} onClick={() => setSelected(t.id)}
-                  style={{ padding: '12px', borderRadius: '10px', cursor: 'pointer', background: 'var(--bg2)', border: `1.5px solid ${occ ? TBL_STATUS_COLOR[t.status] : 'var(--div)'}` }}>
+                  style={{ padding: '12px', borderRadius: '10px', cursor: 'pointer', background: 'var(--bg2)', border: `1.5px solid ${isAlert ? 'var(--red)' : occ ? TBL_STATUS_COLOR[t.status] : 'var(--div)'}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: occ ? TBL_STATUS_COLOR[t.status] : 'var(--div)', flexShrink: 0 }} />
                     <span style={{ fontSize: '13px', fontWeight: 700 }}>Table {t.num}</span>
+                    {isAlert && <span style={{ fontSize: '11px' }}>⚠️</span>}
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{TBL_STATUS_LABEL[t.status] || t.status}</div>
+                  {occ && <div style={{ fontSize: '11px', fontWeight: 700, color: tblElapsedColor(mins), marginTop: '2px' }}>🕐 {tblElapsedLabel(mins)}</div>}
                   {occ && <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--gold-l)', marginTop: '4px' }}>{f(total)} DT</div>}
                   {t.by && <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>👤 {t.by}</div>}
                 </div>
