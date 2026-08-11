@@ -44,24 +44,25 @@ export const DESTINATIONS: Destination[] = [
   // separate destination duplicated the same view one tap further away, and
   // duplicated views drift apart.
   //
-  // Four destinations, not five. An empty slot is better than a filled one nobody
-  // taps: /audit is the raw drawer-opening trail, which is an investigation tool,
-  // not a daily errand.
   // "Crédit" not "Créances": the word on the till, and the word the owner uses.
-  // Fidélité lives as a SUB-route here rather than its own destination, same
-  // reasoning as /stock's subs below — it's the same "money tied to a named
+  // Fidélité lives as a SUB-route here rather than its own destination — same
+  // reasoning as /stock's subs below, it's the same "money tied to a named
   // client" idea as Crédit, just the other sign (a balance they own, not a
-  // debt), so it doesn't earn a 5th thumb-height slot of its own. Commandes
-  // (the PWA/kiosk order history) joins them for the same reason: it's the
-  // audit trail for the same customer-facing money flow, not a new concern.
+  // debt), so it doesn't earn its own thumb-height slot.
   {
     href: '/credits', name: 'Crédit', short: 'Crédit', icon: 'receipt',
     subs: [
       { href: '/credits', name: 'Crédit' },
       { href: '/wallet', name: 'Fidélité' },
-      { href: '/orders', name: 'Commandes' },
     ],
   },
+  // Commandes (the PWA/kiosk order history) USED to live buried as a third
+  // sub-tab under Crédit — reasoned at the time as "the same customer-facing
+  // money flow, not a new concern." In practice an owner checking this
+  // remotely is hunting for a specific problem (an order accepted at the
+  // till that never got encaissée) and needs to get there fast, not via
+  // Crédit → then find the right sub-tab. Five destinations, not four.
+  { href: '/orders', name: 'Commandes', short: 'Commandes', icon: 'clipboard' },
   // Établissement is deliberately absent: its settings move under Profil, so the
   // owner has one place for "me and my account" instead of two.
   { href: '/profil', name: 'Profil', short: 'Profil', icon: 'settings' },

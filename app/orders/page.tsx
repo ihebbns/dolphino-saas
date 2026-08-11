@@ -26,12 +26,16 @@ const TYPE_LABEL: Record<string, string> = { sur_place: '🏠 Sur place', emport
 export default function OrdersPage() {
   const { key, checked } = useApiKey()
   const mods = useModules(key)
-  const walletHideTabs = mods.on('wallet') ? [] : ['/wallet']
   const [loading, setLoading] = useState(true)
   const [restName, setRestName] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [msg, setMsg] = useState('')
+  // The whole point of checking this page from home is "did something get
+  // stuck at the till" — a flat chronological list buries that under
+  // everything else. unpaidOnly filters straight to it; the banner below
+  // makes the count impossible to miss even before filtering.
+  const [unpaidOnly, setUnpaidOnly] = useState(false)
 
   useEffect(() => {
     if (key) load(key)
@@ -48,7 +52,7 @@ export default function OrdersPage() {
     setLoading(false)
   }
 
-  if (!checked || loading) return <Shell active="/orders" title="Commandes" hideTabs={walletHideTabs}><Loading /></Shell>
+  if (!checked || loading) return <Shell active="/orders" title="Commandes"><Loading /></Shell>
   if (!key) return <LoginGate />
 
   // Presentation only — same non-destructive contract as every other module
@@ -56,7 +60,7 @@ export default function OrdersPage() {
   // page never flashes "désactivé" for a fraction of a second on load.
   if (mods.loaded && !mods.on('onlineOrders')) {
     return (
-      <Shell active="/orders" title="Commandes" hideTabs={walletHideTabs}>
+      <Shell active="/orders" title="Commandes">
         <div className="notice nWarn">
           <span className="noticeIcon">🌐</span>
           <div>
@@ -68,8 +72,11 @@ export default function OrdersPage() {
     )
   }
 
+  const unpaid = orders.filter(o => o.status === 'accepted' && !o.paid)
+  const visibleOrders = unpaidOnly ? unpaid : orders
+
   return (
-    <Shell active="/orders" title="Commandes en ligne" subtitle="Historique PWA + borne — qui a accepté, qui a encaissé" restName={restName} hideTabs={walletHideTabs}>
+    <Shell active="/orders" title="Commandes en ligne" subtitle="Historique PWA + borne — qui a accepté, qui a encaissé" restName={restName}>
       {msg && <div className="notice nWarn"><div className="noticeTitle">{msg}</div></div>}
 
       {pendingCount > 0 && (
@@ -79,11 +86,33 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {orders.length === 0 ? (
-        <Empty icon="receipt" text="Aucune commande en ligne pour le moment." />
+      {/* The actual "is something stuck at the till" signal — an order
+          accepted a while ago that never got encaissée. Clicking it filters
+          straight to the list below instead of just being a static count. */}
+      {unpaid.length > 0 && (
+        <div
+          className="notice nWarn"
+          style={{ marginBottom: 14, cursor: 'pointer' }}
+          onClick={() => setUnpaidOnly(true)}
+          role="button"
+        >
+          <div className="noticeTitle">🧾 {unpaid.length} commande{unpaid.length > 1 ? 's' : ''} acceptée{unpaid.length > 1 ? 's' : ''} non encaissée{unpaid.length > 1 ? 's' : ''}</div>
+          Voir lesquelles ↓
+        </div>
+      )}
+
+      {orders.length > 0 && (
+        <div className="row" style={{ gap: 8, marginBottom: 14 }}>
+          <button className="chip" data-on={!unpaidOnly} onClick={() => setUnpaidOnly(false)}>Toutes ({orders.length})</button>
+          <button className="chip" data-on={unpaidOnly} onClick={() => setUnpaidOnly(true)}>Non encaissées ({unpaid.length})</button>
+        </div>
+      )}
+
+      {visibleOrders.length === 0 ? (
+        <Empty icon="receipt" text={unpaidOnly ? 'Aucune commande non encaissée en ce moment.' : 'Aucune commande en ligne pour le moment.'} />
       ) : (
         <div className="col" style={{ gap: 10 }}>
-          {orders.map(o => (
+          {visibleOrders.map(o => (
             <div key={o.id} className="card">
               <div className="cardPad">
                 <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>

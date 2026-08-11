@@ -30,10 +30,9 @@ type Movement = {
 export default function CreditsPage() {
   const { key, checked } = useApiKey()
   const mods = useModules(key)
-  const walletHideTabs = [
-    ...(mods.on('wallet') ? [] : ['/wallet']),
-    ...(mods.on('onlineOrders') ? [] : ['/orders']),
-  ]
+  // Commandes moved out to its own top-level destination (see TabBar.tsx) —
+  // only Fidélité is still a sub-tab here to hide when its module is off.
+  const walletHideTabs = mods.on('wallet') ? [] : ['/wallet']
   const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(true)
   const [msg, setMsg] = useState('')
