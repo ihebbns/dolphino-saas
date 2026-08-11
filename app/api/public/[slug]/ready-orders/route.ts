@@ -18,6 +18,12 @@
 // TODAY (UTC) so the board, daily_num, and the ticket prefix below all
 // agree on what "today" resets against.
 //
+// Nothing currently tells this board "the customer actually took it" —
+// paid-up-front (wallet) orders especially have no natural pickup event to
+// hook. Rather than build that out, a number just auto-expires 5 minutes
+// after going ready (READY_TTL_MINUTES below) — by then it's essentially
+// certain to have been collected, no new staff action needed anywhere.
+//
 // The reconstructed KIO/WEB+daily_num carries the order's channel as a
 // prefix — see printOnlineOrderKitchenTicket() in the POS. Parsed back out
 // here into a clean {source, display} pair so the board never has to know
@@ -33,6 +39,8 @@ import { sql } from '@/lib/db'
 import { serverError, isMissingSchema } from '@/lib/apiError'
 
 export const runtime = 'edge'
+
+const READY_TTL_MINUTES = 5
 
 function parseTicketNum(raw: string): { source: 'kiosk' | 'moi' | 'caisse'; display: string } {
   const s = String(raw || '')
@@ -67,6 +75,7 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
           AND status = 'accepted' AND ready = TRUE AND table_num IS NULL
           AND daily_num IS NOT NULL
           AND (ready_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+          AND ready_at > NOW() - INTERVAL '1 minute' * ${READY_TTL_MINUTES}
         ORDER BY ready_at DESC
         LIMIT 40`
       return NextResponse.json({
