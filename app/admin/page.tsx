@@ -399,6 +399,9 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
   const [pinResetPhone, setPinResetPhone] = useState('')
   const [pinResetBusy, setPinResetBusy] = useState(false)
   const [pinResetMsg, setPinResetMsg] = useState('')
+  const [newDashPassword, setNewDashPassword] = useState('')
+  const [dashPasswordBusy, setDashPasswordBusy] = useState(false)
+  const [dashPasswordMsg, setDashPasswordMsg] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [demoRequests, setDemoRequests] = useState<any[]>([])
   const [showDemos, setShowDemos] = useState(false)
@@ -597,6 +600,26 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
       else setPinResetMsg('Erreur: ' + data.error)
     } catch { setPinResetMsg('Erreur de connexion') }
     setPinResetBusy(false)
+  }
+
+  // The dashboard login password is bcrypt-hashed at signup — genuinely
+  // unrecoverable if the owner loses it, only resettable. This sets a fresh
+  // one directly (no need to know the old one, unlike the owner's own
+  // self-service change on /profil).
+  async function resetDashPassword(restaurantId: number) {
+    if (newDashPassword.length < 6) { setDashPasswordMsg('Minimum 6 caractères'); return }
+    setDashPasswordBusy(true)
+    setDashPasswordMsg('')
+    try {
+      const res = await fetch(`${API}/api/admin/clients`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_key: key, id: restaurantId, new_password: newDashPassword }),
+      })
+      const data = await res.json()
+      if (data.ok) { setDashPasswordMsg('✓ Mot de passe réinitialisé'); setNewDashPassword('') }
+      else setDashPasswordMsg('Erreur: ' + data.error)
+    } catch { setDashPasswordMsg('Erreur de connexion') }
+    setDashPasswordBusy(false)
   }
 
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
@@ -1035,7 +1058,23 @@ function Panel({ dark, toggleTheme, onLogout }: { dark:boolean, toggleTheme:()=>
             {/* ── Compte — suspend/schedule/reactivate ── */}
             {modalTab === 'compte' && (
               <>
-                <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>Suspendre</div>
+                <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px' }}>
+                  Réinitialiser le mot de passe (Dashboard)
+                </div>
+                <div style={{ fontSize:'11px', color:'var(--muted)', marginBottom:'10px' }}>
+                  Le mot de passe est chiffré — irrécupérable une fois perdu, seulement réinitialisable. Le client devra utiliser ce nouveau mot de passe pour se connecter à {actionClient.owner_email}.
+                </div>
+                <div style={{ display:'flex', gap:'6px', marginBottom:'6px' }}>
+                  <input type="text" value={newDashPassword} onChange={e => setNewDashPassword(e.target.value)} placeholder="Nouveau mot de passe (min. 6 caractères)"
+                    style={{ flex:1, background:'var(--card)', border:'1.5px solid var(--div)', borderRadius:'8px', padding:'10px 12px', color:'var(--txt)', fontSize:'13px', outline:'none' }} />
+                  <button onClick={() => resetDashPassword(actionClient.id)} disabled={dashPasswordBusy}
+                    style={{ padding:'0 14px', background:'var(--card)', border:'1px solid var(--div)', borderRadius:'8px', color:'var(--gold-l)', cursor: dashPasswordBusy ? 'default' : 'pointer', fontSize:'12px', fontWeight:700 }}>
+                    {dashPasswordBusy ? '…' : 'Réinitialiser'}
+                  </button>
+                </div>
+                {dashPasswordMsg && <div style={{ fontSize:'11px', marginBottom:'16px', color: dashPasswordMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{dashPasswordMsg}</div>}
+
+                <div style={{ fontSize:'11px', color:'var(--muted)', fontWeight:'600', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'1px', marginTop:'16px' }}>Suspendre</div>
                 <div style={{ display:'flex', flexDirection:'column', gap:'8px', marginBottom:'16px' }}>
                   <button onClick={() => doAction(actionClient.api_key, 'suspend_all')} style={{ padding:'14px', background:'var(--red-dim)', border:'1px solid rgba(224,82,82,.3)', borderRadius:'10px', color:'var(--red)', cursor:'pointer', fontSize:'13px', fontWeight:'600', textAlign:'left' }}>
                     🔒 Suspendre TOUT <span style={{ float:'right', opacity:.6 }}>EXE + Dashboard</span>

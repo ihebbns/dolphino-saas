@@ -205,6 +205,23 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ ok: true, reward_tiers: cfg.rewardTiers || null })
     }
 
+    // ── Dashboard password reset (admin only) ──────────────────────────
+    // The owner's dashboard login is bcrypt-hashed (see /api/login,
+    // /api/me/password) — genuinely unrecoverable once lost, only
+    // resettable. /api/me/password is self-service but requires knowing
+    // the CURRENT password first, which is exactly what's missing when
+    // someone's actually locked out — this is that path: admin sets a
+    // fresh password directly, no old one needed.
+    if (body.new_password !== undefined) {
+      const pw = String(body.new_password || '')
+      if (pw.length < 6) {
+        return NextResponse.json({ ok: false, error: 'Mot de passe trop court (min. 6 caractères)' }, { status: 400 })
+      }
+      const hash = await bcrypt.hash(pw, 10)
+      await sql`UPDATE restaurants SET password_hash = ${hash} WHERE id = ${id}`
+      return NextResponse.json({ ok: true })
+    }
+
     if (body.kds_password !== undefined) {
       const pw = String(body.kds_password || '').trim().slice(0, 40)
       const [row] = await sql`SELECT config FROM restaurants WHERE id = ${id} LIMIT 1`
