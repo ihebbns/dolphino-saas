@@ -1,22 +1,30 @@
 // ═══════════════════════════════════════════════════
 // GET /api/public/[slug]/ready-orders — the list a pickup board (/ready/[slug])
-// polls: every order number that's fully done in the kitchen right now.
+// polls: every order number that's fully done right now.
 //
-// Reuses kds_tickets (the same rows the till's own KDS overlay and the
-// kitchen screen — servio.tn/kitchen/<slug> — already bump) rather than a
-// separate "mark ready" action, on purpose: kitchen staff already bump a
-// ticket the instant it's done, for EVERY order however it was placed
-// (typed at the till, kiosk, or online) — that single existing action is
-// now also what puts a number on this board, no new step for anyone.
+// A restaurant is free to run its kitchen on paper tickets only, the KDS
+// screen only, or both (see kitchenOutputMode in /admin) — this board has
+// to light up correctly no matter which one they actually use. Two
+// independent "done" signals both count, unioned together:
 //
-// One order can have several tickets (one per kitchen zone/station) — it's
-// only "ready" once ALL of them are bumped, hence GROUP BY num with
-// bool_and(bumped). tbl_num IS NULL excludes dine-in table orders — food
-// gets carried to the table, nobody's calling a table's number from a
-// board. Scoped to TODAY so the board (and daily_num, and the ticket
-// prefix below) all agree on what "today" resets against.
+//   1. kds_tickets — every zone ticket for that order's num bumped (the
+//      till's own KDS overlay or the standalone /kitchen/[slug] screen).
+//      Works for restaurants using the digital queue.
+//   2. online_orders.ready — staff explicitly tapped "Marquer prêt" (see
+//      /api/me/online-orders). Works for restaurants running paper tickets
+//      only, where no kds_tickets row for this order may ever exist at all
+//      — without this signal, THOSE restaurants could never light up this
+//      board no matter what staff did.
 //
-// The ticket's own `num` already carries its channel as a prefix — see
+// One order can have several kitchen tickets (one per zone/station) — via
+// signal 1 it's only "ready" once ALL of them are bumped, hence GROUP BY
+// num with bool_and(bumped). tbl_num IS NULL excludes dine-in table
+// orders — food gets carried to the table, nobody's calling a table's
+// number from a board. Scoped to TODAY (UTC) so the board, daily_num, and
+// the ticket prefix below all agree on what "today" resets against.
+//
+// The ticket's own `num` (or the reconstructed KIO/WEB+daily_num for
+// signal 2) carries its channel as a prefix — see
 // printOnlineOrderKitchenTicket() in the POS: 'KIO001' (kiosk), 'WEB001'
 // (moi/online link), or a plain digit sequence (typed at the till/caisse).
 // Parsed back out here into a clean {source, display} pair so the board
@@ -57,17 +65,52 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
     if (!rest.length) return NextResponse.json({ ok: false, error: 'Commerce introuvable' }, { status: 404 })
 
     try {
-      const rows = await sql`
-        SELECT num, MAX(cli_name) AS cli_name, MIN(sent_at) AS sent_at, MAX(bumped_at) AS ready_at
-        FROM kds_tickets
-        WHERE restaurant_id = ${rest[0].id}
-          AND tbl_num IS NULL
-          AND num != ''
-          AND (sent_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
-        GROUP BY num
-        HAVING bool_and(bumped)
-        ORDER BY MAX(bumped_at) DESC
-        LIMIT 40`
+      const rid = rest[0].id
+      let rows: any[]
+      try {
+        rows = await sql`
+          WITH kitchen_ready AS (
+            SELECT num, MAX(cli_name) AS cli_name, MIN(sent_at) AS sent_at, MAX(bumped_at) AS ready_at
+            FROM kds_tickets
+            WHERE restaurant_id = ${rid}
+              AND tbl_num IS NULL
+              AND num != ''
+              AND (sent_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+            GROUP BY num
+            HAVING bool_and(bumped)
+          ),
+          staff_ready AS (
+            SELECT (CASE WHEN source = 'kiosk' THEN 'KIO' ELSE 'WEB' END) || LPAD(daily_num::text, 3, '0') AS num,
+                   client_name AS cli_name, created_at AS sent_at, ready_at
+            FROM online_orders
+            WHERE restaurant_id = ${rid}
+              AND status = 'accepted' AND ready = TRUE AND table_num IS NULL
+              AND daily_num IS NOT NULL
+              AND (ready_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+          )
+          SELECT num, MAX(cli_name) AS cli_name, MIN(sent_at) AS sent_at, MAX(ready_at) AS ready_at
+          FROM (SELECT * FROM kitchen_ready UNION ALL SELECT * FROM staff_ready) merged
+          GROUP BY num
+          ORDER BY MAX(ready_at) DESC
+          LIMIT 40`
+      } catch (e: any) {
+        // online_orders.daily_num/ready columns missing (pre-migration
+        // restaurant) — fall back to kds_tickets alone rather than 500ing
+        // the whole board.
+        const isMissingCol = String(e?.code) === '42703' || /does not exist|undefined_column/i.test(String(e?.message || ''))
+        if (!isMissingCol) throw e
+        rows = await sql`
+          SELECT num, MAX(cli_name) AS cli_name, MIN(sent_at) AS sent_at, MAX(bumped_at) AS ready_at
+          FROM kds_tickets
+          WHERE restaurant_id = ${rid}
+            AND tbl_num IS NULL
+            AND num != ''
+            AND (sent_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+          GROUP BY num
+          HAVING bool_and(bumped)
+          ORDER BY MAX(bumped_at) DESC
+          LIMIT 40`
+      }
       return NextResponse.json({
         ok: true, ready: true,
         restaurant_name: rest[0].name,
