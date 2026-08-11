@@ -597,6 +597,106 @@ function SessionsSection({ sessions, recent }: { sessions: any[], recent?: any[]
   )
 }
 
+// ════════════════ TABLES SECTION (table-service clients) ════════════════
+// Reads /api/me/tables — the SAME cross-till sync a table-service POS
+// already pushes to (see pos_tables/table_audit_log, migration-pos-tables.sql)
+// so this needs no new backend, just a web view of data that already exists.
+// Polls independently of the date-scoped `data` above — table state is
+// "right now," not a historical report.
+const TBL_STATUS_LABEL: Record<string, string> = { free: 'Libre', open: 'Ouvert', sent: 'Envoyé en cuisine', bill: 'Addition imprimée' }
+const TBL_STATUS_COLOR: Record<string, string> = { free: 'var(--muted)', open: '#F5A623', sent: '#4ADE80', bill: '#F59E0B' }
+const TBL_ACTION_LABEL: Record<string, string> = {
+  open: '🟡 Ouverture', item_add: '➕ Article ajouté', item_remove: '➖ Article retiré',
+  sent_kitchen: '🍳 Envoyé en cuisine', bill_printed: '📄 Addition imprimée',
+  paid: '💰 Paiement', closed: '🔒 Table libérée', table_created: '🆕 Table créée',
+  ready: '🔔 Commande prête', served: '✓ Servie / Récupérée',
+}
+
+function tblItemsTotal(items: any[]): number {
+  return (items || []).reduce((a, it) => a + (Number(it.p) || 0) * (Number(it.qty) || 0), 0)
+}
+
+function TablesSection({ tables, audit }: { tables: any[]; audit: any[] }) {
+  const [selected, setSelected] = useState<string | null>(null)
+
+  if (!tables.length) return <div className={s.empty}><div className={s.emptyIcon}>🪑</div><div className={s.emptyText}>Aucune table configurée</div></div>
+
+  const bySection = new Map<string, any[]>()
+  for (const t of tables) {
+    const key = t.sec || '—'
+    if (!bySection.has(key)) bySection.set(key, [])
+    bySection.get(key)!.push(t)
+  }
+  const activeCount = tables.filter(t => t.status !== 'free').length
+  const totalDT = tables.reduce((a, t) => a + (t.status !== 'free' ? tblItemsTotal(t.items) * (1 - (t.disc || 0) / 100) : 0), 0)
+
+  const selectedTable = selected ? tables.find(t => t.id === selected) : null
+  const selectedAudit = selected
+    ? audit.filter(e => e.tableId === selected).sort((a, b) => b.at - a.at)
+    : []
+
+  if (selectedTable) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ fontSize: '15px', fontWeight: 800 }}>🪑 Table {selectedTable.num} — {selectedTable.sec}</div>
+          <button className={s.filterBtn} onClick={() => setSelected(null)}>← Toutes les tables</button>
+        </div>
+        <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '14px' }}>
+          Historique complet — ouverture, articles ajoutés, cuisine, addition, paiement, fermeture.
+        </div>
+        {selectedAudit.length === 0 ? (
+          <div className={s.empty}><div className={s.emptyIcon}>📋</div><div className={s.emptyText}>Aucune activité enregistrée</div></div>
+        ) : (
+          <div style={{ maxHeight: '480px', overflowY: 'auto' }}>
+            {selectedAudit.map((e, i) => (
+              <div key={e.uid || i} style={{ padding: '10px 0', borderBottom: '1px solid var(--div)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '13px' }}>
+                  <span style={{ fontWeight: 700 }}>{TBL_ACTION_LABEL[e.action] || e.action}</span>
+                  <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{new Date(e.at).toLocaleString('fr-TN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                {e.detail && <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>{e.detail}</div>}
+                {e.actor && <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>👤 {e.actor}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '14px' }}>
+        {activeCount} table{activeCount !== 1 ? 's' : ''} active{activeCount !== 1 ? 's' : ''} · {f(totalDT)} DT en cours · mis à jour toutes les 15s
+      </div>
+      {[...bySection.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([sec, tables]) => (
+        <div key={sec} style={{ marginBottom: '18px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '8px' }}>{sec}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
+            {tables.sort((a, b) => a.num - b.num).map(t => {
+              const occ = t.status !== 'free'
+              const total = occ ? tblItemsTotal(t.items) * (1 - (t.disc || 0) / 100) : 0
+              return (
+                <div key={t.id} onClick={() => setSelected(t.id)}
+                  style={{ padding: '12px', borderRadius: '10px', cursor: 'pointer', background: 'var(--bg2)', border: `1.5px solid ${occ ? TBL_STATUS_COLOR[t.status] : 'var(--div)'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: occ ? TBL_STATUS_COLOR[t.status] : 'var(--div)', flexShrink: 0 }} />
+                    <span style={{ fontSize: '13px', fontWeight: 700 }}>Table {t.num}</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{TBL_STATUS_LABEL[t.status] || t.status}</div>
+                  {occ && <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--gold-l)', marginTop: '4px' }}>{f(total)} DT</div>}
+                  {t.by && <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>👤 {t.by}</div>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ════════════════ STOCK SECTION (Retail) ════════════════
 function StockSection({ stock }: { stock: any[] }) {
   const [search, setSearch] = useState('')
@@ -942,6 +1042,27 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
   useEffect(() => { load(date) }, [date, load])
   useEffect(() => { const id = setInterval(() => load(date), 30000); return () => clearInterval(id) }, [date, load])
 
+  // ── Live table state (table-service clients only) ──────────────────────
+  // Independent of the date-scoped `data` above — table state is "right
+  // now," not a historical report for a chosen day. Reads the same
+  // pos_tables/table_audit_log a table-service POS already cross-till syncs
+  // to (see /api/me/tables) — no new backend, just a web view of data that
+  // already exists. tablesData stays null (not []) until the first
+  // response lands, so the tab doesn't flash into existence and back out.
+  const [tablesData, setTablesData] = useState<{ tables: any[]; audit: any[] } | null>(null)
+  const loadTables = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/me/tables?key=${apiKey}`, { cache: 'no-store' })
+      const d = await res.json()
+      if (d.ok) setTablesData({ tables: d.tables || [], audit: d.audit || [] })
+    } catch {}
+  }, [apiKey])
+  useEffect(() => {
+    loadTables()
+    const id = setInterval(loadTables, 15000) // same cadence the POS's own pullTableSync uses
+    return () => clearInterval(id)
+  }, [loadTables])
+
   // ── Live notifications ──
   const [prevOrders, setPrevOrders] = useState(0)
   const [notif, setNotif] = useState('')
@@ -994,6 +1115,10 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
     { id:'orders',    label:'🧾 Commandes'         },
     { id:'sessions',  label:'🔒 Caisses'           },
     ...(data?.stock && data.stock.length > 0 && data.stock[0]?.category ? [{ id:'stock', label:'📦 Stock' }] : []),
+    // Only for table-service clients — tablesData stays null until the
+    // first poll answers, and empty ([]) for a client with no tables
+    // configured at all, so this tab simply never appears for e.g. La Coupole.
+    ...(tablesData && tablesData.tables.length > 0 ? [{ id:'tables', label:'🪑 Tables' }] : []),
   ]
 
   const k = data?.kpis
@@ -1185,6 +1310,13 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
           {/* ── STOCK (Retail) ── */}
           {activeTab === 'stock' && data.stock && <>
             <StockSection stock={data.stock} />
+          </>}
+
+          {activeTab === 'tables' && tablesData && <>
+            <div className={s.section}>
+              <div className={s.sectionHdr}><div className={s.sectionTitle}><span>🪑</span> Tables — temps réel</div></div>
+              <TablesSection tables={tablesData.tables} audit={tablesData.audit} />
+            </div>
           </>}
         </>}
       </div>
