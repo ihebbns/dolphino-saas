@@ -146,6 +146,24 @@ export async function GET(req: Request) {
       WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = FALSE
       ORDER BY responded_at ASC`
 
+    // Kitchen finished it (ready = TRUE, see markReady / the kds bump path)
+    // but staff at the till have no other reason to see it again — nothing
+    // was pulling this into the POS's own view before, so a cashier had no
+    // in-app signal that an order was sitting done, only the physical
+    // pickup board or word of mouth from the kitchen. table_num IS NULL for
+    // the same reason as everywhere else here — a table order's own flow
+    // handles it. Scoped to today so this can't grow unbounded.
+    let ready: any[] = []
+    try {
+      ready = await sql`
+        SELECT id, client_name, order_type, daily_num, source, ready_at
+        FROM online_orders
+        WHERE restaurant_id = ${rest.id} AND status = 'accepted' AND ready = TRUE AND table_num IS NULL
+          AND (ready_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+        ORDER BY ready_at DESC
+        LIMIT 20`
+    } catch { /* daily_num/source missing on a pre-migration restaurant — degrade to no ready list, not a 500 */ }
+
     // Includes who acted (responded_by / paid_by) and the full order, not just
     // a summary — this is what the manager's /orders audit page reads, so it
     // has to answer "who accepted this, who took the money" on its own,
@@ -158,7 +176,7 @@ export async function GET(req: Request) {
       WHERE restaurant_id = ${rest.id} AND status != 'pending'
       ORDER BY responded_at DESC LIMIT 100`
 
-    return cors(NextResponse.json({ ok: true, pending, unpaid, preparing, recent }))
+    return cors(NextResponse.json({ ok: true, pending, unpaid, preparing, ready, recent }))
   } catch (e: any) {
     return cors(NextResponse.json(serverError('online-orders GET', e), { status: 500 }))
   }
