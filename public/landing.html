@@ -3,41 +3,50 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Servio — Caisse intelligente pour restaurants, cafés & commerces</title>
-<meta name="description" content="Servio POS : logiciel de caisse pro pour restaurants, cafés, fast food et commerces en Tunisie. Essai gratuit 14 jours, dashboard temps réel, fonctionne hors ligne.">
+<title>Servio — Caisse intelligente pour cafés & restaurants en Tunisie</title>
+<meta name="description" content="Servio POS : logiciel de caisse pro pour cafés et restaurants en Tunisie. Fonctionne hors ligne, dashboard temps réel, gestion de tables, commande QR, paiement local. Demandez une démo.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0A0704;--panel:#0F0C08;--card:#161210;--gold:#C8913A;--gold-l:#E8A84C;--txt:#F0E8D8;--muted:#7A6E5F;--div:#231C12;--green:#3DB87A;--blue:#4A90D9}
+:root{
+  --bg:#FBF9F5;--panel:#FFFFFF;--panel-2:#F5F1E9;--card:#FFFFFF;
+  --gold:#B4791F;--gold-l:#C8913A;--gold-d:#8F5E14;
+  --ink:#211A10;--txt:#3A3226;--muted:#7A7060;--div:#E8E1D2;
+  --green:#2E9E5B;--blue:#2C6FB8;
+  --shadow-sm:0 1px 3px rgba(33,26,16,.06);
+  --shadow-md:0 10px 30px rgba(33,26,16,.08);
+  --shadow-lg:0 24px 60px rgba(33,26,16,.12);
+}
 html{scroll-behavior:smooth}
 body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--txt);line-height:1.6;overflow-x:hidden}
-a{color:var(--gold-l);text-decoration:none}
+a{color:var(--gold-d);text-decoration:none}
 .container{max-width:1120px;margin:0 auto;padding:0 24px}
 .btn{padding:13px 26px;border-radius:10px;font-size:15px;font-weight:700;border:none;cursor:pointer;transition:all .2s;display:inline-block;text-align:center}
-.btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-l));color:#080604}
-.btn-gold:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(200,145,58,.32)}
-.btn-outline{background:none;border:1.5px solid var(--div);color:var(--txt)}
-.btn-outline:hover{border-color:var(--gold);color:var(--gold-l)}
-.btn-ghost{background:rgba(255,255,255,.03);border:1px solid var(--div);color:var(--txt)}
-.btn-ghost:hover{border-color:var(--gold);color:var(--gold-l)}
+.btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-l));color:#fff;box-shadow:0 8px 20px rgba(180,121,31,.25)}
+.btn-gold:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(180,121,31,.34)}
+.btn-outline{background:#fff;border:1.5px solid var(--div);color:var(--ink)}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold-d)}
+.btn-ghost{background:transparent;border:1px solid transparent;color:var(--txt)}
+.btn-ghost:hover{color:var(--gold-d)}
 
 /* ── NAV ── */
-.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(10,7,4,.72);border-bottom:1px solid var(--div)}
-.nav-in{max-width:1120px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:16px}
-.nav-brand{font-size:19px;font-weight:800;color:var(--gold-l);letter-spacing:1px;display:flex;align-items:center;gap:8px}
+.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(251,249,245,.85);border-bottom:1px solid var(--div)}
+.nav-in{max-width:1120px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:16px}
+.nav-brand{font-size:19px;font-weight:800;color:var(--ink);letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+.nav-brand .bolt{color:var(--gold)}
 .nav-links{margin-left:auto;display:flex;align-items:center;gap:22px}
-.nav-links a.lnk{color:var(--muted);font-size:14px;font-weight:500}
-.nav-links a.lnk:hover{color:var(--txt)}
+.nav-links a.lnk{color:var(--muted);font-size:14px;font-weight:600}
+.nav-links a.lnk:hover{color:var(--ink)}
 @media(max-width:760px){.nav-links a.lnk{display:none}}
 
 /* ── HERO ── */
-.hero{position:relative;overflow:hidden;padding:70px 0 40px}
-.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 25% 15%,rgba(200,145,58,.13),transparent 45%),radial-gradient(circle at 85% 60%,rgba(74,144,217,.07),transparent 45%);pointer-events:none}
+.hero{position:relative;overflow:hidden;padding:76px 0 44px}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 20% 10%,rgba(180,121,31,.10),transparent 45%),radial-gradient(circle at 90% 55%,rgba(44,111,184,.06),transparent 45%);pointer-events:none}
 .hero-grid{position:relative;z-index:1;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
-.badge{display:inline-flex;align-items:center;gap:8px;background:rgba(200,145,58,.1);border:1px solid rgba(200,145,58,.3);color:var(--gold-l);padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;margin-bottom:20px}
-.badge .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(61,184,122,.2)}
-.hero-title{font-size:clamp(34px,5vw,52px);font-weight:800;line-height:1.08;letter-spacing:-.5px;margin-bottom:16px}
-.hero-title .hl{background:linear-gradient(135deg,var(--gold),var(--gold-l));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.badge{display:inline-flex;align-items:center;gap:8px;background:rgba(180,121,31,.08);border:1px solid rgba(180,121,31,.28);color:var(--gold-d);padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:20px}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(46,158,91,.18)}
+.hero-title{font-size:clamp(34px,5vw,50px);font-weight:800;line-height:1.1;letter-spacing:-.5px;margin-bottom:16px;color:var(--ink)}
+.hero-title .hl{background:linear-gradient(135deg,var(--gold-d),var(--gold-l));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .hero-sub{font-size:clamp(15px,2.4vw,18px);color:var(--muted);margin-bottom:28px;max-width:520px}
 .hero-cta{display:flex;gap:12px;flex-wrap:wrap}
 .trust{display:flex;gap:18px;flex-wrap:wrap;margin-top:22px;font-size:13px;color:var(--muted)}
@@ -45,81 +54,86 @@ a{color:var(--gold-l);text-decoration:none}
 @media(max-width:860px){.hero-grid{grid-template-columns:1fr;gap:32px}.hero-cta{justify-content:flex-start}}
 
 /* ── POS MOCKUP ── */
-.mock{background:linear-gradient(160deg,#12100c,#0d0b07);border:1px solid var(--div);border-radius:18px;padding:16px;box-shadow:0 30px 70px rgba(0,0,0,.5);transform:perspective(1400px) rotateY(-8deg) rotateX(3deg)}
+.mock{background:linear-gradient(160deg,#211A10,#171209);border:1px solid #2c2314;border-radius:18px;padding:16px;box-shadow:var(--shadow-lg);transform:perspective(1400px) rotateY(-8deg) rotateX(3deg)}
 .mock-bar{display:flex;gap:6px;margin-bottom:12px}
-.mock-bar i{width:10px;height:10px;border-radius:50%;background:#2a2118;display:inline-block}
+.mock-bar i{width:10px;height:10px;border-radius:50%;background:#3a2f1c;display:inline-block}
 .mock-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .mock-logo{font-weight:800;color:var(--gold-l);font-size:14px}
-.mock-clock{font-size:11px;color:var(--muted)}
+.mock-clock{font-size:11px;color:#8a7f6a}
 .mock-body{display:grid;grid-template-columns:1fr .8fr;gap:10px}
 .mock-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.mock-item{background:var(--card);border:1px solid var(--div);border-radius:10px;padding:12px 8px;text-align:center}
+.mock-item{background:#241d12;border:1px solid #33291a;border-radius:10px;padding:12px 8px;text-align:center}
 .mock-item .e{font-size:22px}
-.mock-item .n{font-size:10px;color:var(--muted);margin-top:4px}
+.mock-item .n{font-size:10px;color:#8a7f6a;margin-top:4px}
 .mock-item .p{font-size:11px;color:var(--gold-l);font-weight:700}
-.mock-order{background:var(--card);border:1px solid var(--div);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
-.mock-row{display:flex;justify-content:space-between;font-size:11px;color:var(--txt)}
-.mock-total{margin-top:auto;display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:var(--gold-l);border-top:1px solid var(--div);padding-top:8px}
-.mock-pay{background:linear-gradient(135deg,var(--gold),var(--gold-l));color:#080604;text-align:center;border-radius:8px;padding:9px;font-size:12px;font-weight:800}
+.mock-order{background:#241d12;border:1px solid #33291a;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.mock-row{display:flex;justify-content:space-between;font-size:11px;color:#f0e8d8}
+.mock-total{margin-top:auto;display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:var(--gold-l);border-top:1px solid #33291a;padding-top:8px}
+.mock-pay{background:linear-gradient(135deg,var(--gold),var(--gold-l));color:#211A10;text-align:center;border-radius:8px;padding:9px;font-size:12px;font-weight:800}
 
 /* ── STATS STRIP ── */
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:44px 0 8px}
-.stat{text-align:center;background:var(--panel);border:1px solid var(--div);border-radius:14px;padding:20px 10px}
-.stat b{display:block;font-size:24px;color:var(--gold-l);font-weight:800}
+.stat{text-align:center;background:var(--panel);border:1px solid var(--div);border-radius:14px;padding:20px 10px;box-shadow:var(--shadow-sm)}
+.stat b{display:block;font-size:22px;color:var(--gold-d);font-weight:800}
 .stat span{font-size:12px;color:var(--muted)}
 @media(max-width:640px){.stats{grid-template-columns:1fr 1fr}}
 
 /* ── SECTION ── */
-.section{padding:76px 0}
-.section-title{text-align:center;font-size:clamp(24px,4vw,34px);font-weight:800;margin-bottom:10px}
-.section-sub{text-align:center;color:var(--muted);font-size:16px;margin-bottom:44px;max-width:600px;margin-left:auto;margin-right:auto}
+.section{padding:80px 0}
+.section-alt{background:var(--panel-2)}
+.section-title{text-align:center;font-size:clamp(24px,4vw,34px);font-weight:800;margin-bottom:10px;color:var(--ink)}
+.section-sub{text-align:center;color:var(--muted);font-size:16px;margin-bottom:44px;max-width:620px;margin-left:auto;margin-right:auto}
+
+/* ── VALEUR ── */
+.valeur{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.val{background:var(--card);border:1px solid var(--div);border-radius:16px;padding:26px;box-shadow:var(--shadow-sm);transition:all .2s}
+.val:hover{transform:translateY(-3px);box-shadow:var(--shadow-md);border-color:rgba(180,121,31,.35)}
+.val .i{font-size:28px;margin-bottom:12px}
+.val .t{font-size:16px;font-weight:800;margin-bottom:6px;color:var(--ink)}
+.val .d{font-size:13.5px;color:var(--muted)}
+@media(max-width:820px){.valeur{grid-template-columns:1fr}}
 
 /* ── MODULES GRID ── */
-.mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
-.mod{background:var(--panel);border:1px solid var(--div);border-radius:14px;padding:22px;transition:all .2s}
-.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 12px 30px rgba(0,0,0,.3)}
+.mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.mod{background:var(--card);border:1px solid var(--div);border-radius:14px;padding:22px;transition:all .2s;box-shadow:var(--shadow-sm)}
+.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:var(--shadow-md)}
 .mod .i{font-size:26px;margin-bottom:10px}
-.mod .t{font-size:15px;font-weight:700;margin-bottom:4px}
+.mod .t{font-size:15px;font-weight:700;margin-bottom:4px;color:var(--ink)}
 .mod .d{font-size:13px;color:var(--muted)}
 
 /* ── TYPES ── */
-.types{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-.type{background:var(--panel);border:1px solid var(--div);border-radius:16px;padding:30px;text-align:center}
+.types{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;max-width:820px;margin:0 auto}
+.type{background:var(--card);border:1px solid var(--div);border-radius:16px;padding:30px;text-align:center;box-shadow:var(--shadow-sm)}
 .type .i{font-size:42px;margin-bottom:10px}
-.type .t{font-size:18px;font-weight:700;color:var(--gold-l);margin-bottom:10px}
-.type ul{list-style:none;text-align:left;font-size:13px;color:var(--muted)}
+.type .t{font-size:18px;font-weight:800;color:var(--gold-d);margin-bottom:10px}
+.type ul{list-style:none;text-align:left;font-size:13.5px;color:var(--muted)}
 .type li{padding:3px 0}.type li::before{content:'✓ ';color:var(--green)}
-@media(max-width:820px){.types{grid-template-columns:1fr}}
+@media(max-width:720px){.types{grid-template-columns:1fr}}
 
-/* ── PRICING ── */
-.pricing{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:820px;margin:0 auto}
-.price{background:var(--panel);border:1px solid var(--div);border-radius:18px;padding:34px;position:relative}
-.price.popular{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 20px 50px rgba(200,145,58,.12)}
-.price-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gold);color:#080604;padding:4px 16px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.5px}
-.price .pn{font-size:19px;font-weight:800}
-.price .pd{font-size:13px;color:var(--muted);margin-top:2px;min-height:34px}
-.price .pv{font-size:34px;font-weight:800;color:var(--gold-l);margin:14px 0}
-.price .pv span{font-size:14px;color:var(--muted);font-weight:500}
-.price ul{list-style:none;font-size:13px;color:var(--muted);margin:16px 0}
-.price li{padding:7px 0;border-bottom:1px solid var(--div)}
-.price li::before{content:'✓ ';color:var(--green);font-weight:700}
-@media(max-width:720px){.pricing{grid-template-columns:1fr}}
+/* ── PREUVE (case study) ── */
+.proof{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:960px;margin:0 auto}
+.proof-card{background:var(--card);border:1px solid var(--div);border-radius:18px;padding:30px;box-shadow:var(--shadow-sm)}
+.proof-card .kicker{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--gold-d);margin-bottom:8px}
+.proof-card h3{font-size:19px;font-weight:800;color:var(--ink);margin-bottom:8px}
+.proof-card p{font-size:13.5px;color:var(--muted)}
+@media(max-width:720px){.proof{grid-template-columns:1fr}}
 
 /* ── FAQ ── */
 .faq{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
-.qa{background:var(--panel);border:1px solid var(--div);border-radius:12px;padding:20px 22px}
-.qa .q{font-size:15px;font-weight:700;margin-bottom:6px}
+.qa{background:var(--card);border:1px solid var(--div);border-radius:12px;padding:20px 22px;box-shadow:var(--shadow-sm)}
+.qa .q{font-size:15px;font-weight:700;margin-bottom:6px;color:var(--ink)}
 .qa .a{font-size:14px;color:var(--muted)}
 
 /* ── CTA ── */
-.cta{text-align:center;padding:80px 24px;background:linear-gradient(180deg,transparent,rgba(200,145,58,.05))}
-.cta h2{font-size:clamp(24px,4vw,34px);font-weight:800;margin-bottom:12px}
+.cta{text-align:center;padding:84px 24px;background:linear-gradient(180deg,var(--panel-2),#FBF9F5)}
+.cta h2{font-size:clamp(24px,4vw,34px);font-weight:800;margin-bottom:12px;color:var(--ink)}
 .cta p{color:var(--muted);margin-bottom:24px}
-.cta-phone{font-size:22px;font-weight:800;color:var(--gold-l);margin-top:18px}
+.cta-phone{font-size:22px;font-weight:800;color:var(--gold-d);margin-top:18px}
 
 /* ── FOOTER ── */
 .footer{border-top:1px solid var(--div);padding:28px 24px;text-align:center;font-size:12px;color:var(--muted)}
-.footer a{margin:0 8px}
+.footer a{margin:0 8px;color:var(--muted)}
+.footer a:hover{color:var(--gold-d)}
 </style>
 </head>
 <body>
@@ -127,13 +141,13 @@ a{color:var(--gold-l);text-decoration:none}
 <!-- NAV -->
 <nav class="nav">
   <div class="nav-in">
-    <div class="nav-brand">⚡ SERVIO</div>
+    <div class="nav-brand"><span class="bolt">⚡</span> SERVIO</div>
     <div class="nav-links">
+      <a class="lnk" href="#valeur">Pourquoi Servio</a>
       <a class="lnk" href="#modules">Fonctionnalités</a>
       <a class="lnk" href="#types">Activités</a>
-      <a class="lnk" href="#pricing">Tarifs</a>
       <a class="btn btn-ghost" href="/dashboard" style="padding:9px 16px;font-size:13px">Se connecter</a>
-      <a class="btn btn-gold" href="/pos.html" style="padding:9px 18px;font-size:13px">Essayer</a>
+      <a class="btn btn-gold" href="/demo" style="padding:9px 18px;font-size:13px">Demander une démo</a>
     </div>
   </div>
 </nav>
@@ -142,12 +156,12 @@ a{color:var(--gold-l);text-decoration:none}
 <section class="hero">
   <div class="container hero-grid">
     <div>
-      <div class="badge"><span class="dot"></span> Nouveau · Essai gratuit 14 jours</div>
-      <h1 class="hero-title">La caisse <span class="hl">tout-en-un</span> pour votre commerce en Tunisie</h1>
-      <p class="hero-sub">Restaurant, café, fast food ou boutique. Activez seulement les fonctions dont vous avez besoin, suivez vos ventes en temps réel, et gardez le contrôle même hors ligne.</p>
+      <div class="badge"><span class="dot"></span> Fait pour les cafés &amp; restaurants tunisiens</div>
+      <h1 class="hero-title">La caisse <span class="hl">professionnelle</span> pour votre café ou restaurant</h1>
+      <p class="hero-sub">Gestion de tables, cuisine, commande QR et encaissement — avec un tableau de bord que vous consultez en temps réel depuis votre téléphone, même quand vous n'êtes pas sur place. Fonctionne hors ligne.</p>
       <div class="hero-cta">
-        <a href="/pos.html" class="btn btn-gold">Essayer maintenant →</a>
-        <a href="/demo" class="btn btn-outline">Demander une démo</a>
+        <a href="/demo" class="btn btn-gold">Demander une démo →</a>
+        <a href="/pos.html" class="btn btn-outline">Essayer la démo complète</a>
       </div>
       <div class="trust">
         <span>Sans carte bancaire</span>
@@ -161,7 +175,7 @@ a{color:var(--gold-l);text-decoration:none}
       <div class="mock-bar"><i></i><i></i><i></i></div>
       <div class="mock-head">
         <div class="mock-logo">☕ MON CAFÉ</div>
-        <div class="mock-clock">14:32 · Caisse 1</div>
+        <div class="mock-clock">14:32 · Table 4</div>
       </div>
       <div class="mock-body">
         <div class="mock-grid">
@@ -185,94 +199,90 @@ a{color:var(--gold-l);text-decoration:none}
     <div class="stats">
       <div class="stat"><b>Hors ligne</b><span>Marche sans internet</span></div>
       <div class="stat"><b>Temps réel</b><span>Dashboard sur mobile</span></div>
-      <div class="stat"><b>9 modules</b><span>Activés à la demande</span></div>
-      <div class="stat"><b>14 jours</b><span>Essai gratuit</span></div>
+      <div class="stat"><b>Modulaire</b><span>Activez ce qu'il vous faut</span></div>
+      <div class="stat"><b>100% local</b><span>Espèces, D17, Flouci</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- VALEUR -->
+<section class="section" id="valeur">
+  <div class="container">
+    <h2 class="section-title">Pourquoi les cafés &amp; restos choisissent Servio</h2>
+    <p class="section-sub">Pensé pour la réalité du terrain en Tunisie — pas une solution étrangère adaptée à la va-vite.</p>
+    <div class="valeur">
+      <div class="val"><div class="i">📶</div><div class="t">Fonctionne hors ligne</div><div class="d">Votre caisse continue de tourner même sans connexion stable. Tout se synchronise automatiquement dès que le réseau revient.</div></div>
+      <div class="val"><div class="i">📲</div><div class="t">Contrôle à distance, en temps réel</div><div class="d">Suivez vos ventes, vos tables et vos stocks depuis votre téléphone, où que vous soyez — sans appeler le personnel.</div></div>
+      <div class="val"><div class="i">💯</div><div class="t">0% de commission</div><div class="d">Un abonnement fixe, jamais un pourcentage prélevé sur vos ventes.</div></div>
+      <div class="val"><div class="i">🇹🇳</div><div class="t">Paiement 100% local</div><div class="d">Espèces, virement, D17, Flouci. Aucune carte internationale nécessaire.</div></div>
+      <div class="val"><div class="i">🧩</div><div class="t">Modulaire</div><div class="d">Vous n'activez que ce dont vous avez besoin — tables, stock, crédit client, cuisine. Le prix suit la taille réelle de votre commerce.</div></div>
+      <div class="val"><div class="i">🪑</div><div class="t">Gestion de tables professionnelle</div><div class="d">Plan de salle en temps réel, historique par table, alertes automatiques sur les tables ouvertes trop longtemps.</div></div>
     </div>
   </div>
 </section>
 
 <!-- MODULES -->
-<section class="section" id="modules">
+<section class="section section-alt" id="modules">
   <div class="container">
     <h2 class="section-title">Un seul logiciel, tous les modules</h2>
-    <p class="section-sub">Activez uniquement ce dont vous avez besoin. Un café peut ignorer les tables, une boutique peut ignorer la cuisine. Vous choisissez.</p>
+    <p class="section-sub">Activez uniquement ce dont vous avez besoin. Un café au comptoir peut ignorer les tables, un resto peut ignorer le scan code-barres. Vous choisissez.</p>
     <div class="mods">
-      <div class="mod"><div class="i">🪑</div><div class="t">Gestion des tables</div><div class="d">Plan de salle, service à table, sections.</div></div>
-      <div class="mod"><div class="i">⎸⎹</div><div class="t">Scan code-barres</div><div class="d">Douchette pour commerces et superettes.</div></div>
+      <div class="mod"><div class="i">🪑</div><div class="t">Gestion des tables</div><div class="d">Plan de salle en temps réel, sections, addition par table.</div></div>
+      <div class="mod"><div class="i">📱</div><div class="t">Commande QR par table</div><div class="d">Le client commande depuis son téléphone, ça arrive direct en cuisine.</div></div>
+      <div class="mod"><div class="i">🖥️</div><div class="t">Kiosque de commande</div><div class="d">Borne libre-service pour les commandes au comptoir.</div></div>
+      <div class="mod"><div class="i">🍳</div><div class="t">Tickets cuisine</div><div class="d">Bons de préparation par zone (bar, cuisine…), écran ou imprimante.</div></div>
+      <div class="mod"><div class="i">🔔</div><div class="t">Écran commandes prêtes</div><div class="d">Le client voit son numéro s'afficher dès que c'est prêt.</div></div>
+      <div class="mod"><div class="i">📊</div><div class="t">Dashboard temps réel</div><div class="d">Ventes, tables, top produits — depuis votre mobile, à toute heure.</div></div>
       <div class="mod"><div class="i">📦</div><div class="t">Gestion de stock</div><div class="d">Quantités, alertes de rupture, réappro.</div></div>
       <div class="mod"><div class="i">📒</div><div class="t">Crédit clients</div><div class="d">Ardoises et comptes clients suivis.</div></div>
-      <div class="mod"><div class="i">🖥️</div><div class="t">Afficheur client</div><div class="d">Écran prix client (VFD) sur port série.</div></div>
-      <div class="mod"><div class="i">🍳</div><div class="t">Tickets cuisine</div><div class="d">Bons de préparation par zone.</div></div>
+      <div class="mod"><div class="i">💳</div><div class="t">Fidélité / Solde client</div><div class="d">Solde rechargeable, paiement fidélité en caisse.</div></div>
+      <div class="mod"><div class="i">⎸⎹</div><div class="t">Scan code-barres</div><div class="d">Douchette pour commerces et superettes.</div></div>
       <div class="mod"><div class="i">🖨️</div><div class="t">Impression + tiroir</div><div class="d">Imprimante thermique 80mm + tiroir-caisse.</div></div>
-      <div class="mod"><div class="i">📊</div><div class="t">Dashboard & rapports</div><div class="d">Ventes, top produits, écarts de caisse.</div></div>
       <div class="mod"><div class="i">🛠️</div><div class="t">Gestion du menu</div><div class="d">Ajoutez / modifiez vos produits vous-même.</div></div>
     </div>
   </div>
 </section>
 
 <!-- TYPES -->
-<section class="section" id="types" style="background:var(--panel)">
+<section class="section" id="types">
   <div class="container">
     <h2 class="section-title">Adapté à votre activité</h2>
-    <p class="section-sub">Choisissez un point de départ, ajustez ensuite chaque fonction.</p>
+    <p class="section-sub">Deux points de départ, ajustez ensuite chaque fonction selon vos besoins.</p>
     <div class="types">
       <div class="type">
-        <div class="i">🍔</div><div class="t">Fast Food</div>
-        <ul><li>Commande rapide au comptoir</li><li>Sur place / emporter / livraison</li><li>Tickets cuisine séparés</li><li>Impression instantanée</li></ul>
+        <div class="i">☕</div><div class="t">Café / Restaurant à table</div>
+        <ul><li>Plan de salle avec tables</li><li>Addition par table</li><li>Commande QR &amp; tickets cuisine</li><li>Crédit clients (ardoise)</li></ul>
       </div>
       <div class="type">
-        <div class="i">☕</div><div class="t">Café / Restaurant</div>
-        <ul><li>Plan de salle avec tables</li><li>Addition par table</li><li>Crédit clients (ardoise)</li><li>Afficheur client</li></ul>
-      </div>
-      <div class="type">
-        <div class="i">🏪</div><div class="t">Commerce / Boutique</div>
-        <ul><li>Scan code-barres</li><li>Gestion de stock complète</li><li>Alertes de rupture</li><li>Marges & inventaire</li></ul>
+        <div class="i">🍔</div><div class="t">Café / Snack au comptoir</div>
+        <ul><li>Commande rapide au comptoir</li><li>Sur place / emporter</li><li>Kiosque &amp; écran commandes prêtes</li><li>Impression instantanée</li></ul>
       </div>
     </div>
   </div>
 </section>
 
-<!-- PRICING -->
-<section class="section" id="pricing">
+<!-- PREUVE -->
+<section class="section section-alt">
   <div class="container">
-    <h2 class="section-title">Deux façons de démarrer</h2>
-    <p class="section-sub">En libre-service avec abonnement, ou une application dédiée à votre marque. Pas de pourcentage sur vos ventes.</p>
-    <div class="pricing">
-      <div class="price popular">
-        <div class="price-badge">RECOMMANDÉ</div>
-        <div class="pn">☁️ Abonnement Cloud</div>
-        <div class="pd">Créez votre caisse en ligne en 2 minutes, sans nous contacter.</div>
-        <div class="pv">50 <span>DT / mois</span></div>
-        <ul>
-          <li>14 jours d'essai gratuit</li>
-          <li>Tous les modules activables</li>
-          <li>Dashboard temps réel sur mobile</li>
-          <li>Mises à jour automatiques</li>
-          <li>Modifiez vos options vous-même</li>
-          <li>Support WhatsApp</li>
-        </ul>
-        <a href="/pos.html" class="btn btn-gold" style="width:100%">Essayer dans le navigateur</a>
+    <h2 class="section-title">Déjà en service</h2>
+    <p class="section-sub">Servio tourne aujourd'hui chez de vrais établissements — pas juste une démo.</p>
+    <div class="proof">
+      <div class="proof-card">
+        <div class="kicker">Café en production</div>
+        <h3>La Coupole</h3>
+        <p>Caisse quotidienne, suivi des ventes et du stock en temps réel, avec accès dashboard à distance pour la gérance.</p>
       </div>
-      <div class="price">
-        <div class="pn">💼 Licence dédiée (EXE)</div>
-        <div class="pd">Application personnalisée à votre nom et logo, installée sur votre PC.</div>
-        <div class="pv">à partir de 500 <span>DT</span></div>
-        <ul>
-          <li>Application à votre marque</li>
-          <li>Installation + formation</li>
-          <li>Fonctionne hors ligne</li>
-          <li>Paiement en une fois possible</li>
-          <li>Idéal sans abonnement mensuel</li>
-        </ul>
-        <a href="/demo" class="btn btn-outline" style="width:100%">Demander une démo</a>
+      <div class="proof-card">
+        <div class="kicker">Démo complète — service à table</div>
+        <h3>Test Cafe Servio</h3>
+        <p>Plan de salle, cuisine, commande QR par table, écran commandes prêtes — l'expérience complète que vous pouvez tester dès maintenant.</p>
       </div>
     </div>
-    <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:20px">Paiement local accepté : espèces, virement, D17, Flouci. Facturation annuelle : 2 mois offerts.</p>
   </div>
 </section>
 
 <!-- FAQ -->
-<section class="section" id="faq" style="background:var(--panel)">
+<section class="section" id="faq">
   <div class="container">
     <h2 class="section-title">Questions fréquentes</h2>
     <p class="section-sub"></p>
@@ -280,7 +290,7 @@ a{color:var(--gold-l);text-decoration:none}
       <div class="qa"><div class="q">Est-ce que ça marche sans internet ?</div><div class="a">Oui. La caisse fonctionne hors ligne et se synchronise automatiquement dès que la connexion revient. Une connexion est requise de temps en temps pour valider la licence.</div></div>
       <div class="qa"><div class="q">Puis-je changer mes options plus tard ?</div><div class="a">Oui. Activez ou désactivez chaque module (tables, code-barres, crédit, stock…) depuis votre espace, sans réinstaller l'application.</div></div>
       <div class="qa"><div class="q">Comment payer en Tunisie ?</div><div class="a">Espèces, virement bancaire, D17 ou Flouci. Pas besoin de carte bancaire internationale, et aucune commission n'est prélevée sur vos ventes.</div></div>
-      <div class="qa"><div class="q">Et si j'arrête de payer ?</div><div class="a">L'application se verrouille automatiquement après la période d'essai ou en cas de non-paiement. Vos données restent en sécurité et sont récupérables à la réactivation.</div></div>
+      <div class="qa"><div class="q">Comment ça se passe pour démarrer ?</div><div class="a">Vous nous contactez via le formulaire ou WhatsApp, on regarde ensemble votre activité et on vous propose la formule adaptée — abonnement cloud ou application dédiée à votre marque.</div></div>
     </div>
   </div>
 </section>
@@ -288,10 +298,10 @@ a{color:var(--gold-l);text-decoration:none}
 <!-- CTA -->
 <section class="cta">
   <h2>Prêt à moderniser votre caisse ?</h2>
-  <p>Démarrez votre essai gratuit maintenant, ou parlez-nous sur WhatsApp.</p>
+  <p>Demandez une démo personnalisée, ou testez directement l'expérience complète.</p>
   <div style="display:inline-flex;gap:12px;flex-wrap:wrap;justify-content:center">
-    <a href="/pos.html" class="btn btn-gold">Essayer maintenant</a>
-    <a href="/demo" class="btn btn-outline">Demander une démo</a>
+    <a href="/demo" class="btn btn-gold">Demander une démo</a>
+    <a href="/pos.html" class="btn btn-outline">Essayer la démo complète</a>
   </div>
   <div class="cta-phone">+216 52 050 581</div>
 </section>
@@ -302,7 +312,6 @@ a{color:var(--gold-l);text-decoration:none}
     <a href="/pos.html">Essayer</a> ·
     <a href="/demo">Demander une démo</a> ·
     <a href="/dashboard">Connexion</a> ·
-    <a href="#pricing">Tarifs</a> ·
     <a href="https://wa.me/21652050581">Contact</a>
   </p>
   <p style="margin-top:8px">⚡ Servio — Système de caisse intelligent · Tunisie · 2026 · by servio.tn</p>
