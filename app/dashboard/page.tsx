@@ -1186,6 +1186,13 @@ function Dashboard({ apiKey, restInfo, onLogout }: { apiKey:string; restInfo:any
           <button className={s.btnIcon} onClick={()=>load(date)} title="Actualiser">↻</button>
           <button className={s.btnIcon} onClick={exportPDF} title="Exporter PDF">📄</button>
           <button className={s.btnIcon} onClick={toggle} title="Thème">{theme==='dark'?'☀️':'🌙'}</button>
+          {/* Only ever rendered for an org-owner session (d_org_token set by
+              app/org/page.tsx) — a single-location login (La Coupole, Test
+              Cafe Servio) never sets that key, so this stays invisible and
+              nothing else on this line changes for them. */}
+          {typeof window !== 'undefined' && localStorage.getItem('d_org_token') && (
+            <button className={s.btnIcon} onClick={() => { onLogout(); window.location.href = '/org' }} title="Changer d'établissement">🔀</button>
+          )}
           <button className={s.btnLogout} onClick={onLogout}><span>Déconnecter</span></button>
         </div>
       </header>
